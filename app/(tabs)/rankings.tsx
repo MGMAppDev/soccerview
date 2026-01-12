@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,14 +18,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
 type TeamRankRow = {
-  team_id: string;
-  name: string | null;
+  id: string;
+  team_name: string | null;
   state: string | null;
-  rank: number | null;
-  rating: number | null;
+  elo_rating: number | null;
+  matches_played: number | null;
+  wins: number | null;
+  losses: number | null;
+  draws: number | null;
   gender: string | null;
   age_group: string | null;
-  league_id?: string | null;
+  rank?: number; // Computed client-side
 };
 
 type LeagueRow = {
@@ -44,7 +46,7 @@ const AnimatedFlatList = Animated.createAnimatedComponent(
 );
 
 export default function RankingsTab() {
-  const [mode, setMode] = useState<"national" | "state" | "league">("national");
+  const [mode, setMode] = useState<"national" | "state">("national");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [genderFilter, setGenderFilter] = useState<string>("");
   const [ageGroupFilter, setAgeGroupFilter] = useState<string>("");
@@ -71,7 +73,7 @@ export default function RankingsTab() {
 
   useEffect(() => {
     void fetchRankings();
-  }, [mode, stateFilter, genderFilter, ageGroupFilter, selectedLeague]);
+  }, [mode, stateFilter, genderFilter, ageGroupFilter]);
 
   // Compute unique values from rankings data (filtering out "??")
   const uniqueGenders = useMemo(() => {
@@ -114,20 +116,26 @@ export default function RankingsTab() {
     setError(null);
 
     try {
-      let query = supabase.from("team_ranks").select("*");
+      let query = supabase.from("team_elo").select("*");
 
       if (mode === "state" && stateFilter)
         query = query.eq("state", stateFilter);
       if (genderFilter) query = query.eq("gender", genderFilter);
       if (ageGroupFilter) query = query.eq("age_group", ageGroupFilter);
-      if (mode === "league" && selectedLeague)
-        query = query.eq("league_id", selectedLeague);
 
-      const { data, error } = await query.order("rank", { ascending: true });
+      const { data, error } = await query
+        .order("elo_rating", { ascending: false })
+        .limit(200);
 
       if (error) throw error;
 
-      setRankings((data as TeamRankRow[]) || []);
+      // Add rank based on order
+      const rankedData = (data || []).map((team, index) => ({
+        ...team,
+        rank: index + 1,
+      }));
+
+      setRankings(rankedData as TeamRankRow[]);
     } catch (err: any) {
       console.error("Error fetching rankings:", err);
       setError(err.message || "Failed to load rankings");
@@ -139,15 +147,14 @@ export default function RankingsTab() {
   const filteredRankings = useMemo(() => {
     if (!searchQuery) return rankings;
     return rankings.filter((team) =>
-      team.name?.toLowerCase().includes(searchQuery.toLowerCase()),
+      team.team_name?.toLowerCase().includes(searchQuery.toLowerCase()),
     );
   }, [rankings, searchQuery]);
 
-  const handleModeChange = (newMode: "national" | "state" | "league") => {
+  const handleModeChange = (newMode: "national" | "state") => {
     setMode(newMode);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (newMode !== "state") setStateFilter("");
-    if (newMode !== "league") setSelectedLeague(null);
   };
 
   const handleSelectLeague = (league: LeagueRow) => {
@@ -161,7 +168,6 @@ export default function RankingsTab() {
     setStateFilter("");
     setGenderFilter("");
     setAgeGroupFilter("");
-    setSelectedLeague(null);
     setSearchQuery("");
   };
 
@@ -175,30 +181,35 @@ export default function RankingsTab() {
   };
 
   const hasFilters =
-    stateFilter !== "" ||
-    genderFilter !== "" ||
-    ageGroupFilter !== "" ||
-    selectedLeague !== null;
+    stateFilter !== "" || genderFilter !== "" || ageGroupFilter !== "";
 
   const renderTeamItem = ({ item }: { item: TeamRankRow }) => {
     const details = getTeamDetails(item);
+    const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
     return (
       <TouchableOpacity
         style={styles.teamItem}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push(`/team/${item.team_id}`);
+          // Use team name as identifier for now
         }}
       >
         <View style={styles.rankContainer}>
           <Text style={styles.rank}>{item.rank ?? "-"}</Text>
         </View>
         <View style={styles.teamInfo}>
-          <Text style={styles.teamName}>{item.name ?? "Unknown Team"}</Text>
+          <Text style={styles.teamName} numberOfLines={1}>
+            {item.team_name ?? "Unknown Team"}
+          </Text>
           {details ? <Text style={styles.teamDetails}>{details}</Text> : null}
+          <Text style={styles.recordText}>
+            {record} ({item.matches_played ?? 0} games)
+          </Text>
         </View>
         <View style={styles.ratingContainer}>
-          <Text style={styles.rating}>{item.rating?.toFixed(0) ?? "—"}</Text>
+          <Text style={styles.rating}>
+            {item.elo_rating?.toFixed(0) ?? "—"}
+          </Text>
           <Text style={styles.ratingLabel}>ELO</Text>
         </View>
       </TouchableOpacity>
@@ -257,9 +268,6 @@ export default function RankingsTab() {
           {renderChip("State", mode === "state", () =>
             handleModeChange("state"),
           )}
-          {renderChip("League", mode === "league", () =>
-            handleModeChange("league"),
-          )}
         </ScrollView>
 
         {/* State Filter (only when State mode) */}
@@ -280,30 +288,6 @@ export default function RankingsTab() {
               ))}
             </ScrollView>
           </>
-        )}
-
-        {/* League Selector (only when League mode) */}
-        {mode === "league" && (
-          <TouchableOpacity
-            style={[styles.baseChip, styles.leagueSelector]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setLeagueModalVisible(true);
-            }}
-          >
-            <Text style={styles.chipText}>
-              {selectedLeague
-                ? (leagues.find((l) => l.id === selectedLeague)?.name ??
-                  "Select League")
-                : "Select League"}
-            </Text>
-            <Ionicons
-              name="chevron-down"
-              size={16}
-              color="#fff"
-              style={{ marginLeft: 4 }}
-            />
-          </TouchableOpacity>
         )}
 
         {/* Gender Filter */}
@@ -398,7 +382,7 @@ export default function RankingsTab() {
         <AnimatedFlatList
           data={filteredRankings}
           renderItem={renderTeamItem}
-          keyExtractor={(item) => item.team_id}
+          keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={
             <Text style={styles.noDataText}>
@@ -592,6 +576,11 @@ const styles = StyleSheet.create({
   teamDetails: {
     color: "#9ca3af",
     fontSize: 13,
+    marginTop: 2,
+  },
+  recordText: {
+    color: "#6b7280",
+    fontSize: 12,
     marginTop: 2,
   },
   ratingContainer: {
