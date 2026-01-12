@@ -1,12 +1,14 @@
 /**
- * SoccerView — GotSport Ingestion (Expanded Coverage)
+ * SoccerView — GotSport Ingestion (Database-Driven)
+ * Pulls scrape targets from Supabase and ingests match data.
+ *
  * Run: node scripts/ingest_heartland.js
  *
- * To add more tournaments:
- * 1. Go to GotSport event page (e.g., https://system.gotsport.com/org_event/events/XXXXX/schedules)
- * 2. Click on different age groups/divisions
- * 3. Copy the URL - the "group" parameter is what we need
- * 4. Add to the TOURNAMENTS array below
+ * This script:
+ * 1. Fetches active scrape targets from scrape_targets table
+ * 2. Scrapes each URL for match data
+ * 3. Upserts matches to matches table
+ * 4. Updates last_scraped_at and match counts
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -14,104 +16,11 @@ import * as cheerio from "cheerio";
 import "dotenv/config";
 
 // ---------------------------
-// Tournament Configuration
+// Config
 // ---------------------------
 
-const TOURNAMENTS = [
-  // ============================================
-  // FLORIDA TOURNAMENTS
-  // ============================================
-
-  // Labor Day 2025 - Jacksonville, FL (Heartland Soccer)
-  {
-    event: 43745,
-    groups: [
-      380883, 380882, 422391, 380881, 380879, 419781, 380886, 380887, 421646,
-      380885, 419782, 380884, 419783,
-    ],
-    state: "FL",
-    name: "Labor Day 2025 Jacksonville",
-  },
-
-  // President's Day 2025 - Florida
-  {
-    event: 33224,
-    groups: [273676, 273678, 273680, 273682, 273684],
-    state: "FL",
-    name: "Presidents Day 2025 FL",
-  },
-
-  // ============================================
-  // TEXAS TOURNAMENTS
-  // ============================================
-
-  // Dallas Cup - Premier youth tournament
-  // Event IDs need to be found on GotSport for current year
-  // { event: XXXXX, groups: [...], state: "TX", name: "Dallas Cup 2025" },
-
-  // Labor Day Cup Texas
-  // { event: XXXXX, groups: [...], state: "TX", name: "Labor Day 2025 TX" },
-
-  // ============================================
-  // CALIFORNIA TOURNAMENTS
-  // ============================================
-
-  // Surf Cup - San Diego
-  // { event: XXXXX, groups: [...], state: "CA", name: "Surf Cup 2025" },
-
-  // State Cup California
-  // { event: XXXXX, groups: [...], state: "CA", name: "CA State Cup 2025" },
-
-  // ============================================
-  // MIDWEST TOURNAMENTS
-  // ============================================
-
-  // Missouri State Cup
-  // { event: XXXXX, groups: [...], state: "MO", name: "MO State Cup 2025" },
-
-  // Kansas City tournaments
-  // { event: XXXXX, groups: [...], state: "KS", name: "KC Classic 2025" },
-
-  // ============================================
-  // NORTHEAST TOURNAMENTS
-  // ============================================
-
-  // Jefferson Cup - Virginia (one of the largest)
-  // { event: XXXXX, groups: [...], state: "VA", name: "Jefferson Cup 2025" },
-
-  // Disney Showcase - Florida (attracts national teams)
-  // { event: XXXXX, groups: [...], state: "FL", name: "Disney Showcase 2025" },
-
-  // ============================================
-  // SOUTHEAST TOURNAMENTS
-  // ============================================
-
-  // Georgia tournaments
-  // { event: XXXXX, groups: [...], state: "GA", name: "GA State Cup 2025" },
-
-  // North Carolina tournaments
-  // { event: XXXXX, groups: [...], state: "NC", name: "NC State Cup 2025" },
-];
-
-// Build flat URL array from tournament config
-const URLS = [];
-for (const tournament of TOURNAMENTS) {
-  if (tournament.groups && tournament.groups.length > 0) {
-    for (const group of tournament.groups) {
-      URLS.push({
-        url: `https://system.gotsport.com/org_event/events/${tournament.event}/schedules?group=${group}`,
-        state: tournament.state,
-        tournamentName: tournament.name,
-      });
-    }
-  }
-}
-
-console.log(
-  `Configured ${URLS.length} group URLs from ${TOURNAMENTS.filter((t) => t.groups?.length > 0).length} tournaments`,
-);
-
 const DELAY_MS = 2000;
+const BATCH_SIZE = 50; // Process in batches to avoid timeouts
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -126,8 +35,140 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // ---------------------------
+// Fallback URLs (if no scrape_targets exist yet)
+// ---------------------------
+
+const FALLBACK_URLS = [
+  // Labor Day 2025 (Heartland) - Jacksonville, FL
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380883",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380882",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=422391",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380881",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380879",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=419781",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380886",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380887",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=421646",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380885",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=419782",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=380884",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/43745/schedules?group=419783",
+    state: "FL",
+  },
+  // President's Day 2025 - FL
+  {
+    url: "https://system.gotsport.com/org_event/events/33224/schedules?group=273676",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/33224/schedules?group=273678",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/33224/schedules?group=273680",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/33224/schedules?group=273682",
+    state: "FL",
+  },
+  {
+    url: "https://system.gotsport.com/org_event/events/33224/schedules?group=273684",
+    state: "FL",
+  },
+];
+
+// ---------------------------
 // Helpers
 // ---------------------------
+
+async function getScrapeTargets() {
+  /**
+   * Fetch active scrape targets from database.
+   * Falls back to hardcoded URLs if table is empty.
+   */
+  try {
+    const { data, error } = await supabase
+      .from("scrape_targets")
+      .select("id, url, state, age_group, gender, event_id, group_id")
+      .eq("is_active", true)
+      .order("last_scraped_at", { ascending: true, nullsFirst: true })
+      .limit(500);
+
+    if (error) {
+      console.warn("Error fetching scrape_targets:", error.message);
+      console.log("Using fallback URLs...");
+      return FALLBACK_URLS.map((u) => ({ ...u, id: null }));
+    }
+
+    if (!data || data.length === 0) {
+      console.log("No scrape targets in database, using fallback URLs...");
+      return FALLBACK_URLS.map((u) => ({ ...u, id: null }));
+    }
+
+    console.log(`Found ${data.length} active scrape targets in database`);
+    return data;
+  } catch (e) {
+    console.warn("Failed to query scrape_targets:", e.message);
+    return FALLBACK_URLS.map((u) => ({ ...u, id: null }));
+  }
+}
+
+async function updateScrapeTarget(targetId, matchCount) {
+  /**
+   * Update last_scraped_at and match count for a scrape target.
+   */
+  if (!targetId) return;
+
+  try {
+    await supabase
+      .from("scrape_targets")
+      .update({
+        last_scraped_at: new Date().toISOString(),
+        last_match_count: matchCount,
+      })
+      .eq("id", targetId);
+  } catch (e) {
+    console.warn(`Failed to update scrape target ${targetId}:`, e.message);
+  }
+}
 
 async function getSourceId(url) {
   const { data, error } = await supabase
@@ -290,22 +331,43 @@ function parseScores(scoreStr) {
 function inferGenderAndAge(groupName) {
   if (!groupName) return { gender: null, age_group: null };
   const lower = groupName.toLowerCase();
-  const gender =
+
+  // Gender detection
+  let gender = null;
+  if (
     lower.includes("boys") ||
     lower.includes(" b ") ||
-    lower.match(/\bb\d{2,4}\b/)
-      ? "Boys"
-      : lower.includes("girls") ||
-          lower.includes(" g ") ||
-          lower.match(/\bg\d{2,4}\b/)
-        ? "Girls"
-        : null;
+    /\bb\d{2,4}\b/.test(lower)
+  ) {
+    gender = "Boys";
+  } else if (
+    lower.includes("girls") ||
+    lower.includes(" g ") ||
+    /\bg\d{2,4}\b/.test(lower)
+  ) {
+    gender = "Girls";
+  }
+
+  // Age group detection
+  let age_group = null;
   const ageMatch = lower.match(/u(\d+)/);
-  const age_group = ageMatch ? `U${ageMatch[1]}` : null;
+  if (ageMatch) {
+    age_group = `U${ageMatch[1]}`;
+  } else {
+    // Birth year pattern (2010, 2011, etc.)
+    const yearMatch = lower.match(/\b(20[01]\d)\b/);
+    if (yearMatch) {
+      const birthYear = parseInt(yearMatch[1], 10);
+      const currentYear = new Date().getFullYear();
+      const age = currentYear - birthYear;
+      age_group = `U${age}`;
+    }
+  }
+
   return { gender, age_group };
 }
 
-async function upsertMatch(sourceId, m, tournamentState) {
+async function upsertMatch(sourceId, m, targetState) {
   if (!m.match_date) return { ok: false, reason: "missing_match_date" };
 
   const { error } = await supabase.from("matches").upsert(
@@ -422,68 +484,83 @@ async function parsePage(url) {
 // ---------------------------
 
 async function main() {
-  console.log("=== SoccerView GotSport Ingestion (Expanded) ===");
-  console.log(`Processing ${URLS.length} group URLs...\n`);
+  console.log("=== SoccerView GotSport Ingestion (Database-Driven) ===");
+  console.log(`Started at: ${new Date().toISOString()}\n`);
+
+  // Fetch scrape targets
+  const targets = await getScrapeTargets();
+  console.log(`Processing ${targets.length} URLs...\n`);
 
   let ok = 0;
   let skipped = 0;
   let errors = 0;
   const stateCounts = {};
 
-  for (const urlConfig of URLS) {
-    const { url, state, tournamentName } = urlConfig;
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    const { url, state, id: targetId } = target;
 
     try {
       await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
 
-      console.log(`[FETCHING] ${tournamentName} (${state})`);
-      console.log(`  ${url}`);
+      console.log(
+        `[${i + 1}/${targets.length}] Fetching: ${url.substring(0, 80)}...`,
+      );
       const sourceId = await getSourceId(url);
 
       const matches = await parsePage(url);
       const uniqueMatches = Array.from(
         new Map(matches.map((m) => [m.match_id, m])).values(),
       );
-      console.log(`  [PARSED] ${uniqueMatches.length} unique matches`);
+      console.log(`  Parsed ${uniqueMatches.length} unique matches`);
 
-      if (uniqueMatches.length > 0) {
-        const first = uniqueMatches[0];
-        console.log(
-          `  [SAMPLE] ID:${first.match_id}, Date:${first.match_date || "NULL"}, ${first.home_team?.substring(0, 30)}...`,
-        );
-      }
-
+      let targetOk = 0;
       for (const m of uniqueMatches) {
         const r = await upsertMatch(sourceId, m, state);
         if (r.ok) {
           ok++;
-          stateCounts[state] = (stateCounts[state] || 0) + 1;
+          targetOk++;
+          if (state) {
+            stateCounts[state] = (stateCounts[state] || 0) + 1;
+          }
         } else if (r.reason === "missing_match_date") {
           skipped++;
         } else {
           errors++;
-          console.error(
-            `  [UPSERT ERROR] Match ${m.match_id}:`,
-            r.error?.message || r.error,
-          );
+          if (errors <= 5) {
+            console.error(
+              `  [ERROR] Match ${m.match_id}:`,
+              r.error?.message || r.error,
+            );
+          }
         }
       }
+
+      // Update scrape target with results
+      await updateScrapeTarget(targetId, targetOk);
     } catch (e) {
       errors++;
       console.error(`[URL ERROR] ${url}:`, e.message);
     }
   }
 
-  console.log("\n=== Summary ===");
+  console.log("\n" + "=".repeat(50));
+  console.log("SUMMARY");
+  console.log("=".repeat(50));
   console.log(`Total upserted: ${ok}`);
   console.log(`Skipped (missing date): ${skipped}`);
   console.log(`Errors: ${errors}`);
-  console.log("\nMatches by state:");
-  for (const [state, count] of Object.entries(stateCounts).sort(
-    (a, b) => b[1] - a[1],
-  )) {
-    console.log(`  ${state}: ${count}`);
+
+  if (Object.keys(stateCounts).length > 0) {
+    console.log("\nMatches by state:");
+    for (const [st, count] of Object.entries(stateCounts).sort(
+      (a, b) => b[1] - a[1],
+    )) {
+      console.log(`  ${st}: ${count}`);
+    }
   }
+
+  console.log(`\nCompleted at: ${new Date().toISOString()}`);
 }
 
 main().catch((e) => {
