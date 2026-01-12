@@ -16,21 +16,25 @@ import { supabase } from "../../lib/supabase";
 
 type MatchRow = {
   id: string;
-  home_team: { name: string | null } | null;
-  away_team: { name: string | null } | null;
+  home_team: string | null;
+  away_team: string | null;
   home_score: number | null;
   away_score: number | null;
-  match_time: string | null;
-  competition: { name: string | null } | null;
+  match_date: string | null;
+  location: string | null;
 };
 
-type TeamResolvedRow = {
+type TeamEloRow = {
   id: string;
-  name: string | null;
+  team_name: string | null;
+  elo_rating: number | null;
+  matches_played: number | null;
+  wins: number | null;
+  losses: number | null;
+  draws: number | null;
+  state: string | null;
   gender: string | null;
   age_group: string | null;
-  state: string | null;
-  team_ranks_daily: { rating: number | null }[] | null;
 };
 
 type StatsData = {
@@ -52,7 +56,7 @@ function formatDate(isoDate: string | null): string {
 }
 
 function scoreText(home: number | null, away: number | null): string {
-  if (home === null || away === null) return "-";
+  if (home === null || away === null) return "vs";
   return `${home} - ${away}`;
 }
 
@@ -70,7 +74,7 @@ export default function HomeScreen() {
     totalCompetitions: 0,
   });
   const [recentMatches, setRecentMatches] = useState<MatchRow[]>([]);
-  const [featuredTeams, setFeaturedTeams] = useState<TeamResolvedRow[]>([]);
+  const [featuredTeams, setFeaturedTeams] = useState<TeamEloRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,9 +82,9 @@ export default function HomeScreen() {
     try {
       setError(null);
 
-      // Fetch stats via direct COUNT queries (more robust than RPC)
+      // Fetch stats - use team_elo for accurate team count
       const [teamsCount, matchesCount, competitionsCount] = await Promise.all([
-        supabase.from("teams").select("id", { count: "exact", head: true }),
+        supabase.from("team_elo").select("id", { count: "exact", head: true }),
         supabase.from("matches").select("id", { count: "exact", head: true }),
         supabase
           .from("competitions")
@@ -93,35 +97,34 @@ export default function HomeScreen() {
         totalCompetitions: competitionsCount.count ?? 0,
       });
 
-      // Fetch recent matches with relational joins
+      // Fetch recent matches - use text columns directly (no joins)
       const { data: matchesData, error: matchesError } = await supabase
         .from("matches")
         .select(
-          "id, home_team:home_team_id (name), away_team:away_team_id (name), home_score, away_score, match_time, competition:competition_id (name)",
+          "id, home_team, away_team, home_score, away_score, match_date, location",
         )
-        .order("match_time", { ascending: false, nullsFirst: false })
+        .not("home_score", "is", null)
+        .order("match_date", { ascending: false, nullsFirst: false })
         .limit(5);
 
       if (matchesError) {
         console.error("Matches error:", matchesError);
       }
-      setRecentMatches((matchesData as unknown as MatchRow[]) ?? []);
+      setRecentMatches((matchesData as MatchRow[]) ?? []);
 
-      // Fetch featured teams with rankings
+      // Fetch featured teams from team_elo (top rated)
       const { data: teamsData, error: teamsError } = await supabase
-        .from("teams")
-        .select("id, name, gender, age_group, state, team_ranks_daily(rating)")
-        .order("rating", {
-          ascending: false,
-          nullsFirst: false,
-          foreignTable: "team_ranks_daily",
-        })
-        .limit(5);
+        .from("team_elo")
+        .select(
+          "id, team_name, elo_rating, matches_played, wins, losses, draws, state, gender, age_group",
+        )
+        .order("elo_rating", { ascending: false })
+        .limit(10);
 
       if (teamsError) {
         console.error("Teams error:", teamsError);
       }
-      setFeaturedTeams((teamsData as unknown as TeamResolvedRow[]) ?? []);
+      setFeaturedTeams((teamsData as TeamEloRow[]) ?? []);
     } catch (err) {
       console.error("Error fetching home data:", err);
       setError("Failed to load data. Pull to refresh.");
@@ -138,18 +141,17 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Build match meta string (score and date)
-  const getMatchMeta = (item: MatchRow): string => {
+  // Build match location string
+  const getMatchLocation = (item: MatchRow): string => {
     const parts: string[] = [];
-    const score = scoreText(item.home_score, item.away_score);
-    if (score !== "-") parts.push(score);
-    const date = formatDate(item.match_time);
+    const date = formatDate(item.match_date);
     if (date) parts.push(date);
+    if (item.location) parts.push(item.location);
     return parts.length > 0 ? parts.join(" · ") : "";
   };
 
   // Build team meta string (state, gender, age)
-  const getTeamMeta = (item: TeamResolvedRow): string => {
+  const getTeamMeta = (item: TeamEloRow): string => {
     const parts: string[] = [];
     if (isValidValue(item.state)) parts.push(item.state!);
     if (isValidValue(item.gender)) parts.push(item.gender!);
@@ -157,20 +159,9 @@ export default function HomeScreen() {
     return parts.join(" · ");
   };
 
-  // Get team rating from nested array
-  const getTeamRating = (item: TeamResolvedRow): number => {
-    if (
-      Array.isArray(item.team_ranks_daily) &&
-      item.team_ranks_daily.length > 0
-    ) {
-      return item.team_ranks_daily[0]?.rating ?? 1500;
-    }
-    return 1500;
-  };
-
   const renderMatch = ({ item }: { item: MatchRow }) => {
-    const competitionName = item.competition?.name;
-    const meta = getMatchMeta(item);
+    const locationStr = getMatchLocation(item);
+    const score = scoreText(item.home_score, item.away_score);
 
     return (
       <TouchableOpacity
@@ -180,32 +171,38 @@ export default function HomeScreen() {
           router.push(`/match/${item.id}`);
         }}
       >
-        {competitionName ? (
-          <Text style={styles.leagueName}>{competitionName}</Text>
+        {locationStr ? (
+          <Text style={styles.locationText}>{locationStr}</Text>
         ) : null}
-        <Text style={styles.teamName}>
-          {item.home_team?.name ?? "Home"} vs. {item.away_team?.name ?? "Away"}
+        <Text style={styles.teamName} numberOfLines={1}>
+          {item.home_team ?? "Home Team"}
         </Text>
-        {meta ? <Text style={styles.matchMeta}>{meta}</Text> : null}
+        <Text style={styles.vsText}>vs {item.away_team ?? "Away Team"}</Text>
+        <Text style={styles.scoreText}>{score}</Text>
       </TouchableOpacity>
     );
   };
 
-  const renderFeaturedTeam = ({ item }: { item: TeamResolvedRow }) => {
+  const renderFeaturedTeam = ({ item }: { item: TeamEloRow }) => {
     const meta = getTeamMeta(item);
-    const rating = getTeamRating(item);
+    const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
 
     return (
       <TouchableOpacity
         style={styles.featuredCard}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push(`/team/${item.id}`);
+          // Future: navigate to team detail
         }}
       >
-        <Text style={styles.teamName}>{item.name ?? "Unknown Team"}</Text>
-        {meta ? <Text style={styles.matchMeta}>{meta}</Text> : null}
-        <Text style={styles.ratingText}>ELO: {rating}</Text>
+        <Text style={styles.featuredTeamName} numberOfLines={2}>
+          {item.team_name ?? "Unknown Team"}
+        </Text>
+        {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
+        <Text style={styles.recordText}>{record}</Text>
+        <Text style={styles.ratingText}>
+          {Math.round(item.elo_rating ?? 1500)} ELO
+        </Text>
       </TouchableOpacity>
     );
   };
@@ -242,11 +239,15 @@ export default function HomeScreen() {
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
           <Ionicons name="people" size={24} color="#3B82F6" />
-          <Text style={styles.statText}>{stats.totalTeams} Teams</Text>
+          <Text style={styles.statText}>
+            {stats.totalTeams.toLocaleString()} Teams
+          </Text>
         </View>
         <View style={styles.statCard}>
           <Ionicons name="trophy" size={24} color="#3B82F6" />
-          <Text style={styles.statText}>{stats.totalMatches} Matches</Text>
+          <Text style={styles.statText}>
+            {stats.totalMatches.toLocaleString()} Matches
+          </Text>
         </View>
         <View style={styles.statCard}>
           <Ionicons name="bar-chart" size={24} color="#3B82F6" />
@@ -269,7 +270,7 @@ export default function HomeScreen() {
         <Text style={styles.noDataText}>No recent matches available</Text>
       )}
 
-      <Text style={styles.sectionHeader}>Featured Teams</Text>
+      <Text style={styles.sectionHeader}>Top Ranked Teams</Text>
       {featuredTeams.length > 0 ? (
         <FlatList
           data={featuredTeams}
@@ -346,27 +347,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  leagueName: {
+  locationText: {
     color: "#6b7280",
     fontSize: 12,
-    marginBottom: 6,
+    marginBottom: 8,
     fontWeight: "500",
   },
   teamName: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
   },
-  matchMeta: {
+  vsText: {
     color: "#9ca3af",
-    fontSize: 13,
-    marginTop: 6,
+    fontSize: 14,
+    marginTop: 4,
   },
-  ratingText: {
+  scoreText: {
     color: "#3B82F6",
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 6,
+    fontSize: 20,
+    fontWeight: "bold",
+    marginTop: 8,
   },
   featuredCard: {
     width: 200,
@@ -375,6 +376,28 @@ const styles = StyleSheet.create({
     backgroundColor: "#111",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
+  },
+  featuredTeamName: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  teamMeta: {
+    color: "#9ca3af",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  recordText: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginTop: 6,
+  },
+  ratingText: {
+    color: "#3B82F6",
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 4,
   },
   noDataText: {
     color: "#6b7280",

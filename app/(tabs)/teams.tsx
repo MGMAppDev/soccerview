@@ -1,5 +1,4 @@
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,21 +15,23 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
-type TeamResolvedRow = {
-  id: string | null;
-  team_id: string;
-  name: string | null;
+type TeamEloRow = {
+  id: string;
+  team_name: string | null;
+  elo_rating: number | null;
+  matches_played: number | null;
+  wins: number | null;
+  losses: number | null;
+  draws: number | null;
+  state: string | null;
   gender: string | null;
   age_group: string | null;
-  state: string | null;
 };
 
-const AnimatedFlatList = Animated.createAnimatedComponent(
-  FlatList<TeamResolvedRow>,
-);
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<TeamEloRow>);
 
 export default function TeamsTab() {
-  const [teams, setTeams] = useState<TeamResolvedRow[]>([]);
+  const [teams, setTeams] = useState<TeamEloRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,7 +76,7 @@ export default function TeamsTab() {
     return !!v && v.trim().length > 0 && v.trim() !== "??";
   };
 
-  // Compute unique values client-side from fetched teams (no RPC needed)
+  // Compute unique values client-side from fetched teams
   const uniqueGenders = useMemo(() => {
     const values = teams.map((t) => t.gender?.trim()).filter(isValidValue);
     return [...new Set(values)].sort();
@@ -83,7 +84,7 @@ export default function TeamsTab() {
 
   const uniqueAges = useMemo(() => {
     const values = teams.map((t) => t.age_group?.trim()).filter(isValidValue);
-    // Sort age groups numerically (U13, U14, U15, etc.)
+    // Sort age groups numerically (U9, U10, U11, etc.)
     return [...new Set(values)].sort((a, b) => {
       const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
       const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
@@ -101,24 +102,17 @@ export default function TeamsTab() {
       setLoading(true);
       setError(null);
 
+      // Query team_elo table (has all 4,224 ranked teams)
       const { data, error } = await supabase
-        .from("teams")
-        .select("id, name, gender, age_group, state")
-        .order("name", { ascending: true });
+        .from("team_elo")
+        .select(
+          "id, team_name, elo_rating, matches_played, wins, losses, draws, state, gender, age_group",
+        )
+        .order("team_name", { ascending: true });
 
       if (error) throw error;
 
-      // Normalize the data: use id as team_id, trim whitespace from string fields
-      const normalized: TeamResolvedRow[] = (data || []).map((row) => ({
-        id: row.id,
-        team_id: row.id,
-        name: row.name?.trim() || null,
-        gender: row.gender?.trim() || null,
-        age_group: row.age_group?.trim() || null,
-        state: row.state?.trim() || null,
-      }));
-
-      setTeams(normalized);
+      setTeams((data as TeamEloRow[]) || []);
     } catch (err) {
       console.error("Error fetching teams:", err);
       setError("Failed to load teams. Pull to refresh.");
@@ -153,7 +147,8 @@ export default function TeamsTab() {
     return teams.filter((team) => {
       const nameMatch =
         !searchQuery ||
-        (team.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+        (team.team_name?.toLowerCase().includes(searchQuery.toLowerCase()) ??
+          false);
 
       const genderMatch =
         selectedGenders.length === 0 ||
@@ -189,27 +184,43 @@ export default function TeamsTab() {
     selectedStates,
   ]);
 
-  // Build display string for team metadata (excludes "??" placeholder values)
-  const getTeamMeta = (team: TeamResolvedRow): string => {
+  // Build display string for team metadata
+  const getTeamMeta = (team: TeamEloRow): string => {
     const parts: string[] = [];
-    if (team.state && team.state !== "??") parts.push(team.state);
-    if (team.gender && team.gender !== "??") parts.push(team.gender);
-    if (team.age_group && team.age_group !== "??") parts.push(team.age_group);
+    if (isValidValue(team.state)) parts.push(team.state);
+    if (isValidValue(team.gender)) parts.push(team.gender);
+    if (isValidValue(team.age_group)) parts.push(team.age_group);
     return parts.length > 0 ? parts.join(" · ") : "";
   };
 
-  const renderTeam = ({ item }: { item: TeamResolvedRow }) => {
+  const renderTeam = ({ item }: { item: TeamEloRow }) => {
     const meta = getTeamMeta(item);
+    const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
+    const elo = Math.round(item.elo_rating ?? 1500);
+
     return (
       <TouchableOpacity
         style={styles.teamItem}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push(`/team/${item.team_id}`);
+          // Future: navigate to team detail
         }}
       >
-        <Text style={styles.teamName}>{item.name ?? "Unknown Team"}</Text>
-        {meta ? <Text style={styles.matchMeta}>{meta}</Text> : null}
+        <View style={styles.teamRow}>
+          <View style={styles.teamInfo}>
+            <Text style={styles.teamName} numberOfLines={1}>
+              {item.team_name ?? "Unknown Team"}
+            </Text>
+            {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
+            <Text style={styles.recordText}>
+              {record} ({item.matches_played ?? 0} games)
+            </Text>
+          </View>
+          <View style={styles.eloContainer}>
+            <Text style={styles.eloRating}>{elo}</Text>
+            <Text style={styles.eloLabel}>ELO</Text>
+          </View>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -347,8 +358,8 @@ export default function TeamsTab() {
       {/* Results count */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
-          {filteredTeams.length} {filteredTeams.length === 1 ? "team" : "teams"}{" "}
-          found
+          {filteredTeams.length.toLocaleString()}{" "}
+          {filteredTeams.length === 1 ? "team" : "teams"} found
         </Text>
       </View>
     </Animated.View>
@@ -386,7 +397,7 @@ export default function TeamsTab() {
         <AnimatedFlatList
           data={filteredTeams}
           renderItem={renderTeam}
-          keyExtractor={(item) => item.team_id}
+          keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
           contentContainerStyle={styles.listContent}
           onScroll={Animated.event(
@@ -395,6 +406,9 @@ export default function TeamsTab() {
           )}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={20}
+          maxToRenderPerBatch={30}
+          windowSize={10}
         />
       )}
     </SafeAreaView>
@@ -506,15 +520,43 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
+  teamRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  teamInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
   teamName: {
     color: "#fff",
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "600",
   },
-  matchMeta: {
+  teamMeta: {
     color: "#9ca3af",
     fontSize: 13,
     marginTop: 4,
+  },
+  recordText: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  eloContainer: {
+    alignItems: "center",
+    minWidth: 60,
+  },
+  eloRating: {
+    color: "#3B82F6",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  eloLabel: {
+    color: "#6b7280",
+    fontSize: 11,
+    marginTop: 2,
   },
   centered: {
     flex: 1,

@@ -131,7 +131,7 @@ export default function MatchesScreen() {
           .from("matches")
           .select("*")
           .order("match_date", { ascending: false, nullsFirst: false })
-          .limit(200);
+          .limit(1000);
 
         const now = new Date();
         const nowStr = now.toISOString().split("T")[0];

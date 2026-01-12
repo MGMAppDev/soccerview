@@ -367,7 +367,7 @@ function inferGenderAndAge(groupName) {
   return { gender, age_group };
 }
 
-async function upsertMatch(sourceId, m, targetState) {
+async function upsertMatch(sourceId, m, targetState, sourceUrl) {
   if (!m.match_date) return { ok: false, reason: "missing_match_date" };
 
   const { error } = await supabase.from("matches").upsert(
@@ -384,6 +384,8 @@ async function upsertMatch(sourceId, m, targetState) {
       gender: m.gender,
       age_group: m.age_group,
       source_id: sourceId,
+      source_url: sourceUrl,
+      state: targetState,
     },
     { onConflict: "match_id" },
   );
@@ -516,7 +518,7 @@ async function main() {
 
       let targetOk = 0;
       for (const m of uniqueMatches) {
-        const r = await upsertMatch(sourceId, m, state);
+        const r = await upsertMatch(sourceId, m, state, url);
         if (r.ok) {
           ok++;
           targetOk++;

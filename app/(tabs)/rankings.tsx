@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -28,15 +27,10 @@ type TeamRankRow = {
   draws: number | null;
   gender: string | null;
   age_group: string | null;
-  rank?: number; // Computed client-side
+  rank?: number;
 };
 
-type LeagueRow = {
-  id: string;
-  name: string | null;
-};
-
-// Helper to check if a value is valid (not null, empty, or "??")
+// Helper to check if a value is valid
 function isValidValue(v: string | null | undefined): boolean {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
 }
@@ -50,65 +44,76 @@ export default function RankingsTab() {
   const [stateFilter, setStateFilter] = useState<string>("");
   const [genderFilter, setGenderFilter] = useState<string>("");
   const [ageGroupFilter, setAgeGroupFilter] = useState<string>("");
-  const [leagueModalVisible, setLeagueModalVisible] = useState(false);
-  const [leagues, setLeagues] = useState<LeagueRow[]>([]);
-  const [selectedLeague, setSelectedLeague] = useState<string | null>(null);
   const [rankings, setRankings] = useState<TeamRankRow[]>([]);
+  const [allStates, setAllStates] = useState<string[]>([]);
+  const [allGenders, setAllGenders] = useState<string[]>([]);
+  const [allAgeGroups, setAllAgeGroups] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const [scrollY] = useState(new Animated.Value(0));
 
-  // Fade filters as user scrolls down
   const filtersOpacity = scrollY.interpolate({
     inputRange: [0, 150],
     outputRange: [1, 0],
     extrapolate: "clamp",
   });
 
+  // Fetch all unique filter values on mount
   useEffect(() => {
-    void fetchLeagues();
+    void fetchFilterOptions();
   }, []);
 
   useEffect(() => {
     void fetchRankings();
   }, [mode, stateFilter, genderFilter, ageGroupFilter]);
 
-  // Compute unique values from rankings data (filtering out "??")
-  const uniqueGenders = useMemo(() => {
-    const values = rankings.map((t) => t.gender?.trim()).filter(isValidValue);
-    return [...new Set(values)].sort() as string[];
-  }, [rankings]);
+  const fetchFilterOptions = async () => {
+    try {
+      // Fetch all unique states
+      const { data: stateData } = await supabase
+        .from("team_elo")
+        .select("state")
+        .not("state", "is", null);
 
-  const uniqueAges = useMemo(() => {
-    const values = rankings
-      .map((t) => t.age_group?.trim())
-      .filter(isValidValue);
-    return [...new Set(values)].sort((a, b) => {
-      const numA = parseInt(a?.replace(/\D/g, "") || "0", 10);
-      const numB = parseInt(b?.replace(/\D/g, "") || "0", 10);
-      return numA - numB;
-    }) as string[];
-  }, [rankings]);
+      const states = [
+        ...new Set((stateData || []).map((r) => r.state).filter(isValidValue)),
+      ].sort();
+      setAllStates(states as string[]);
 
-  const uniqueStates = useMemo(() => {
-    const values = rankings.map((t) => t.state?.trim()).filter(isValidValue);
-    return [...new Set(values)].sort() as string[];
-  }, [rankings]);
+      // Fetch all unique genders
+      const { data: genderData } = await supabase
+        .from("team_elo")
+        .select("gender")
+        .not("gender", "is", null);
 
-  const fetchLeagues = async () => {
-    const { data, error } = await supabase
-      .from("leagues")
-      .select("id, name")
-      .order("name");
+      const genders = [
+        ...new Set(
+          (genderData || []).map((r) => r.gender).filter(isValidValue),
+        ),
+      ].sort();
+      setAllGenders(genders as string[]);
 
-    if (error) {
-      console.error("Error fetching leagues:", error);
-      return;
+      // Fetch all unique age groups
+      const { data: ageData } = await supabase
+        .from("team_elo")
+        .select("age_group")
+        .not("age_group", "is", null);
+
+      const ages = [
+        ...new Set(
+          (ageData || []).map((r) => r.age_group).filter(isValidValue),
+        ),
+      ].sort((a, b) => {
+        const numA = parseInt(a?.replace(/\D/g, "") || "0", 10);
+        const numB = parseInt(b?.replace(/\D/g, "") || "0", 10);
+        return numA - numB;
+      });
+      setAllAgeGroups(ages as string[]);
+    } catch (err) {
+      console.error("Error fetching filter options:", err);
     }
-
-    setLeagues((data as LeagueRow[]) || []);
   };
 
   const fetchRankings = async () => {
@@ -125,11 +130,10 @@ export default function RankingsTab() {
 
       const { data, error } = await query
         .order("elo_rating", { ascending: false })
-        .limit(200);
+        .limit(500);
 
       if (error) throw error;
 
-      // Add rank based on order
       const rankedData = (data || []).map((team, index) => ({
         ...team,
         rank: index + 1,
@@ -157,12 +161,6 @@ export default function RankingsTab() {
     if (newMode !== "state") setStateFilter("");
   };
 
-  const handleSelectLeague = (league: LeagueRow) => {
-    setSelectedLeague(league.id);
-    setLeagueModalVisible(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  };
-
   const clearFilters = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setStateFilter("");
@@ -171,7 +169,6 @@ export default function RankingsTab() {
     setSearchQuery("");
   };
 
-  // Build team details string (filters out "??" values)
   const getTeamDetails = (item: TeamRankRow): string => {
     const parts: string[] = [];
     if (isValidValue(item.state)) parts.push(item.state!);
@@ -191,7 +188,6 @@ export default function RankingsTab() {
         style={styles.teamItem}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          // Use team name as identifier for now
         }}
       >
         <View style={styles.rankContainer}>
@@ -234,7 +230,6 @@ export default function RankingsTab() {
     </TouchableOpacity>
   );
 
-  // ListHeaderComponent: contains all filters (scrolls with list)
   const ListHeader = () => (
     <Animated.View style={{ opacity: filtersOpacity }}>
       <View style={styles.filtersContainer}>
@@ -271,7 +266,7 @@ export default function RankingsTab() {
         </ScrollView>
 
         {/* State Filter (only when State mode) */}
-        {mode === "state" && uniqueStates.length > 0 && (
+        {mode === "state" && allStates.length > 0 && (
           <>
             <Text style={styles.sectionHeader}>State</Text>
             <ScrollView
@@ -279,7 +274,7 @@ export default function RankingsTab() {
               showsHorizontalScrollIndicator={false}
               style={styles.chipScroll}
             >
-              {uniqueStates.map((state) => (
+              {allStates.map((state) => (
                 <View key={state}>
                   {renderChip(state, stateFilter === state, () =>
                     setStateFilter(stateFilter === state ? "" : state),
@@ -291,46 +286,37 @@ export default function RankingsTab() {
         )}
 
         {/* Gender Filter */}
-        {uniqueGenders.length > 0 && (
-          <>
-            <Text style={styles.sectionHeader}>Gender</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipScroll}
-            >
-              {uniqueGenders.map((gender) => (
-                <View key={gender}>
-                  {renderChip(gender, genderFilter === gender, () =>
-                    setGenderFilter(genderFilter === gender ? "" : gender),
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-          </>
-        )}
+        <Text style={styles.sectionHeader}>Gender</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipScroll}
+        >
+          {allGenders.map((gender) => (
+            <View key={gender}>
+              {renderChip(gender, genderFilter === gender, () =>
+                setGenderFilter(genderFilter === gender ? "" : gender),
+              )}
+            </View>
+          ))}
+        </ScrollView>
 
         {/* Age Group Filter */}
-        {uniqueAges.length > 0 && (
-          <>
-            <Text style={styles.sectionHeader}>Age Group</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipScroll}
-            >
-              {uniqueAges.map((age) => (
-                <View key={age}>
-                  {renderChip(age, ageGroupFilter === age, () =>
-                    setAgeGroupFilter(ageGroupFilter === age ? "" : age),
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-          </>
-        )}
+        <Text style={styles.sectionHeader}>Age Group</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipScroll}
+        >
+          {allAgeGroups.map((age) => (
+            <View key={age}>
+              {renderChip(age, ageGroupFilter === age, () =>
+                setAgeGroupFilter(ageGroupFilter === age ? "" : age),
+              )}
+            </View>
+          ))}
+        </ScrollView>
 
-        {/* Clear Filters */}
         {hasFilters && (
           <TouchableOpacity style={styles.clearChip} onPress={clearFilters}>
             <Text style={styles.chipText}>Clear Filters</Text>
@@ -341,8 +327,7 @@ export default function RankingsTab() {
       {/* Results count */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
-          {filteredRankings.length}{" "}
-          {filteredRankings.length === 1 ? "team" : "teams"} ranked
+          {filteredRankings.length} teams ranked
         </Text>
       </View>
     </Animated.View>
@@ -366,7 +351,6 @@ export default function RankingsTab() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Static Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Rankings</Text>
         <Text style={styles.subtitle}>
@@ -396,48 +380,10 @@ export default function RankingsTab() {
           )}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={20}
+          maxToRenderPerBatch={30}
         />
       )}
-
-      {/* League Selection Modal */}
-      <Modal
-        visible={leagueModalVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setLeagueModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setLeagueModalVisible(false)}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select League</Text>
-              <TouchableOpacity onPress={() => setLeagueModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={leagues}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.leagueRow}
-                  onPress={() => handleSelectLeague(item)}
-                >
-                  <Text style={styles.leagueRowText}>
-                    {item.name ?? "Unknown League"}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              keyExtractor={(item) => item.id}
-              ListEmptyComponent={
-                <Text style={styles.noDataText}>No leagues available</Text>
-              }
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -510,10 +456,6 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     marginTop: 4,
     marginBottom: 8,
-  },
-  leagueSelector: {
-    marginBottom: 12,
-    alignSelf: "flex-start",
   },
   searchContainer: {
     flexDirection: "row",
@@ -624,40 +566,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 20,
     fontStyle: "italic",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-  },
-  modalContent: {
-    backgroundColor: "#1F2937",
-    borderRadius: 16,
-    padding: 16,
-    maxHeight: "70%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-  modalTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  leagueRow: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
-  },
-  leagueRowText: {
-    color: "#fff",
-    fontSize: 15,
   },
 });
