@@ -1,6 +1,12 @@
 /**
- * SoccerView — GotSport ingestion (Supabase JS)
+ * SoccerView — GotSport Ingestion (Expanded Coverage)
  * Run: node scripts/ingest_heartland.js
+ *
+ * To add more tournaments:
+ * 1. Go to GotSport event page (e.g., https://system.gotsport.com/org_event/events/XXXXX/schedules)
+ * 2. Click on different age groups/divisions
+ * 3. Copy the URL - the "group" parameter is what we need
+ * 4. Add to the TOURNAMENTS array below
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -8,31 +14,102 @@ import * as cheerio from "cheerio";
 import "dotenv/config";
 
 // ---------------------------
-// Config
+// Tournament Configuration
 // ---------------------------
 
-const URLS = [
-  // Labor Day 2025 (Heartland)
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380883",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380882",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=422391",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380881",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380879",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=419781",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380886",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380887",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=421646",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380885",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=419782",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380884",
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=419783",
-  // President's Day 2025
-  "https://system.gotsport.com/org_event/events/33224/schedules?group=273676",
-  "https://system.gotsport.com/org_event/events/33224/schedules?group=273678",
-  "https://system.gotsport.com/org_event/events/33224/schedules?group=273680",
-  "https://system.gotsport.com/org_event/events/33224/schedules?group=273682",
-  "https://system.gotsport.com/org_event/events/33224/schedules?group=273684",
+const TOURNAMENTS = [
+  // ============================================
+  // FLORIDA TOURNAMENTS
+  // ============================================
+
+  // Labor Day 2025 - Jacksonville, FL (Heartland Soccer)
+  {
+    event: 43745,
+    groups: [
+      380883, 380882, 422391, 380881, 380879, 419781, 380886, 380887, 421646,
+      380885, 419782, 380884, 419783,
+    ],
+    state: "FL",
+    name: "Labor Day 2025 Jacksonville",
+  },
+
+  // President's Day 2025 - Florida
+  {
+    event: 33224,
+    groups: [273676, 273678, 273680, 273682, 273684],
+    state: "FL",
+    name: "Presidents Day 2025 FL",
+  },
+
+  // ============================================
+  // TEXAS TOURNAMENTS
+  // ============================================
+
+  // Dallas Cup - Premier youth tournament
+  // Event IDs need to be found on GotSport for current year
+  // { event: XXXXX, groups: [...], state: "TX", name: "Dallas Cup 2025" },
+
+  // Labor Day Cup Texas
+  // { event: XXXXX, groups: [...], state: "TX", name: "Labor Day 2025 TX" },
+
+  // ============================================
+  // CALIFORNIA TOURNAMENTS
+  // ============================================
+
+  // Surf Cup - San Diego
+  // { event: XXXXX, groups: [...], state: "CA", name: "Surf Cup 2025" },
+
+  // State Cup California
+  // { event: XXXXX, groups: [...], state: "CA", name: "CA State Cup 2025" },
+
+  // ============================================
+  // MIDWEST TOURNAMENTS
+  // ============================================
+
+  // Missouri State Cup
+  // { event: XXXXX, groups: [...], state: "MO", name: "MO State Cup 2025" },
+
+  // Kansas City tournaments
+  // { event: XXXXX, groups: [...], state: "KS", name: "KC Classic 2025" },
+
+  // ============================================
+  // NORTHEAST TOURNAMENTS
+  // ============================================
+
+  // Jefferson Cup - Virginia (one of the largest)
+  // { event: XXXXX, groups: [...], state: "VA", name: "Jefferson Cup 2025" },
+
+  // Disney Showcase - Florida (attracts national teams)
+  // { event: XXXXX, groups: [...], state: "FL", name: "Disney Showcase 2025" },
+
+  // ============================================
+  // SOUTHEAST TOURNAMENTS
+  // ============================================
+
+  // Georgia tournaments
+  // { event: XXXXX, groups: [...], state: "GA", name: "GA State Cup 2025" },
+
+  // North Carolina tournaments
+  // { event: XXXXX, groups: [...], state: "NC", name: "NC State Cup 2025" },
 ];
+
+// Build flat URL array from tournament config
+const URLS = [];
+for (const tournament of TOURNAMENTS) {
+  if (tournament.groups && tournament.groups.length > 0) {
+    for (const group of tournament.groups) {
+      URLS.push({
+        url: `https://system.gotsport.com/org_event/events/${tournament.event}/schedules?group=${group}`,
+        state: tournament.state,
+        tournamentName: tournament.name,
+      });
+    }
+  }
+}
+
+console.log(
+  `Configured ${URLS.length} group URLs from ${TOURNAMENTS.filter((t) => t.groups?.length > 0).length} tournaments`,
+);
 
 const DELAY_MS = 2000;
 
@@ -213,17 +290,22 @@ function parseScores(scoreStr) {
 function inferGenderAndAge(groupName) {
   if (!groupName) return { gender: null, age_group: null };
   const lower = groupName.toLowerCase();
-  const gender = lower.includes("boys")
-    ? "Boys"
-    : lower.includes("girls")
-      ? "Girls"
-      : null;
+  const gender =
+    lower.includes("boys") ||
+    lower.includes(" b ") ||
+    lower.match(/\bb\d{2,4}\b/)
+      ? "Boys"
+      : lower.includes("girls") ||
+          lower.includes(" g ") ||
+          lower.match(/\bg\d{2,4}\b/)
+        ? "Girls"
+        : null;
   const ageMatch = lower.match(/u(\d+)/);
   const age_group = ageMatch ? `U${ageMatch[1]}` : null;
   return { gender, age_group };
 }
 
-async function upsertMatch(sourceId, m) {
+async function upsertMatch(sourceId, m, tournamentState) {
   if (!m.match_date) return { ok: false, reason: "missing_match_date" };
 
   const { error } = await supabase.from("matches").upsert(
@@ -340,37 +422,42 @@ async function parsePage(url) {
 // ---------------------------
 
 async function main() {
-  console.log("=== SoccerView GotSport Ingestion ===");
+  console.log("=== SoccerView GotSport Ingestion (Expanded) ===");
   console.log(`Processing ${URLS.length} group URLs...\n`);
 
   let ok = 0;
   let skipped = 0;
   let errors = 0;
+  const stateCounts = {};
 
-  for (const url of URLS) {
+  for (const urlConfig of URLS) {
+    const { url, state, tournamentName } = urlConfig;
+
     try {
       await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
 
-      console.log(`[FETCHING] ${url}`);
+      console.log(`[FETCHING] ${tournamentName} (${state})`);
+      console.log(`  ${url}`);
       const sourceId = await getSourceId(url);
 
       const matches = await parsePage(url);
       const uniqueMatches = Array.from(
         new Map(matches.map((m) => [m.match_id, m])).values(),
       );
-      console.log(`[PARSED] ${uniqueMatches.length} unique matches`);
+      console.log(`  [PARSED] ${uniqueMatches.length} unique matches`);
 
       if (uniqueMatches.length > 0) {
         const first = uniqueMatches[0];
         console.log(
-          `  [SAMPLE] ID:${first.match_id}, Date:${first.match_date || "NULL"}, ${first.home_team} vs ${first.away_team}`,
+          `  [SAMPLE] ID:${first.match_id}, Date:${first.match_date || "NULL"}, ${first.home_team?.substring(0, 30)}...`,
         );
       }
 
       for (const m of uniqueMatches) {
-        const r = await upsertMatch(sourceId, m);
+        const r = await upsertMatch(sourceId, m, state);
         if (r.ok) {
           ok++;
+          stateCounts[state] = (stateCounts[state] || 0) + 1;
         } else if (r.reason === "missing_match_date") {
           skipped++;
         } else {
@@ -388,9 +475,15 @@ async function main() {
   }
 
   console.log("\n=== Summary ===");
-  console.log(`upsert ok: ${ok}`);
-  console.log(`skipped (missing date): ${skipped}`);
-  console.log(`errors: ${errors}`);
+  console.log(`Total upserted: ${ok}`);
+  console.log(`Skipped (missing date): ${skipped}`);
+  console.log(`Errors: ${errors}`);
+  console.log("\nMatches by state:");
+  for (const [state, count] of Object.entries(stateCounts).sort(
+    (a, b) => b[1] - a[1],
+  )) {
+    console.log(`  ${state}: ${count}`);
+  }
 }
 
 main().catch((e) => {
