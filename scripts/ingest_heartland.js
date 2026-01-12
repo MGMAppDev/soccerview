@@ -1,15 +1,6 @@
 /**
- * SoccerView — GotSport ingestion (automated adapter)
- *
- * Full-file replacement for: scripts/ingest_heartland.js
- *
- * Automated, scalable for US youth soccer (team/group pages with match links/results)
- * Polite scraping (2s delay)
- * Extracts match_id from results column link (eq(3))
- * Infers gender/age from group/division
- *
- * Run:
- *   node scripts/ingest_heartland.js
+ * SoccerView — GotSport ingestion (Supabase JS)
+ * Run: node scripts/ingest_heartland.js
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -20,28 +11,27 @@ import "dotenv/config";
 // Config
 // ---------------------------
 
-// Completed public GotSport group URLs with match links/results (public/legal; add more completed events)
 const URLS = [
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380883", // U13 Boys Gold (Labor Day 2025—completed)
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380882", // U13 Boys Silver
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=422391", // U13 Boys Silver II
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380881", // U13 Boys Bronze
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380879", // U13 Girls Gold
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=419781", // U13 Girls Silver
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380886", // U14 Boys Gold
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380887", // U14 Boys Silver
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=421646", // U14 Boys Silver II
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380885", // U14 Boys Bronze
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=419782", // U14 Girls Gold
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=380884", // U14 Girls Silver
-  "https://system.gotsport.com/org_event/events/43745/schedules?group=419783", // U14 Girls Bronze
-  // New added for expansion (from President's Day Soccer 2025—completed Feb 2025)
+  // Labor Day 2025 (Heartland)
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380883",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380882",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=422391",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380881",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380879",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=419781",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380886",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380887",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=421646",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380885",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=419782",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=380884",
+  "https://system.gotsport.com/org_event/events/43745/schedules?group=419783",
+  // President's Day 2025
   "https://system.gotsport.com/org_event/events/33224/schedules?group=273676",
   "https://system.gotsport.com/org_event/events/33224/schedules?group=273678",
   "https://system.gotsport.com/org_event/events/33224/schedules?group=273680",
   "https://system.gotsport.com/org_event/events/33224/schedules?group=273682",
   "https://system.gotsport.com/org_event/events/33224/schedules?group=273684",
-  // Add more completed group URLs (search GotSport completed events U13-U19 boys/girls, copy ?group=ID with scores)
 ];
 
 const DELAY_MS = 2000;
@@ -50,7 +40,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("Missing env vars.");
+  console.error(
+    "Missing env vars: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required",
+  );
   process.exit(1);
 }
 
@@ -60,7 +52,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 // Helpers
 // ---------------------------
 
-async function getSourcesRow({ url }) {
+async function getSourceId(url) {
   const { data, error } = await supabase
     .from("sources")
     .select("id")
@@ -68,7 +60,6 @@ async function getSourcesRow({ url }) {
     .maybeSingle();
 
   if (error) throw error;
-
   if (data) return data.id;
 
   const { data: insertData, error: insertError } = await supabase
@@ -78,70 +69,141 @@ async function getSourcesRow({ url }) {
     .single();
 
   if (insertError) throw insertError;
-
   return insertData.id;
 }
 
-function parseDate(timeStr) {
-  if (!timeStr) return null;
-
-  // Example: "Aug 30, 2025 9:30 AM EDT" or "Sat, Aug 30, 2025 9:30 AM EDT"
-  timeStr = timeStr.replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s*/i, ""); // Strip day name
-  timeStr = timeStr.replace(/\s(EDT|EST|CDT|CST|PDT|PST|UTC|GMT)$/i, ""); // Strip timezone
-
-  const parts = timeStr.split(" ");
-  if (parts.length < 5) return null;
-
-  const month = parts[0];
-  const day = parseInt(parts[1].replace(",", ""), 10);
-  const year = parseInt(parts[2], 10);
-  const time = parts[3];
-  const ampm = parts[4];
+function parseDateHeader(text) {
+  if (!text) return null;
+  text = text
+    .replace(
+      /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i,
+      "",
+    )
+    .trim();
 
   const monthMap = {
-    Jan: 0,
-    Feb: 1,
-    Mar: 2,
-    Apr: 3,
-    May: 4,
-    Jun: 5,
-    Jul: 6,
-    Aug: 7,
-    Sep: 8,
-    Oct: 9,
-    Nov: 10,
-    Dec: 11,
-    January: 0,
-    February: 1,
-    March: 2,
-    April: 3,
-    May: 4,
-    June: 5,
-    July: 6,
-    August: 7,
-    September: 8,
-    October: 9,
-    November: 10,
-    December: 11,
+    jan: 0,
+    january: 0,
+    feb: 1,
+    february: 1,
+    mar: 2,
+    march: 2,
+    apr: 3,
+    april: 3,
+    may: 4,
+    jun: 5,
+    june: 5,
+    jul: 6,
+    july: 6,
+    aug: 7,
+    august: 7,
+    sep: 8,
+    sept: 8,
+    september: 8,
+    oct: 9,
+    october: 9,
+    nov: 10,
+    november: 10,
+    dec: 11,
+    december: 11,
   };
 
-  const m = monthMap[month];
-  if (m === undefined) return null;
+  const match = text.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+  if (match) {
+    const monthStr = match[1].toLowerCase();
+    const day = parseInt(match[2], 10);
+    const year = parseInt(match[3], 10);
+    const month = monthMap[monthStr];
+    if (month !== undefined && day && year) {
+      return { year, month, day };
+    }
+  }
+  return null;
+}
 
-  const [hoursStr, minutesStr] = time.split(":");
-  let hours = parseInt(hoursStr, 10);
-  const minutes = parseInt(minutesStr, 10);
+function parseTime(text) {
+  if (!text) return null;
+  text = text
+    .trim()
+    .toUpperCase()
+    .replace(/\s*(CDT|CST|EDT|EST|PDT|PST|UTC|GMT)\s*/gi, "")
+    .trim();
 
-  if (ampm.toUpperCase() === "PM" && hours < 12) hours += 12;
-  if (ampm.toUpperCase() === "AM" && hours === 12) hours = 0;
+  const match12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const ampm = match12[3]?.toUpperCase();
 
-  const d = new Date(year, m, day, hours, minutes, 0);
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return { hours, minutes };
+    }
+  }
+  return null;
+}
+
+function combineDateAndTime(dateObj, timeObj) {
+  if (!dateObj || !timeObj) return null;
+  const d = new Date(
+    dateObj.year,
+    dateObj.month,
+    dateObj.day,
+    timeObj.hours,
+    timeObj.minutes,
+    0,
+  );
   if (isNaN(d.getTime())) return null;
-
   return d.toISOString();
 }
 
+function parseFullDateTime(text) {
+  if (!text) return null;
+  text = text.replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s*/i, "").trim();
+  text = text.replace(/\s+(EDT|EST|CDT|CST|PDT|PST|UTC|GMT)$/i, "").trim();
+
+  const match = text.match(
+    /^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)?/i,
+  );
+  if (match) {
+    const monthMap = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    };
+    const monthStr = match[1].toLowerCase().substring(0, 3);
+    const day = parseInt(match[2], 10);
+    const year = parseInt(match[3], 10);
+    let hours = parseInt(match[4], 10);
+    const minutes = parseInt(match[5], 10);
+    const ampm = match[6]?.toUpperCase();
+
+    const month = monthMap[monthStr];
+    if (month === undefined) return null;
+
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+
+    const d = new Date(year, month, day, hours, minutes, 0);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+  return null;
+}
+
 function parseScores(scoreStr) {
+  if (!scoreStr) return { home: null, away: null };
   const scoreMatch = scoreStr.match(/(\d+)\s*-\s*(\d+)/);
   return scoreMatch
     ? { home: parseInt(scoreMatch[1], 10), away: parseInt(scoreMatch[2], 10) }
@@ -149,6 +211,7 @@ function parseScores(scoreStr) {
 }
 
 function inferGenderAndAge(groupName) {
+  if (!groupName) return { gender: null, age_group: null };
   const lower = groupName.toLowerCase();
   const gender = lower.includes("boys")
     ? "Boys"
@@ -160,72 +223,104 @@ function inferGenderAndAge(groupName) {
   return { gender, age_group };
 }
 
-async function upsertMatch({ sourceId, m }) {
+async function upsertMatch(sourceId, m) {
   if (!m.match_date) return { ok: false, reason: "missing_match_date" };
 
-  const { data, error } = await supabase
-    .from("matches")
-    .upsert(
-      {
-        source_id: sourceId,
-        match_id: m.match_id,
-        competition: m.competition,
-        group_name: m.group_name,
-        match_date: m.match_date,
-        home_team: m.home_team,
-        away_team: m.away_team,
-        home_score: m.home_score,
-        away_score: m.away_score,
-        location: m.location,
-        gender: m.gender,
-        age_group: m.age_group,
-      },
-      { onConflict: "match_id" },
-    )
-    .select();
+  const { error } = await supabase.from("matches").upsert(
+    {
+      match_id: m.match_id,
+      match_date: m.match_date,
+      home_team: m.home_team,
+      away_team: m.away_team,
+      home_score: m.home_score,
+      away_score: m.away_score,
+      location: m.location,
+      competition: m.competition,
+      group_name: m.group_name,
+      gender: m.gender,
+      age_group: m.age_group,
+      source_id: sourceId,
+    },
+    { onConflict: "match_id" },
+  );
 
   if (error) return { ok: false, error };
-
-  return { ok: true, data };
+  return { ok: true };
 }
 
-async function parsePage(sourceId, url) {
+async function parsePage(url) {
   const response = await fetch(url);
   const html = await response.text();
   const $ = cheerio.load(html);
 
-  let matches = [];
+  const matches = [];
+  const competition = $("title").text().trim() || "Unknown Competition";
+  let currentDate = null;
 
   $("tr").each((i, tr) => {
-    const cells = $(tr)
+    const $tr = $(tr);
+    const cells = $tr
       .find("td")
       .map((j, td) => $(td).text().trim())
       .get();
+    const cellCount = cells.length;
 
-    if (cells.length < 7) return; // Skip non-match rows (need Match#, Time, Home, Results, Away, Location, Division)
+    // Check for date header
+    if (cellCount === 1 || (cellCount <= 2 && !cells[0]?.includes("-"))) {
+      const parsed = parseDateHeader(cells.join(" "));
+      if (parsed) {
+        currentDate = parsed;
+        return;
+      }
+    }
 
-    const resultsLink = $(tr).find("td").eq(3).find("a").attr("href");
-    const matchId = resultsLink ? resultsLink.match(/match=(\d+)/)?.[1] : null;
-    if (!matchId) return; // Skip if no results link
+    const thText = $tr.find("th").text().trim();
+    if (thText) {
+      const parsed = parseDateHeader(thText);
+      if (parsed) {
+        currentDate = parsed;
+        return;
+      }
+    }
 
-    const time = cells[1]; // Full date-time string
-    const homeTeam = cells[2];
-    const score = cells[3];
-    const awayTeam = cells[4];
-    const location = cells[5];
-    const division = cells[6];
+    if (cellCount < 5) return;
 
-    const { home: homeScore, away: awayScore } = parseScores(score);
+    const resultsLink =
+      $tr.find("td").eq(3).find("a").attr("href") ||
+      $tr.find("a[href*='match=']").attr("href");
+    const matchIdMatch = resultsLink?.match(/match=(\d+)/);
+    const matchId = matchIdMatch?.[1];
+    if (!matchId) return;
 
-    const matchDate = parseDate(time);
+    const timeCell = cells[1] || "";
+    const homeTeam = cells[2] || "";
+    const scoreCell = cells[3] || "";
+    const awayTeam = cells[4] || "";
+    const location = cells[5] || "";
+    const division = cells[6] || cells[cellCount - 1] || "";
 
-    const groupOrDivision = division; // Use division since no group_header
-    const { gender, age_group } = inferGenderAndAge(groupOrDivision);
+    let matchDate = null;
+    if (currentDate) {
+      const timeObj = parseTime(timeCell);
+      if (timeObj) {
+        matchDate = combineDateAndTime(currentDate, timeObj);
+      }
+    }
+    if (!matchDate) matchDate = parseFullDateTime(timeCell);
+    if (!matchDate) {
+      for (const cell of cells) {
+        matchDate = parseFullDateTime(cell);
+        if (matchDate) break;
+      }
+    }
+
+    const { home: homeScore, away: awayScore } = parseScores(scoreCell);
+    const { gender, age_group } = inferGenderAndAge(division);
 
     matches.push({
       match_id: matchId,
-      competition: $("title").text().trim(),
-      group_name: groupOrDivision,
+      competition,
+      group_name: division,
       match_date: matchDate,
       home_team: homeTeam,
       away_team: awayTeam,
@@ -245,6 +340,9 @@ async function parsePage(sourceId, url) {
 // ---------------------------
 
 async function main() {
+  console.log("=== SoccerView GotSport Ingestion ===");
+  console.log(`Processing ${URLS.length} group URLs...\n`);
+
   let ok = 0;
   let skipped = 0;
   let errors = 0;
@@ -253,31 +351,49 @@ async function main() {
     try {
       await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
 
-      const sourceId = await getSourcesRow({ url });
+      console.log(`[FETCHING] ${url}`);
+      const sourceId = await getSourceId(url);
 
-      const matches = await parsePage(sourceId, url);
-
+      const matches = await parsePage(url);
       const uniqueMatches = Array.from(
         new Map(matches.map((m) => [m.match_id, m])).values(),
       );
-      console.log(`Parsed matches from ${url}: ${uniqueMatches.length}`);
+      console.log(`[PARSED] ${uniqueMatches.length} unique matches`);
+
+      if (uniqueMatches.length > 0) {
+        const first = uniqueMatches[0];
+        console.log(
+          `  [SAMPLE] ID:${first.match_id}, Date:${first.match_date || "NULL"}, ${first.home_team} vs ${first.away_team}`,
+        );
+      }
 
       for (const m of uniqueMatches) {
-        const r = await upsertMatch({ sourceId, m });
-        if (r.ok) ok++;
-        else if (r.reason === "missing_match_date") skipped++;
-        else errors++;
+        const r = await upsertMatch(sourceId, m);
+        if (r.ok) {
+          ok++;
+        } else if (r.reason === "missing_match_date") {
+          skipped++;
+        } else {
+          errors++;
+          console.error(
+            `  [UPSERT ERROR] Match ${m.match_id}:`,
+            r.error?.message || r.error,
+          );
+        }
       }
     } catch (e) {
       errors++;
-      console.error("URL PROCESS ERROR:", { url, error: e.message });
+      console.error(`[URL ERROR] ${url}:`, e.message);
     }
   }
 
-  console.log("=== Summary ===");
-  console.log("upsert ok:", ok);
-  console.log("skipped (missing date):", skipped);
-  console.log("errors:", errors);
+  console.log("\n=== Summary ===");
+  console.log(`upsert ok: ${ok}`);
+  console.log(`skipped (missing date): ${skipped}`);
+  console.log(`errors: ${errors}`);
 }
 
-main().catch((e) => console.error("SCRIPT FAILED:", e));
+main().catch((e) => {
+  console.error("SCRIPT FAILED:", e);
+  process.exit(1);
+});

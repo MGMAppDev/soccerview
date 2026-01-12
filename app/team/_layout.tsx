@@ -7,14 +7,15 @@ export default function TeamLayout() {
       screenOptions={{
         headerShown: true,
         headerTitleAlign: "center",
-        headerLargeTitle: false,
 
-        // ✅ removes "(tabs)" label on iOS back button
-        headerBackTitleVisible: false,
-        headerBackTitle: "",
-
-        // ✅ prevents long-press back menu showing route names
-        headerBackButtonMenuEnabled: false,
+        // Dark theme styling
+        headerStyle: {
+          backgroundColor: "#000",
+        },
+        headerTintColor: "#fff",
+        headerTitleStyle: {
+          fontWeight: "600",
+        },
       }}
     />
   );

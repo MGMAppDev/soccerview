@@ -1,0 +1,118 @@
+diff --git a/node_modules/metro-config/src/loadConfig.js b/node_modules/metro-config/src/loadConfig.js
+index 7ac9d88..0ea5b9e 100644
+--- a/node_modules/metro-config/src/loadConfig.js
++++ b/node_modules/metro-config/src/loadConfig.js
+@@ -3,7 +3,7 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true,
+ });
+-exports.loadConfig = loadConfig;
++exports.load = load;
+ exports.loadConfigFile = loadConfigFile;
+ exports.mergeConfig = mergeConfig;
+ exports.resolveConfig = resolveConfig;
+@@ -62,7 +62,6 @@ const JS_EXTENSIONS = new Set([...SEARCH_JS_EXTS, ".es6"]);
+ const TS_EXTENSIONS = new Set(SEARCH_TS_EXTS);
+ const YAML_EXTENSIONS = new Set([".yml", ".yaml", ""]);
+ const PACKAGE_JSON = path.sep + "package.json";
+-const PACKAGE_JSON_PROP_NAME = "metro";
+ const isFile = (filePath) =>
+   fs.existsSync(filePath) && !fs.lstatSync(filePath).isDirectory();
+ const resolve = (filePath) => {
+@@ -178,33 +177,26 @@ function mergeConfig(base, ...configs) {
+   let currentConfig = typeof base === "function" ? base() : base;
+   const reversedConfigs = configs.toReversed();
+   let next;
+-  while ((next = reversedConfigs.pop())) {
+-    const nextConfig = typeof next === "function" ? next(currentConfig) : next;
+-    if (nextConfig instanceof Promise) {
+-      return mergeConfigAsync(nextConfig, reversedConfigs.toReversed());
+-    }
+-    currentConfig = mergeConfigObjects(currentConfig, nextConfig);
++  for (next of reversedConfigs) {
++    currentConfig = mergeConfigObjects(currentConfig, typeof next === "function" ? next() : next);
+   }
+   return currentConfig;
+ }
+-async function loadMetroConfigFromDisk(
+-  pathToLoad,
+-  cwd,
+-  defaultConfigOverrides,
+-) {
+-  const resolvedConfigResults = await resolveConfig(pathToLoad, cwd);
+-  const { config: configModule, filepath } = resolvedConfigResults;
+-  let rootPath = path.dirname(filepath);
+-  if (path.basename(rootPath) === ".config") {
+-    rootPath = path.dirname(rootPath);
++async function loadMetroConfigFromDisk(configFile, cwd, defaultConfigOverrides) {
++  const userConfig = await resolveConfig(configFile, cwd);
++  let defaultConfig = await (0, _defaults.default)();
++  if (defaultConfigOverrides != null) {
++    defaultConfig = mergeConfig(defaultConfig, defaultConfigOverrides);
++  }
++  if (userConfig.isEmpty) {
++    return defaultConfig;
+   }
+-  const defaults = await (0, _defaults.default)(rootPath);
+-  const defaultConfig = mergeConfig(defaults, defaultConfigOverrides);
+-  if (typeof configModule === "function") {
+-    const resultedConfig = await configModule(defaultConfig);
++  let resultedConfig;
++  if (typeof userConfig.config === "function") {
++    resultedConfig = await userConfig.config(defaultConfig);
+     return mergeConfig(defaultConfig, resultedConfig);
+   }
+-  return mergeConfig(defaultConfig, configModule);
++  return mergeConfig(defaultConfig, userConfig.config);
+ }
+ function overrideConfigWithArguments(config, argv) {
+   const output = {
+@@ -250,7 +242,7 @@ function overrideConfigWithArguments(config, argv) {
+   }
+   return mergeConfig(config, output);
+ }
+-async function loadConfig(argvInput = {}, defaultConfigOverrides = {}) {
++async function load(argvInput = {}, defaultConfigOverrides = {}) {
+   const argv = {
+     ...argvInput,
+     config: overrideArgument(argvInput.config),
+@@ -281,7 +273,7 @@ async function loadConfigFile(absolutePath) {
+     try {
+       const configModule = require(absolutePath);
+       if (absolutePath.endsWith(PACKAGE_JSON)) {
+-        config = configModule[PACKAGE_JSON_PROP_NAME];
++        config = configModule["metro"];
+       } else {
+         config = await (configModule.__esModule
+           ? configModule.default
+@@ -289,7 +281,8 @@ async function loadConfigFile(absolutePath) {
+       }
+     } catch (e) {
+       try {
+-        const configModule = await import(absolutePath);
++        const importPath = process.platform === 'win32' ? `file://${absolutePath}` : absolutePath;
++        const configModule = await import(importPath);
+         config = await configModule.default;
+       } catch (error) {
+         let prefix = `Error loading Metro config at: ${absolutePath}\n`;
+@@ -313,7 +306,7 @@ async function loadConfigFile(absolutePath) {
+   } else {
+     throw new Error(
+       `Unsupported config file extension: ${extension}. ` +
+-        `Supported extensions are ${[...JS_EXTENSIONS, ...TS_EXTENSIONS, ...YAML_EXTENSIONS].map((ext) => (ext === "" ? "none" : `${ext}`)).join()})}.`,
++        `Supported extensions are ${[...JS_EXTENSIONS, ...TS_EXTENSIONS, ...YAML_EXTENSIONS].map((ext) => (ext === "" ? "none" : `${ext}`)).join()}.`,
+     );
+   }
+   return {
+@@ -331,9 +324,9 @@ function searchForConfigFile(absoluteStartDir, absoluteStopDir) {
+     for (const candidate of SEARCH_PLACES) {
+       const candidatePath = path.join(currentDir, candidate);
+       if (isFile(candidatePath)) {
+-        if (candidatePath.endsWith(path.sep + "package.json")) {
++        if (candidatePath.endsWith(PACKAGE_JSON)) {
+           const content = require(candidatePath);
+-          if (Object.hasOwn(content, PACKAGE_JSON_PROP_NAME)) {
++          if (Object.hasOwn(content, "metro")) {
+             return candidatePath;
+           }
+         } else {
