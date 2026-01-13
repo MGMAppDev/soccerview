@@ -17,7 +17,20 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// Create client with extended timeout for long-running RPC calls
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  db: {
+    schema: "public",
+  },
+  global: {
+    fetch: (url, options = {}) => {
+      return fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(300000), // 5 minute timeout (300,000ms)
+      });
+    },
+  },
+});
 
 async function main() {
   console.log("=== SoccerView ELO Recalculation ===");
@@ -32,9 +45,11 @@ async function main() {
     }
 
     console.log("ELO Recalculation Complete!");
-    console.log(`Teams processed: ${data?.[0]?.teams_processed ?? "unknown"}`);
     console.log(
-      `Matches processed: ${data?.[0]?.matches_processed ?? "unknown"}`,
+      `Teams processed: ${data?.[0]?.teams_processed ?? data?.[0] ?? "unknown"}`,
+    );
+    console.log(
+      `Matches processed: ${data?.[0]?.matches_processed ?? data?.[1] ?? "unknown"}`,
     );
 
     // Get top 10 teams
