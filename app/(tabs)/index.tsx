@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -75,6 +76,7 @@ export default function HomeScreen() {
   });
   const [recentMatches, setRecentMatches] = useState<MatchRow[]>([]);
   const [featuredTeams, setFeaturedTeams] = useState<TeamEloRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -128,6 +130,8 @@ export default function HomeScreen() {
     } catch (err) {
       console.error("Error fetching home data:", err);
       setError("Failed to load data. Pull to refresh.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -141,7 +145,7 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Build match location string
+  // Build match location string - FIXED encoding
   const getMatchLocation = (item: MatchRow): string => {
     const parts: string[] = [];
     const date = formatDate(item.match_date);
@@ -150,7 +154,7 @@ export default function HomeScreen() {
     return parts.length > 0 ? parts.join(" · ") : "";
   };
 
-  // Build team meta string (state, gender, age)
+  // Build team meta string (state, gender, age) - FIXED encoding
   const getTeamMeta = (item: TeamEloRow): string => {
     const parts: string[] = [];
     if (isValidValue(item.state)) parts.push(item.state!);
@@ -166,6 +170,7 @@ export default function HomeScreen() {
     return (
       <TouchableOpacity
         style={styles.matchCard}
+        activeOpacity={0.7}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           router.push(`/match/${item.id}`);
@@ -190,9 +195,10 @@ export default function HomeScreen() {
     return (
       <TouchableOpacity
         style={styles.featuredCard}
+        activeOpacity={0.7}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          // Future: navigate to team detail
+          router.push(`/team/${item.id}`);
         }}
       >
         <Text style={styles.featuredTeamName} numberOfLines={2}>
@@ -200,20 +206,38 @@ export default function HomeScreen() {
         </Text>
         {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
         <Text style={styles.recordText}>{record}</Text>
-        <Text style={styles.ratingText}>
-          {Math.round(item.elo_rating ?? 1500)} ELO
-        </Text>
+        <View style={styles.eloRow}>
+          <Text style={styles.ratingText}>
+            {Math.round(item.elo_rating ?? 1500)}
+          </Text>
+          <Text style={styles.eloLabel}>ELO</Text>
+        </View>
       </TouchableOpacity>
     );
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+        <Text style={styles.loadingText}>Loading SoccerView...</Text>
+      </View>
+    );
+  }
+
+  // Error state
   if (error) {
     return (
       <View style={styles.centered}>
+        <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity
           style={styles.retryButton}
-          onPress={() => void fetchData()}
+          onPress={() => {
+            setLoading(true);
+            void fetchData();
+          }}
         >
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
@@ -225,8 +249,13 @@ export default function HomeScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor="#3B82F6"
+        />
       }
     >
       <View style={{ paddingTop: insets.top }}>
@@ -236,28 +265,82 @@ export default function HomeScreen() {
         </Text>
       </View>
 
+      {/* Stats Cards */}
       <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
+        <TouchableOpacity
+          style={styles.statCard}
+          activeOpacity={0.7}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/(tabs)/teams");
+          }}
+        >
           <Ionicons name="people" size={24} color="#3B82F6" />
           <Text style={styles.statText}>
             {stats.totalTeams.toLocaleString()} Teams
           </Text>
-        </View>
-        <View style={styles.statCard}>
-          <Ionicons name="trophy" size={24} color="#3B82F6" />
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color="#6b7280"
+            style={styles.statArrow}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.statCard}
+          activeOpacity={0.7}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/(tabs)/matches");
+          }}
+        >
+          <Ionicons name="football" size={24} color="#10b981" />
           <Text style={styles.statText}>
             {stats.totalMatches.toLocaleString()} Matches
           </Text>
-        </View>
-        <View style={styles.statCard}>
-          <Ionicons name="bar-chart" size={24} color="#3B82F6" />
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color="#6b7280"
+            style={styles.statArrow}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.statCard}
+          activeOpacity={0.7}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/(tabs)/rankings");
+          }}
+        >
+          <Ionicons name="trophy" size={24} color="#f59e0b" />
           <Text style={styles.statText}>
             {stats.totalCompetitions} Competitions
           </Text>
-        </View>
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color="#6b7280"
+            style={styles.statArrow}
+          />
+        </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionHeader}>Latest Matches</Text>
+      {/* Latest Matches Section */}
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionHeader}>Latest Matches</Text>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/(tabs)/matches");
+          }}
+        >
+          <Text style={styles.seeAllText}>See All</Text>
+        </TouchableOpacity>
+      </View>
+
       {recentMatches.length > 0 ? (
         <FlatList
           data={recentMatches}
@@ -267,10 +350,25 @@ export default function HomeScreen() {
           scrollEnabled={false}
         />
       ) : (
-        <Text style={styles.noDataText}>No recent matches available</Text>
+        <View style={styles.emptySection}>
+          <Ionicons name="football-outline" size={32} color="#374151" />
+          <Text style={styles.noDataText}>No recent matches available</Text>
+        </View>
       )}
 
-      <Text style={styles.sectionHeader}>Top Ranked Teams</Text>
+      {/* Top Ranked Teams Section */}
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionHeader}>Top Ranked Teams</Text>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/(tabs)/rankings");
+          }}
+        >
+          <Text style={styles.seeAllText}>See All</Text>
+        </TouchableOpacity>
+      </View>
+
       {featuredTeams.length > 0 ? (
         <FlatList
           data={featuredTeams}
@@ -281,7 +379,10 @@ export default function HomeScreen() {
           contentContainerStyle={styles.horizontalListContent}
         />
       ) : (
-        <Text style={styles.noDataText}>No featured teams available</Text>
+        <View style={styles.emptySection}>
+          <Ionicons name="trophy-outline" size={32} color="#374151" />
+          <Text style={styles.noDataText}>No featured teams available</Text>
+        </View>
       )}
     </ScrollView>
   );
@@ -307,16 +408,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 24,
   },
+  sectionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    marginTop: 8,
+  },
   sectionHeader: {
     color: "#fff",
     fontSize: 20,
     fontWeight: "700",
-    marginBottom: 12,
-    marginTop: 8,
+  },
+  seeAllText: {
+    color: "#3B82F6",
+    fontSize: 14,
+    fontWeight: "600",
   },
   statsContainer: {
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   statCard: {
     flexDirection: "row",
@@ -332,6 +443,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "600",
+    flex: 1,
+  },
+  statArrow: {
+    marginLeft: "auto",
   },
   listContent: {
     gap: 12,
@@ -370,7 +485,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   featuredCard: {
-    width: 200,
+    width: 180,
     padding: 14,
     borderRadius: 12,
     backgroundColor: "#111",
@@ -393,23 +508,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 6,
   },
+  eloRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    marginTop: 8,
+    gap: 4,
+  },
   ratingText: {
     color: "#3B82F6",
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: "700",
-    marginTop: 4,
+  },
+  eloLabel: {
+    color: "#6b7280",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  emptySection: {
+    alignItems: "center",
+    paddingVertical: 24,
+    gap: 8,
   },
   noDataText: {
     color: "#6b7280",
     fontSize: 14,
     textAlign: "center",
-    marginTop: 10,
     fontStyle: "italic",
+  },
+  loadingText: {
+    color: "#9ca3af",
+    fontSize: 14,
+    marginTop: 12,
   },
   errorText: {
     color: "#EF4444",
     textAlign: "center",
     fontSize: 16,
+    marginTop: 12,
     marginBottom: 16,
   },
   centered: {

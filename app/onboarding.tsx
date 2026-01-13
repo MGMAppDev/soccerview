@@ -1,0 +1,328 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
+import React, { useRef, useState } from "react";
+import {
+  Animated,
+  Dimensions,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const ONBOARDING_KEY = "soccerview_onboarding_complete";
+
+interface OnboardingSlide {
+  id: number;
+  icon: string;
+  title: string;
+  description: string;
+  color: string;
+}
+
+const slides: OnboardingSlide[] = [
+  {
+    id: 0,
+    icon: "⚽",
+    title: "Welcome to SoccerView",
+    description:
+      "The ultimate youth soccer ranking app. Track thousands of teams across the nation with real match data and ELO-based rankings.",
+    color: "#10b981",
+  },
+  {
+    id: 1,
+    icon: "🏆",
+    title: "National & State Rankings",
+    description:
+      "See how teams stack up nationally or filter by state. Rankings are updated daily based on actual match results using proven ELO methodology.",
+    color: "#3b82f6",
+  },
+  {
+    id: 2,
+    icon: "📊",
+    title: "Team Stats & Match History",
+    description:
+      "Dive deep into any team's performance. View win/loss records, ELO history, and complete match results all in one place.",
+    color: "#8b5cf6",
+  },
+  {
+    id: 3,
+    icon: "🔍",
+    title: "Find Any Team",
+    description:
+      "Search over 4,000 ranked teams. Filter by state, gender, and age group to find exactly what you're looking for.",
+    color: "#f59e0b",
+  },
+];
+
+export default function OnboardingScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const handleScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+    {
+      useNativeDriver: false,
+      listener: (event: any) => {
+        const index = Math.round(
+          event.nativeEvent.contentOffset.x / SCREEN_WIDTH,
+        );
+        setCurrentIndex(index);
+      },
+    },
+  );
+
+  const goToSlide = (index: number) => {
+    scrollViewRef.current?.scrollTo({
+      x: index * SCREEN_WIDTH,
+      animated: true,
+    });
+  };
+
+  const handleNext = () => {
+    if (currentIndex < slides.length - 1) {
+      goToSlide(currentIndex + 1);
+    } else {
+      completeOnboarding();
+    }
+  };
+
+  const handleSkip = () => {
+    completeOnboarding();
+  };
+
+  const completeOnboarding = async () => {
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, "true");
+      router.replace("/(tabs)");
+    } catch (error) {
+      console.error("Error saving onboarding status:", error);
+      // Still navigate even if save fails
+      router.replace("/(tabs)");
+    }
+  };
+
+  const isLastSlide = currentIndex === slides.length - 1;
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Skip button */}
+      {!isLastSlide && (
+        <Pressable
+          style={[styles.skipButton, { top: insets.top + 16 }]}
+          onPress={handleSkip}
+        >
+          <Text style={styles.skipText}>Skip</Text>
+        </Pressable>
+      )}
+
+      {/* Slides */}
+      <Animated.ScrollView
+        ref={scrollViewRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        decelerationRate="fast"
+        style={styles.scrollView}
+      >
+        {slides.map((slide) => (
+          <View key={slide.id} style={styles.slide}>
+            <View style={styles.slideContent}>
+              {/* Icon */}
+              <View
+                style={[
+                  styles.iconContainer,
+                  { backgroundColor: slide.color + "20" },
+                ]}
+              >
+                <Text style={styles.icon}>{slide.icon}</Text>
+              </View>
+
+              {/* Title */}
+              <Text style={styles.title}>{slide.title}</Text>
+
+              {/* Description */}
+              <Text style={styles.description}>{slide.description}</Text>
+            </View>
+          </View>
+        ))}
+      </Animated.ScrollView>
+
+      {/* Bottom section */}
+      <View
+        style={[styles.bottomSection, { paddingBottom: insets.bottom + 24 }]}
+      >
+        {/* Pagination dots */}
+        <View style={styles.pagination}>
+          {slides.map((_, index) => {
+            const inputRange = [
+              (index - 1) * SCREEN_WIDTH,
+              index * SCREEN_WIDTH,
+              (index + 1) * SCREEN_WIDTH,
+            ];
+
+            const dotWidth = scrollX.interpolate({
+              inputRange,
+              outputRange: [8, 24, 8],
+              extrapolate: "clamp",
+            });
+
+            const dotOpacity = scrollX.interpolate({
+              inputRange,
+              outputRange: [0.3, 1, 0.3],
+              extrapolate: "clamp",
+            });
+
+            return (
+              <Animated.View
+                key={index}
+                style={[
+                  styles.dot,
+                  {
+                    width: dotWidth,
+                    opacity: dotOpacity,
+                    backgroundColor:
+                      currentIndex === index
+                        ? slides[currentIndex].color
+                        : "#666",
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+
+        {/* Action button */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.actionButton,
+            { backgroundColor: slides[currentIndex].color },
+            pressed && styles.actionButtonPressed,
+          ]}
+          onPress={handleNext}
+        >
+          <Text style={styles.actionButtonText}>
+            {isLastSlide ? "Get Started" : "Next"}
+          </Text>
+        </Pressable>
+
+        {/* Page indicator text */}
+        <Text style={styles.pageIndicator}>
+          {currentIndex + 1} of {slides.length}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  skipButton: {
+    position: "absolute",
+    right: 20,
+    zIndex: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  skipText: {
+    color: "#9ca3af",
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  slide: {
+    width: SCREEN_WIDTH,
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 40,
+  },
+  slideContent: {
+    alignItems: "center",
+    maxWidth: 400,
+  },
+  iconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  icon: {
+    fontSize: 56,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 16,
+    ...Platform.select({
+      web: { fontFamily: "system-ui, -apple-system, sans-serif" },
+    }),
+  },
+  description: {
+    fontSize: 17,
+    color: "#9ca3af",
+    textAlign: "center",
+    lineHeight: 26,
+    ...Platform.select({
+      web: { fontFamily: "system-ui, -apple-system, sans-serif" },
+    }),
+  },
+  bottomSection: {
+    paddingHorizontal: 24,
+    alignItems: "center",
+  },
+  pagination: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 32,
+    gap: 8,
+  },
+  dot: {
+    height: 8,
+    borderRadius: 4,
+  },
+  actionButton: {
+    width: "100%",
+    maxWidth: 360,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionButtonPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.98 }],
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    ...Platform.select({
+      web: { fontFamily: "system-ui, -apple-system, sans-serif" },
+    }),
+  },
+  pageIndicator: {
+    marginTop: 16,
+    fontSize: 14,
+    color: "#6b7280",
+  },
+});

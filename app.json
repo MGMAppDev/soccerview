@@ -56,8 +56,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "your-project-id"
-      }
-    }
+        "projectId": "d6d04c81-3b84-43f8-bcdc-307377748c70"
+      },
+      "router": {}
+    },
+    "owner": "mgmappdev"
   }
 }

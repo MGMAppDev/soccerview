@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   FlatList,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -49,6 +51,7 @@ export default function RankingsTab() {
   const [allGenders, setAllGenders] = useState<string[]>([]);
   const [allAgeGroups, setAllAgeGroups] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
 
@@ -148,6 +151,12 @@ export default function RankingsTab() {
     }
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchRankings();
+    setRefreshing(false);
+  };
+
   const filteredRankings = useMemo(() => {
     if (!searchQuery) return rankings;
     return rankings.filter((team) =>
@@ -183,15 +192,28 @@ export default function RankingsTab() {
   const renderTeamItem = ({ item }: { item: TeamRankRow }) => {
     const details = getTeamDetails(item);
     const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
+
+    // Medal colors for top 3
+    const getMedalColor = (rank: number | undefined) => {
+      if (rank === 1) return "#FFD700"; // Gold
+      if (rank === 2) return "#C0C0C0"; // Silver
+      if (rank === 3) return "#CD7F32"; // Bronze
+      return "#3B82F6"; // Default blue
+    };
+
     return (
       <TouchableOpacity
         style={styles.teamItem}
+        activeOpacity={0.7}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push(`/team/${item.id}`);
         }}
       >
         <View style={styles.rankContainer}>
-          <Text style={styles.rank}>{item.rank ?? "-"}</Text>
+          <Text style={[styles.rank, { color: getMedalColor(item.rank) }]}>
+            {item.rank ?? "-"}
+          </Text>
         </View>
         <View style={styles.teamInfo}>
           <Text style={styles.teamName} numberOfLines={1}>
@@ -208,6 +230,12 @@ export default function RankingsTab() {
           </Text>
           <Text style={styles.ratingLabel}>ELO</Text>
         </View>
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color="#4b5563"
+          style={styles.chevron}
+        />
       </TouchableOpacity>
     );
   };
@@ -248,6 +276,11 @@ export default function RankingsTab() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Ionicons name="close-circle" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* View Mode */}
@@ -257,10 +290,10 @@ export default function RankingsTab() {
           showsHorizontalScrollIndicator={false}
           style={styles.chipScroll}
         >
-          {renderChip("National", mode === "national", () =>
+          {renderChip("🌎 National", mode === "national", () =>
             handleModeChange("national"),
           )}
-          {renderChip("State", mode === "state", () =>
+          {renderChip("📍 State", mode === "state", () =>
             handleModeChange("state"),
           )}
         </ScrollView>
@@ -319,6 +352,12 @@ export default function RankingsTab() {
 
         {hasFilters && (
           <TouchableOpacity style={styles.clearChip} onPress={clearFilters}>
+            <Ionicons
+              name="close"
+              size={14}
+              color="#fff"
+              style={{ marginRight: 4 }}
+            />
             <Text style={styles.chipText}>Clear Filters</Text>
           </TouchableOpacity>
         )}
@@ -327,16 +366,37 @@ export default function RankingsTab() {
       {/* Results count */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
-          {filteredRankings.length} teams ranked
+          {filteredRankings.length.toLocaleString()} teams ranked
         </Text>
       </View>
     </Animated.View>
+  );
+
+  // Empty state component
+  const EmptyComponent = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="trophy-outline" size={48} color="#374151" />
+      <Text style={styles.noDataText}>
+        {hasFilters || searchQuery
+          ? "No teams match your filters"
+          : "No rankings available"}
+      </Text>
+      {(hasFilters || searchQuery) && (
+        <TouchableOpacity
+          style={styles.clearFiltersButton}
+          onPress={clearFilters}
+        >
+          <Text style={styles.clearFiltersText}>Clear Filters</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 
   if (error) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryButton}
@@ -361,6 +421,7 @@ export default function RankingsTab() {
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Loading rankings...</Text>
         </View>
       ) : (
         <AnimatedFlatList
@@ -368,12 +429,15 @@ export default function RankingsTab() {
           renderItem={renderTeamItem}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
-          ListEmptyComponent={
-            <Text style={styles.noDataText}>
-              No rankings match your filters.
-            </Text>
-          }
+          ListEmptyComponent={EmptyComponent}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#3B82F6"
+            />
+          }
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
             { useNativeDriver: true },
@@ -449,6 +513,8 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   clearChip: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
@@ -485,6 +551,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 24,
+    flexGrow: 1,
   },
   teamItem: {
     flexDirection: "row",
@@ -502,7 +569,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   rank: {
-    color: "#3B82F6",
     fontSize: 20,
     fontWeight: "bold",
   },
@@ -538,15 +604,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "500",
   },
+  chevron: {
+    marginLeft: 8,
+  },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+  loadingText: {
+    color: "#9ca3af",
+    fontSize: 14,
+    marginTop: 12,
+  },
   errorText: {
     color: "#EF4444",
     textAlign: "center",
     fontSize: 16,
+    marginTop: 12,
     marginBottom: 16,
   },
   retryButton: {
@@ -560,11 +635,28 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 16,
   },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 60,
+  },
   noDataText: {
     color: "#6b7280",
-    fontSize: 14,
+    fontSize: 16,
     textAlign: "center",
-    marginTop: 20,
-    fontStyle: "italic",
+    marginTop: 16,
+  },
+  clearFiltersButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+  },
+  clearFiltersText: {
+    color: "#3B82F6",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

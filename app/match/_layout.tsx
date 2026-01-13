@@ -6,16 +6,10 @@ export default function MatchLayout() {
     <Stack
       screenOptions={{
         headerShown: true,
-        headerTitleAlign: "center",
-
-        // Dark theme styling
-        headerStyle: {
-          backgroundColor: "#000",
-        },
+        headerStyle: { backgroundColor: "#000" },
         headerTintColor: "#fff",
-        headerTitleStyle: {
-          fontWeight: "600",
-        },
+        headerTitleStyle: { fontWeight: "600" },
+        contentStyle: { backgroundColor: "#000" },
       }}
     />
   );

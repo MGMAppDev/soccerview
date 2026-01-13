@@ -1,10 +1,13 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   FlatList,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,6 +36,7 @@ const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<TeamEloRow>);
 export default function TeamsTab() {
   const [teams, setTeams] = useState<TeamEloRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -99,7 +103,6 @@ export default function TeamsTab() {
 
   const fetchTeams = async () => {
     try {
-      setLoading(true);
       setError(null);
 
       // Query team_elo table (has all 4,224 ranked teams)
@@ -119,6 +122,12 @@ export default function TeamsTab() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchTeams();
+    setRefreshing(false);
   };
 
   const toggleChip = (
@@ -201,9 +210,10 @@ export default function TeamsTab() {
     return (
       <TouchableOpacity
         style={styles.teamItem}
+        activeOpacity={0.7}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          // Future: navigate to team detail
+          router.push(`/team/${item.id}`);
         }}
       >
         <View style={styles.teamRow}>
@@ -220,6 +230,12 @@ export default function TeamsTab() {
             <Text style={styles.eloRating}>{elo}</Text>
             <Text style={styles.eloLabel}>ELO</Text>
           </View>
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color="#4b5563"
+            style={styles.chevron}
+          />
         </View>
       </TouchableOpacity>
     );
@@ -308,14 +324,31 @@ export default function TeamsTab() {
     <Animated.View style={{ opacity: filtersOpacity }}>
       {/* Filters Section */}
       <View style={styles.filtersContainer}>
+        {/* Search with icon */}
         <View style={styles.searchContainer}>
+          <Ionicons
+            name="search"
+            size={18}
+            color="#6b7280"
+            style={styles.searchIcon}
+          />
           <TextInput
             style={styles.searchInput}
             placeholder="Search teams..."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor="#6b7280"
             value={tempSearchQuery}
             onChangeText={setTempSearchQuery}
           />
+          {tempSearchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                setTempSearchQuery("");
+                setSearchQuery("");
+              }}
+            >
+              <Ionicons name="close-circle" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          )}
         </View>
 
         <Text style={styles.sectionHeader}>Gender</Text>
@@ -334,13 +367,29 @@ export default function TeamsTab() {
 
         <Text style={styles.sectionHeader}>State</Text>
         <View style={styles.searchContainer}>
+          <Ionicons
+            name="search"
+            size={18}
+            color="#6b7280"
+            style={styles.searchIcon}
+          />
           <TextInput
             style={styles.searchInput}
             placeholder="Search states..."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor="#6b7280"
             value={tempStateSearch}
             onChangeText={setTempStateSearch}
           />
+          {tempStateSearch.length > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                setTempStateSearch("");
+                setStateSearch("");
+              }}
+            >
+              <Ionicons name="close-circle" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          )}
         </View>
         {uniqueStates.length > 0 ? (
           renderStateChips()
@@ -350,6 +399,12 @@ export default function TeamsTab() {
 
         {hasFilters && (
           <TouchableOpacity style={styles.clearChip} onPress={clearFilters}>
+            <Ionicons
+              name="close"
+              size={14}
+              color="#fff"
+              style={{ marginRight: 4 }}
+            />
             <Text style={styles.chipText}>Clear Filters</Text>
           </TouchableOpacity>
         )}
@@ -365,14 +420,36 @@ export default function TeamsTab() {
     </Animated.View>
   );
 
+  // Empty state component
+  const EmptyComponent = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="people-outline" size={48} color="#374151" />
+      <Text style={styles.emptyText}>
+        {hasFilters ? "No teams match your filters" : "No teams available"}
+      </Text>
+      {hasFilters && (
+        <TouchableOpacity
+          style={styles.clearFiltersButton}
+          onPress={clearFilters}
+        >
+          <Text style={styles.clearFiltersText}>Clear Filters</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   if (error) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => void fetchTeams()}
+            onPress={() => {
+              setLoading(true);
+              void fetchTeams();
+            }}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
@@ -392,6 +469,7 @@ export default function TeamsTab() {
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Loading teams...</Text>
         </View>
       ) : (
         <AnimatedFlatList
@@ -399,7 +477,15 @@ export default function TeamsTab() {
           renderItem={renderTeam}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
+          ListEmptyComponent={EmptyComponent}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#3B82F6"
+            />
+          }
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
             { useNativeDriver: true },
@@ -466,6 +552,8 @@ const styles = StyleSheet.create({
     borderColor: "#3B82F6",
   },
   clearChip: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
@@ -486,6 +574,8 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.15)",
     borderRadius: 12,
@@ -493,7 +583,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: "#1F2937",
   },
+  searchIcon: {
+    marginRight: 8,
+  },
   searchInput: {
+    flex: 1,
     color: "#fff",
     paddingVertical: Platform.OS === "ios" ? 12 : 10,
     fontSize: 16,
@@ -510,6 +604,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 24,
+    flexGrow: 1,
   },
   teamItem: {
     padding: 16,
@@ -558,15 +653,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  chevron: {
+    marginLeft: 8,
+  },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+  loadingText: {
+    color: "#9ca3af",
+    fontSize: 14,
+    marginTop: 12,
+  },
   errorText: {
     color: "#EF4444",
     textAlign: "center",
     fontSize: 16,
+    marginTop: 12,
     marginBottom: 16,
   },
   retryButton: {
@@ -579,5 +683,29 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 60,
+  },
+  emptyText: {
+    color: "#6b7280",
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 16,
+  },
+  clearFiltersButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+  },
+  clearFiltersText: {
+    color: "#3B82F6",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

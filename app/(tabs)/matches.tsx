@@ -231,6 +231,12 @@ export default function MatchesScreen() {
     upcoming: "Upcoming",
   };
 
+  const timeframeIcons: Record<Timeframe, string> = {
+    all: "📋",
+    recent: "🕐",
+    upcoming: "📅",
+  };
+
   // Build match details string (competition, date, location)
   const getMatchDetails = (item: MatchRow): string => {
     const parts: string[] = [];
@@ -268,6 +274,7 @@ export default function MatchesScreen() {
 
     const details = getMatchDetails(item);
     const score = scoreText(item);
+    const hasScore = score.length > 0;
 
     return (
       <TouchableOpacity
@@ -279,49 +286,50 @@ export default function MatchesScreen() {
           }
         }}
         style={styles.matchItem}
+        activeOpacity={0.7}
       >
         <View style={styles.matchInfo}>
           {details ? (
-            <Text
-              style={styles.matchDetails}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
+            <Text style={styles.matchDetails} numberOfLines={1}>
               {details}
             </Text>
           ) : null}
-          <Text style={styles.teamName} numberOfLines={1} ellipsizeMode="tail">
+          <Text style={styles.teamName} numberOfLines={1}>
             {homeName}
           </Text>
-          <Text style={styles.vsText} numberOfLines={1} ellipsizeMode="tail">
+          <Text style={styles.vsText} numberOfLines={1}>
             vs {awayName}
           </Text>
         </View>
-
         <View style={styles.scoreContainer}>
-          {score ? (
-            <Text style={styles.score}>{score}</Text>
-          ) : (
-            <Text style={styles.scorePending}>—</Text>
-          )}
+          <Text style={hasScore ? styles.score : styles.scorePending}>
+            {hasScore ? score : "–"}
+          </Text>
         </View>
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color="#4b5563"
+          style={styles.chevron}
+        />
       </TouchableOpacity>
     );
   };
 
-  // ListHeaderComponent: contains filters (scrolls with list)
   const ListHeader = () => (
     <Animated.View style={{ opacity: filtersOpacity }}>
       <View style={styles.filtersContainer}>
         {/* Timeframe Selector */}
         <TouchableOpacity
+          style={styles.timeframeSelector}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setModalVisible(true);
           }}
-          style={styles.timeframeSelector}
         >
-          <Text style={styles.chipText}>{timeframeLabels[timeframe]}</Text>
+          <Text style={styles.timeframeText}>
+            {timeframeIcons[timeframe]} {timeframeLabels[timeframe]}
+          </Text>
           <Ionicons
             name="chevron-down"
             size={16}
@@ -339,13 +347,11 @@ export default function MatchesScreen() {
             style={{ marginRight: 8 }}
           />
           <TextInput
+            style={styles.searchInput}
+            placeholder="Search matches..."
+            placeholderTextColor="#6b7280"
             value={query}
             onChangeText={setQuery}
-            placeholder="Search teams or competitions..."
-            placeholderTextColor="#6b7280"
-            autoCorrect={false}
-            autoCapitalize="none"
-            style={styles.searchInput}
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>
@@ -358,7 +364,8 @@ export default function MatchesScreen() {
       {/* Results count */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
-          {filtered.length} {filtered.length === 1 ? "match" : "matches"} found
+          {filtered.length.toLocaleString()}{" "}
+          {filtered.length === 1 ? "match" : "matches"} found
         </Text>
       </View>
     </Animated.View>
@@ -366,7 +373,6 @@ export default function MatchesScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Static Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Matches</Text>
         <Text style={styles.subtitle}>Browse game results and schedules</Text>
@@ -375,6 +381,7 @@ export default function MatchesScreen() {
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Loading matches...</Text>
         </View>
       ) : (
         <AnimatedFlatList
@@ -411,6 +418,8 @@ export default function MatchesScreen() {
           )}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={20}
+          maxToRenderPerBatch={30}
         />
       )}
 
@@ -446,6 +455,7 @@ export default function MatchesScreen() {
                   timeframe === tf && styles.timeframeRowSelected,
                 ]}
               >
+                <Text style={styles.timeframeIcon}>{timeframeIcons[tf]}</Text>
                 <Text
                   style={[
                     styles.timeframeRowText,
@@ -497,12 +507,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "flex-start",
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 20,
     backgroundColor: "#1F2937",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.15)",
     marginBottom: 12,
+  },
+  timeframeText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
   },
   chipText: {
     color: "#fff",
@@ -537,6 +552,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 24,
+    flexGrow: 1,
   },
   matchItem: {
     flexDirection: "row",
@@ -582,10 +598,18 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
   },
+  chevron: {
+    marginLeft: 8,
+  },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  loadingText: {
+    color: "#9ca3af",
+    fontSize: 14,
+    marginTop: 12,
   },
   emptyContainer: {
     flex: 1,
@@ -633,7 +657,6 @@ const styles = StyleSheet.create({
   timeframeRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.05)",
@@ -644,9 +667,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
   },
+  timeframeIcon: {
+    fontSize: 18,
+    marginRight: 12,
+  },
   timeframeRowText: {
     color: "#fff",
     fontSize: 15,
+    flex: 1,
   },
   timeframeRowTextSelected: {
     color: "#3B82F6",

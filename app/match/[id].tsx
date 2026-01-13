@@ -14,11 +14,18 @@ import { supabase } from "../../lib/supabase";
 
 type MatchRow = Record<string, any>;
 
-// Helper to check if a value is valid
 function isValidValue(v: any): boolean {
   if (v === null || v === undefined) return false;
   const str = String(v).trim();
   return str.length > 0 && str !== "??" && str !== "TBD";
+}
+
+function pickFirst(obj: any, keys: string[]): any {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== null && v !== undefined && `${v}`.trim() !== "") return v;
+  }
+  return undefined;
 }
 
 function formatDate(value: any): string {
@@ -55,8 +62,9 @@ export default function MatchDetailScreen() {
         setLoading(true);
         setError(null);
 
+        // Query matches table directly
         const { data, error: qErr } = await supabase
-          .from("v_matches_resolved")
+          .from("matches")
           .select("*")
           .eq("id", id)
           .single();
@@ -118,17 +126,59 @@ export default function MatchDetailScreen() {
     );
   }
 
-  const homeName = match.home_team_name ?? "Home Team";
-  const awayName = match.away_team_name ?? "Away Team";
-  const homeScore = match.home_score;
-  const awayScore = match.away_score;
+  // Get team names from multiple possible column names
+  const homeName =
+    pickFirst(match, [
+      "home_team",
+      "home_team_name",
+      "homeName",
+      "home_name",
+    ]) ?? "Home Team";
+
+  const awayName =
+    pickFirst(match, [
+      "away_team",
+      "away_team_name",
+      "awayName",
+      "away_name",
+    ]) ?? "Away Team";
+
+  const homeScore = pickFirst(match, [
+    "home_score",
+    "home_goals",
+    "homeTeamScore",
+  ]);
+  const awayScore = pickFirst(match, [
+    "away_score",
+    "away_goals",
+    "awayTeamScore",
+  ]);
   const hasScore = homeScore !== null && awayScore !== null;
-  const date = formatDate(match.match_date);
-  const time = formatTime(match.match_date);
-  const competition = isValidValue(match.competition_name)
-    ? match.competition_name
-    : null;
-  const location = isValidValue(match.location) ? match.location : null;
+
+  const date = formatDate(match.match_date ?? match.played_at ?? match.date);
+  const time = formatTime(match.match_date ?? match.played_at ?? match.date);
+
+  const competition = pickFirst(match, [
+    "competition_name",
+    "league_name",
+    "competition",
+    "league",
+  ]);
+  const showCompetition =
+    isValidValue(competition) && competition !== "GotSport";
+
+  const location = pickFirst(match, ["location", "venue_name", "venue"]);
+
+  const homeTeamId = pickFirst(match, [
+    "home_team_id",
+    "homeTeamId",
+    "home_id",
+  ]);
+  const awayTeamId = pickFirst(match, [
+    "away_team_id",
+    "awayTeamId",
+    "away_id",
+  ]);
 
   return (
     <>
@@ -143,21 +193,20 @@ export default function MatchDetailScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Competition Badge */}
-        {competition && (
+        {showCompetition && (
           <View style={styles.competitionBadge}>
             <Text style={styles.competitionText}>{competition}</Text>
           </View>
         )}
 
-        {/* Score Card */}
         <View style={styles.scoreCard}>
           <View style={styles.teamScoreSection}>
             <Text style={styles.teamNameLarge} numberOfLines={2}>
               {homeName}
             </Text>
-            <Text style={styles.scoreNumber}>{hasScore ? homeScore : "—"}</Text>
+            <Text style={styles.scoreNumber}>{hasScore ? homeScore : "–"}</Text>
           </View>
 
           <View style={styles.vsContainer}>
@@ -168,11 +217,10 @@ export default function MatchDetailScreen() {
             <Text style={styles.teamNameLarge} numberOfLines={2}>
               {awayName}
             </Text>
-            <Text style={styles.scoreNumber}>{hasScore ? awayScore : "—"}</Text>
+            <Text style={styles.scoreNumber}>{hasScore ? awayScore : "–"}</Text>
           </View>
         </View>
 
-        {/* Match Info */}
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <View style={styles.infoItem}>
@@ -188,7 +236,7 @@ export default function MatchDetailScreen() {
               </View>
             )}
           </View>
-          {location && (
+          {isValidValue(location) && (
             <View style={styles.infoRow}>
               <View style={styles.infoItem}>
                 <Ionicons name="location-outline" size={18} color="#6b7280" />
@@ -199,47 +247,56 @@ export default function MatchDetailScreen() {
           )}
         </View>
 
-        {/* Team Links */}
         <Text style={styles.sectionHeader}>Teams</Text>
 
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (match?.home_team_id) router.push(`/team/${match.home_team_id}`);
+            if (homeTeamId) router.push(`/team/${homeTeamId}`);
           }}
           style={styles.teamCard}
-          disabled={!match?.home_team_id}
+          disabled={!homeTeamId}
+          activeOpacity={0.7}
         >
           <View style={styles.teamCardContent}>
             <View style={styles.teamBadge}>
               <Text style={styles.teamBadgeText}>H</Text>
             </View>
             <View style={styles.teamCardInfo}>
-              <Text style={styles.teamCardName}>{homeName}</Text>
+              <Text style={styles.teamCardName} numberOfLines={1}>
+                {homeName}
+              </Text>
               <Text style={styles.teamCardLabel}>Home Team</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          {homeTeamId && (
+            <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (match?.away_team_id) router.push(`/team/${match.away_team_id}`);
+            if (awayTeamId) router.push(`/team/${awayTeamId}`);
           }}
           style={styles.teamCard}
-          disabled={!match?.away_team_id}
+          disabled={!awayTeamId}
+          activeOpacity={0.7}
         >
           <View style={styles.teamCardContent}>
             <View style={[styles.teamBadge, styles.awayBadge]}>
               <Text style={styles.teamBadgeText}>A</Text>
             </View>
             <View style={styles.teamCardInfo}>
-              <Text style={styles.teamCardName}>{awayName}</Text>
+              <Text style={styles.teamCardName} numberOfLines={1}>
+                {awayName}
+              </Text>
               <Text style={styles.teamCardLabel}>Away Team</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          {awayTeamId && (
+            <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          )}
         </TouchableOpacity>
       </ScrollView>
     </>
@@ -247,25 +304,15 @@ export default function MatchDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 40,
-  },
+  container: { flex: 1, backgroundColor: "#000" },
+  contentContainer: { padding: 16, paddingBottom: 40 },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#000",
   },
-  loadingText: {
-    marginTop: 12,
-    color: "#9ca3af",
-    fontSize: 16,
-  },
+  loadingText: { marginTop: 12, color: "#9ca3af", fontSize: 16 },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
@@ -285,11 +332,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
   },
-  retryButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
+  retryButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   competitionBadge: {
     backgroundColor: "#1F2937",
     paddingHorizontal: 12,
@@ -298,11 +341,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 16,
   },
-  competitionText: {
-    color: "#9ca3af",
-    fontSize: 13,
-    fontWeight: "500",
-  },
+  competitionText: { color: "#9ca3af", fontSize: 13, fontWeight: "500" },
   scoreCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -313,10 +352,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  teamScoreSection: {
-    flex: 1,
-    alignItems: "center",
-  },
+  teamScoreSection: { flex: 1, alignItems: "center" },
   teamNameLarge: {
     color: "#fff",
     fontSize: 14,
@@ -324,19 +360,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
-  scoreNumber: {
-    color: "#3B82F6",
-    fontSize: 36,
-    fontWeight: "bold",
-  },
-  vsContainer: {
-    paddingHorizontal: 16,
-  },
-  vsText: {
-    color: "#6b7280",
-    fontSize: 14,
-    fontWeight: "500",
-  },
+  scoreNumber: { color: "#3B82F6", fontSize: 36, fontWeight: "bold" },
+  vsContainer: { paddingHorizontal: 16 },
+  vsText: { color: "#6b7280", fontSize: 14, fontWeight: "500" },
   infoCard: {
     backgroundColor: "#111",
     borderRadius: 12,
@@ -345,19 +371,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  infoRow: {
-    flexDirection: "row",
-    marginBottom: 12,
-  },
-  infoItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  infoLabel: {
-    color: "#6b7280",
-    fontSize: 12,
-    marginTop: 4,
-  },
+  infoRow: { flexDirection: "row", marginBottom: 12 },
+  infoItem: { flex: 1, alignItems: "center" },
+  infoLabel: { color: "#6b7280", fontSize: 12, marginTop: 4 },
   infoValue: {
     color: "#fff",
     fontSize: 14,
@@ -382,11 +398,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  teamCardContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
+  teamCardContent: { flexDirection: "row", alignItems: "center", flex: 1 },
   teamBadge: {
     width: 36,
     height: 36,
@@ -396,25 +408,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  awayBadge: {
-    backgroundColor: "#6366F1",
-  },
-  teamBadgeText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  teamCardInfo: {
-    flex: 1,
-  },
-  teamCardName: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  teamCardLabel: {
-    color: "#6b7280",
-    fontSize: 12,
-    marginTop: 2,
-  },
+  awayBadge: { backgroundColor: "#6366F1" },
+  teamBadgeText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  teamCardInfo: { flex: 1 },
+  teamCardName: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  teamCardLabel: { color: "#6b7280", fontSize: 12, marginTop: 2 },
 });
