@@ -46,20 +46,42 @@ function formatDate(isoDate: string | null): string {
   if (!isoDate) return "";
   try {
     const d = new Date(isoDate);
-    return d.toLocaleDateString();
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   } catch {
     return "";
   }
+}
+
+// Convert ELO to letter grade
+function getEloGrade(elo: number): { grade: string; color: string } {
+  if (elo >= 1650) return { grade: "A+", color: "#22c55e" };
+  if (elo >= 1600) return { grade: "A", color: "#22c55e" };
+  if (elo >= 1550) return { grade: "A-", color: "#4ade80" };
+  if (elo >= 1525) return { grade: "B+", color: "#3B82F6" };
+  if (elo >= 1500) return { grade: "B", color: "#3B82F6" };
+  if (elo >= 1475) return { grade: "B-", color: "#60a5fa" };
+  if (elo >= 1450) return { grade: "C+", color: "#f59e0b" };
+  if (elo >= 1425) return { grade: "C", color: "#f59e0b" };
+  if (elo >= 1400) return { grade: "C-", color: "#fbbf24" };
+  if (elo >= 1375) return { grade: "D+", color: "#ef4444" };
+  if (elo >= 1350) return { grade: "D", color: "#ef4444" };
+  return { grade: "D-", color: "#dc2626" };
 }
 
 export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [team, setTeam] = useState<TeamData | null>(null);
-  const [matches, setMatches] = useState<MatchData[]>([]);
+  const [recentMatches, setRecentMatches] = useState<MatchData[]>([]);
+  const [upcomingMatches, setUpcomingMatches] = useState<MatchData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"recent" | "upcoming">("recent");
 
   const fetchTeamData = async () => {
     if (!id) {
@@ -81,18 +103,35 @@ export default function TeamDetailScreen() {
       if (teamError) throw teamError;
       setTeam(teamData as TeamData);
 
-      // Fetch recent matches for this team
+      // Fetch matches for this team
       const teamName = teamData?.team_name;
       if (teamName) {
-        const { data: matchData, error: matchError } = await supabase
+        const now = new Date().toISOString();
+
+        // Fetch recent (past) matches
+        const { data: recentData } = await supabase
           .from("matches")
           .select("*")
           .or(`home_team.eq.${teamName},away_team.eq.${teamName}`)
+          .lte("match_date", now)
           .order("match_date", { ascending: false })
           .limit(20);
 
-        if (!matchError) {
-          setMatches((matchData as MatchData[]) || []);
+        if (recentData) {
+          setRecentMatches(recentData as MatchData[]);
+        }
+
+        // Fetch upcoming matches (GAME-CHANGER FEATURE!)
+        const { data: upcomingData } = await supabase
+          .from("matches")
+          .select("*")
+          .or(`home_team.eq.${teamName},away_team.eq.${teamName}`)
+          .gt("match_date", now)
+          .order("match_date", { ascending: true })
+          .limit(10);
+
+        if (upcomingData) {
+          setUpcomingMatches(upcomingData as MatchData[]);
         }
       }
     } catch (err: any) {
@@ -128,13 +167,13 @@ export default function TeamDetailScreen() {
     return `${winPct.toFixed(1)}%`;
   };
 
-  const renderMatch = ({ item }: { item: MatchData }) => {
+  const renderRecentMatch = ({ item }: { item: MatchData }) => {
     const isHome = item.home_team === team?.team_name;
     const opponent = isHome ? item.away_team : item.home_team;
     const teamScore = isHome ? item.home_score : item.away_score;
     const oppScore = isHome ? item.away_score : item.home_score;
 
-    let result = "–";
+    let result = "—";
     let resultColor = "#6b7280";
     if (teamScore !== null && oppScore !== null) {
       if (teamScore > oppScore) {
@@ -153,7 +192,7 @@ export default function TeamDetailScreen() {
     const scoreStr =
       teamScore !== null && oppScore !== null
         ? `${teamScore} - ${oppScore}`
-        : "–";
+        : "—";
 
     return (
       <TouchableOpacity
@@ -174,6 +213,39 @@ export default function TeamDetailScreen() {
           <Text style={styles.matchDateText}>{dateStr}</Text>
         </View>
         <Text style={styles.matchScoreText}>{scoreStr}</Text>
+        <Ionicons name="chevron-forward" size={16} color="#4b5563" />
+      </TouchableOpacity>
+    );
+  };
+
+  const renderUpcomingMatch = ({ item }: { item: MatchData }) => {
+    const isHome = item.home_team === team?.team_name;
+    const opponent = isHome ? item.away_team : item.home_team;
+    const dateStr = formatDate(item.match_date);
+
+    return (
+      <TouchableOpacity
+        style={styles.matchCard}
+        activeOpacity={0.7}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push(`/match/${item.id}`);
+        }}
+      >
+        <View style={[styles.resultBadge, { backgroundColor: "#3B82F6" }]}>
+          <Ionicons name="calendar" size={14} color="#fff" />
+        </View>
+        <View style={styles.matchInfo}>
+          <Text style={styles.opponentText} numberOfLines={1}>
+            {isHome ? "vs" : "@"} {opponent || "TBD"}
+          </Text>
+          <Text style={styles.matchDateText}>{dateStr}</Text>
+          {item.location && (
+            <Text style={styles.matchLocationText} numberOfLines={1}>
+              📍 {item.location}
+            </Text>
+          )}
+        </View>
         <Ionicons name="chevron-forward" size={16} color="#4b5563" />
       </TouchableOpacity>
     );
@@ -223,6 +295,9 @@ export default function TeamDetailScreen() {
   const meta = getTeamMeta();
   const record = `${team.wins ?? 0}-${team.losses ?? 0}-${team.draws ?? 0}`;
   const elo = Math.round(team.elo_rating ?? 1500);
+  const { grade, color } = getEloGrade(elo);
+  const matchesToShow =
+    activeTab === "recent" ? recentMatches : upcomingMatches;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -262,10 +337,13 @@ export default function TeamDetailScreen() {
           </Text>
           {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
 
-          {/* ELO Rating */}
+          {/* ELO Rating with Grade */}
           <View style={styles.eloSection}>
-            <Text style={styles.eloValue}>{elo}</Text>
-            <Text style={styles.eloLabel}>ELO Rating</Text>
+            <View style={styles.eloGradeContainer}>
+              <Text style={[styles.eloGrade, { color }]}>{grade}</Text>
+              <Text style={styles.eloValue}>{elo}</Text>
+            </View>
+            <Text style={styles.eloLabel}>Team Rating</Text>
           </View>
         </View>
 
@@ -304,20 +382,64 @@ export default function TeamDetailScreen() {
           </View>
         </View>
 
-        {/* Recent Matches */}
-        <Text style={styles.sectionTitle}>Recent Matches</Text>
-        {matches.length > 0 ? (
+        {/* Matches Tabs */}
+        <View style={styles.tabsHeader}>
+          <Text style={styles.sectionTitle}>Matches</Text>
+          <View style={styles.tabsContainer}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "recent" && styles.activeTab]}
+              onPress={() => setActiveTab("recent")}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "recent" && styles.activeTabText,
+                ]}
+              >
+                Recent ({recentMatches.length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "upcoming" && styles.activeTab]}
+              onPress={() => setActiveTab("upcoming")}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "upcoming" && styles.activeTabText,
+                ]}
+              >
+                Upcoming ({upcomingMatches.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Matches List */}
+        {matchesToShow.length > 0 ? (
           <FlatList
-            data={matches}
-            renderItem={renderMatch}
+            data={matchesToShow}
+            renderItem={
+              activeTab === "recent" ? renderRecentMatch : renderUpcomingMatch
+            }
             keyExtractor={(item) => item.id}
             scrollEnabled={false}
             contentContainerStyle={styles.matchesList}
           />
         ) : (
           <View style={styles.emptyMatches}>
-            <Ionicons name="football-outline" size={32} color="#374151" />
-            <Text style={styles.emptyText}>No matches found</Text>
+            <Ionicons
+              name={
+                activeTab === "recent" ? "football-outline" : "calendar-outline"
+              }
+              size={32}
+              color="#374151"
+            />
+            <Text style={styles.emptyText}>
+              {activeTab === "recent"
+                ? "No recent matches found"
+                : "No upcoming matches scheduled"}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -391,10 +513,19 @@ const styles = StyleSheet.create({
     borderTopColor: "rgba(255,255,255,0.1)",
     width: "100%",
   },
-  eloValue: {
-    color: "#3B82F6",
+  eloGradeContainer: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 12,
+  },
+  eloGrade: {
     fontSize: 48,
     fontWeight: "bold",
+  },
+  eloValue: {
+    color: "#6b7280",
+    fontSize: 24,
+    fontWeight: "600",
   },
   eloLabel: {
     color: "#6b7280",
@@ -434,6 +565,34 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: "center",
   },
+  tabsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  tabsContainer: {
+    flexDirection: "row",
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+    padding: 2,
+  },
+  tab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  activeTab: {
+    backgroundColor: "#3B82F6",
+  },
+  tabText: {
+    color: "#9ca3af",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  activeTabText: {
+    color: "#fff",
+  },
   matchesList: {
     gap: 10,
   },
@@ -470,6 +629,11 @@ const styles = StyleSheet.create({
   matchDateText: {
     color: "#6b7280",
     fontSize: 12,
+    marginTop: 2,
+  },
+  matchLocationText: {
+    color: "#9ca3af",
+    fontSize: 11,
     marginTop: 2,
   },
   matchScoreText: {

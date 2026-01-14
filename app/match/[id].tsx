@@ -13,6 +13,7 @@ import {
 import { supabase } from "../../lib/supabase";
 
 type MatchRow = Record<string, any>;
+type TeamInfo = { id: string; team_name: string } | null;
 
 function isValidValue(v: any): boolean {
   if (v === null || v === undefined) return false;
@@ -55,6 +56,8 @@ export default function MatchDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [match, setMatch] = useState<MatchRow | null>(null);
+  const [homeTeamInfo, setHomeTeamInfo] = useState<TeamInfo>(null);
+  const [awayTeamInfo, setAwayTeamInfo] = useState<TeamInfo>(null);
 
   useEffect(() => {
     async function load() {
@@ -71,6 +74,38 @@ export default function MatchDetailScreen() {
 
         if (qErr) throw qErr;
         setMatch(data ?? null);
+
+        // Look up team IDs by team name from team_elo table
+        const homeName = pickFirst(data, [
+          "home_team",
+          "home_team_name",
+          "homeName",
+          "home_name",
+        ]);
+        const awayName = pickFirst(data, [
+          "away_team",
+          "away_team_name",
+          "awayName",
+          "away_name",
+        ]);
+
+        if (homeName) {
+          const { data: homeData } = await supabase
+            .from("team_elo")
+            .select("id, team_name")
+            .eq("team_name", homeName)
+            .single();
+          if (homeData) setHomeTeamInfo(homeData as TeamInfo);
+        }
+
+        if (awayName) {
+          const { data: awayData } = await supabase
+            .from("team_elo")
+            .select("id, team_name")
+            .eq("team_name", awayName)
+            .single();
+          if (awayData) setAwayTeamInfo(awayData as TeamInfo);
+        }
       } catch (e: any) {
         console.error("Error loading match:", e);
         setError(e?.message ?? "Unknown error");
@@ -169,16 +204,21 @@ export default function MatchDetailScreen() {
 
   const location = pickFirst(match, ["location", "venue_name", "venue"]);
 
-  const homeTeamId = pickFirst(match, [
-    "home_team_id",
-    "homeTeamId",
-    "home_id",
-  ]);
-  const awayTeamId = pickFirst(match, [
-    "away_team_id",
-    "awayTeamId",
-    "away_id",
-  ]);
+  const navigateToTeam = (teamInfo: TeamInfo) => {
+    if (teamInfo?.id) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push(`/team/${teamInfo.id}`);
+    }
+  };
+
+  // Get team initials for badge
+  const getInitials = (name: string): string => {
+    const words = name.split(" ").filter((w) => w.length > 0);
+    if (words.length >= 2) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
 
   return (
     <>
@@ -202,23 +242,51 @@ export default function MatchDetailScreen() {
         )}
 
         <View style={styles.scoreCard}>
-          <View style={styles.teamScoreSection}>
-            <Text style={styles.teamNameLarge} numberOfLines={2}>
+          <TouchableOpacity
+            style={styles.teamScoreSection}
+            onPress={() => navigateToTeam(homeTeamInfo)}
+            disabled={!homeTeamInfo}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.teamNameLarge,
+                homeTeamInfo && styles.teamNameClickable,
+              ]}
+              numberOfLines={2}
+            >
               {homeName}
             </Text>
-            <Text style={styles.scoreNumber}>{hasScore ? homeScore : "–"}</Text>
-          </View>
+            <Text style={styles.scoreNumber}>{hasScore ? homeScore : "—"}</Text>
+            {homeTeamInfo && (
+              <Text style={styles.tapToView}>Tap to view team</Text>
+            )}
+          </TouchableOpacity>
 
           <View style={styles.vsContainer}>
             <Text style={styles.vsText}>vs</Text>
           </View>
 
-          <View style={styles.teamScoreSection}>
-            <Text style={styles.teamNameLarge} numberOfLines={2}>
+          <TouchableOpacity
+            style={styles.teamScoreSection}
+            onPress={() => navigateToTeam(awayTeamInfo)}
+            disabled={!awayTeamInfo}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.teamNameLarge,
+                awayTeamInfo && styles.teamNameClickable,
+              ]}
+              numberOfLines={2}
+            >
               {awayName}
             </Text>
-            <Text style={styles.scoreNumber}>{hasScore ? awayScore : "–"}</Text>
-          </View>
+            <Text style={styles.scoreNumber}>{hasScore ? awayScore : "—"}</Text>
+            {awayTeamInfo && (
+              <Text style={styles.tapToView}>Tap to view team</Text>
+            )}
+          </TouchableOpacity>
         </View>
 
         <View style={styles.infoCard}>
@@ -250,17 +318,14 @@ export default function MatchDetailScreen() {
         <Text style={styles.sectionHeader}>Teams</Text>
 
         <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (homeTeamId) router.push(`/team/${homeTeamId}`);
-          }}
-          style={styles.teamCard}
-          disabled={!homeTeamId}
+          onPress={() => navigateToTeam(homeTeamInfo)}
+          style={[styles.teamCard, !homeTeamInfo && styles.teamCardDisabled]}
+          disabled={!homeTeamInfo}
           activeOpacity={0.7}
         >
           <View style={styles.teamCardContent}>
             <View style={styles.teamBadge}>
-              <Text style={styles.teamBadgeText}>H</Text>
+              <Text style={styles.teamBadgeText}>{getInitials(homeName)}</Text>
             </View>
             <View style={styles.teamCardInfo}>
               <Text style={styles.teamCardName} numberOfLines={1}>
@@ -269,23 +334,22 @@ export default function MatchDetailScreen() {
               <Text style={styles.teamCardLabel}>Home Team</Text>
             </View>
           </View>
-          {homeTeamId && (
-            <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          {homeTeamInfo ? (
+            <Ionicons name="chevron-forward" size={20} color="#3B82F6" />
+          ) : (
+            <Text style={styles.noDataLabel}>No profile</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (awayTeamId) router.push(`/team/${awayTeamId}`);
-          }}
-          style={styles.teamCard}
-          disabled={!awayTeamId}
+          onPress={() => navigateToTeam(awayTeamInfo)}
+          style={[styles.teamCard, !awayTeamInfo && styles.teamCardDisabled]}
+          disabled={!awayTeamInfo}
           activeOpacity={0.7}
         >
           <View style={styles.teamCardContent}>
             <View style={[styles.teamBadge, styles.awayBadge]}>
-              <Text style={styles.teamBadgeText}>A</Text>
+              <Text style={styles.teamBadgeText}>{getInitials(awayName)}</Text>
             </View>
             <View style={styles.teamCardInfo}>
               <Text style={styles.teamCardName} numberOfLines={1}>
@@ -294,8 +358,10 @@ export default function MatchDetailScreen() {
               <Text style={styles.teamCardLabel}>Away Team</Text>
             </View>
           </View>
-          {awayTeamId && (
-            <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          {awayTeamInfo ? (
+            <Ionicons name="chevron-forward" size={20} color="#6366F1" />
+          ) : (
+            <Text style={styles.noDataLabel}>No profile</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -360,6 +426,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
+  teamNameClickable: {
+    color: "#3B82F6",
+  },
+  tapToView: {
+    color: "#6b7280",
+    fontSize: 10,
+    marginTop: 4,
+  },
   scoreNumber: { color: "#3B82F6", fontSize: 36, fontWeight: "bold" },
   vsContainer: { paddingHorizontal: 16 },
   vsText: { color: "#6b7280", fontSize: 14, fontWeight: "500" },
@@ -398,11 +472,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
+  teamCardDisabled: {
+    opacity: 0.6,
+  },
   teamCardContent: { flexDirection: "row", alignItems: "center", flex: 1 },
   teamBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#3B82F6",
     justifyContent: "center",
     alignItems: "center",
@@ -413,4 +490,8 @@ const styles = StyleSheet.create({
   teamCardInfo: { flex: 1 },
   teamCardName: { color: "#fff", fontSize: 15, fontWeight: "600" },
   teamCardLabel: { color: "#6b7280", fontSize: 12, marginTop: 2 },
+  noDataLabel: {
+    color: "#6b7280",
+    fontSize: 12,
+  },
 });

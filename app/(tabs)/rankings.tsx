@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -37,16 +37,28 @@ function isValidValue(v: string | null | undefined): boolean {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
 }
 
-const AnimatedFlatList = Animated.createAnimatedComponent(
-  FlatList<TeamRankRow>,
-);
+// Convert ELO to letter grade for intuitive display
+function getEloGrade(elo: number): { grade: string; color: string } {
+  if (elo >= 1650) return { grade: "A+", color: "#22c55e" };
+  if (elo >= 1600) return { grade: "A", color: "#22c55e" };
+  if (elo >= 1550) return { grade: "A-", color: "#4ade80" };
+  if (elo >= 1525) return { grade: "B+", color: "#3B82F6" };
+  if (elo >= 1500) return { grade: "B", color: "#3B82F6" };
+  if (elo >= 1475) return { grade: "B-", color: "#60a5fa" };
+  if (elo >= 1450) return { grade: "C+", color: "#f59e0b" };
+  if (elo >= 1425) return { grade: "C", color: "#f59e0b" };
+  if (elo >= 1400) return { grade: "C-", color: "#fbbf24" };
+  if (elo >= 1375) return { grade: "D+", color: "#ef4444" };
+  if (elo >= 1350) return { grade: "D", color: "#ef4444" };
+  return { grade: "D-", color: "#dc2626" };
+}
 
 export default function RankingsTab() {
   const [mode, setMode] = useState<"national" | "state">("national");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [genderFilter, setGenderFilter] = useState<string>("");
   const [ageGroupFilter, setAgeGroupFilter] = useState<string>("");
-  const [rankings, setRankings] = useState<TeamRankRow[]>([]);
+  const [allTeams, setAllTeams] = useState<TeamRankRow[]>([]);
   const [allStates, setAllStates] = useState<string[]>([]);
   const [allGenders, setAllGenders] = useState<string[]>([]);
   const [allAgeGroups, setAllAgeGroups] = useState<string[]>([]);
@@ -54,95 +66,49 @@ export default function RankingsTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [infoModalVisible, setInfoModalVisible] = useState(false);
 
-  const [scrollY] = useState(new Animated.Value(0));
+  const searchInputRef = useRef<TextInput>(null);
 
-  const filtersOpacity = scrollY.interpolate({
-    inputRange: [0, 150],
-    outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
-
-  // Fetch all unique filter values on mount
+  // Fetch ALL teams once on mount, then filter client-side
   useEffect(() => {
-    void fetchFilterOptions();
+    void fetchAllTeams();
   }, []);
 
-  useEffect(() => {
-    void fetchRankings();
-  }, [mode, stateFilter, genderFilter, ageGroupFilter]);
+  const fetchAllTeams = async () => {
+    setLoading(true);
+    setError(null);
 
-  const fetchFilterOptions = async () => {
     try {
-      // Fetch all unique states
-      const { data: stateData } = await supabase
+      // Fetch ALL teams - no limit
+      const { data, error } = await supabase
         .from("team_elo")
-        .select("state")
-        .not("state", "is", null);
+        .select("*")
+        .order("elo_rating", { ascending: false });
 
+      if (error) throw error;
+
+      const teams = (data || []) as TeamRankRow[];
+      setAllTeams(teams);
+
+      // Extract unique filter values
       const states = [
-        ...new Set((stateData || []).map((r) => r.state).filter(isValidValue)),
+        ...new Set(teams.map((t) => t.state).filter(isValidValue)),
       ].sort();
-      setAllStates(states as string[]);
-
-      // Fetch all unique genders
-      const { data: genderData } = await supabase
-        .from("team_elo")
-        .select("gender")
-        .not("gender", "is", null);
-
       const genders = [
-        ...new Set(
-          (genderData || []).map((r) => r.gender).filter(isValidValue),
-        ),
+        ...new Set(teams.map((t) => t.gender).filter(isValidValue)),
       ].sort();
-      setAllGenders(genders as string[]);
-
-      // Fetch all unique age groups
-      const { data: ageData } = await supabase
-        .from("team_elo")
-        .select("age_group")
-        .not("age_group", "is", null);
-
       const ages = [
-        ...new Set(
-          (ageData || []).map((r) => r.age_group).filter(isValidValue),
-        ),
+        ...new Set(teams.map((t) => t.age_group).filter(isValidValue)),
       ].sort((a, b) => {
         const numA = parseInt(a?.replace(/\D/g, "") || "0", 10);
         const numB = parseInt(b?.replace(/\D/g, "") || "0", 10);
         return numA - numB;
       });
+
+      setAllStates(states as string[]);
+      setAllGenders(genders as string[]);
       setAllAgeGroups(ages as string[]);
-    } catch (err) {
-      console.error("Error fetching filter options:", err);
-    }
-  };
-
-  const fetchRankings = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      let query = supabase.from("team_elo").select("*");
-
-      if (mode === "state" && stateFilter)
-        query = query.eq("state", stateFilter);
-      if (genderFilter) query = query.eq("gender", genderFilter);
-      if (ageGroupFilter) query = query.eq("age_group", ageGroupFilter);
-
-      const { data, error } = await query
-        .order("elo_rating", { ascending: false })
-        .limit(500);
-
-      if (error) throw error;
-
-      const rankedData = (data || []).map((team, index) => ({
-        ...team,
-        rank: index + 1,
-      }));
-
-      setRankings(rankedData as TeamRankRow[]);
     } catch (err: any) {
       console.error("Error fetching rankings:", err);
       setError(err.message || "Failed to load rankings");
@@ -153,16 +119,38 @@ export default function RankingsTab() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchRankings();
+    await fetchAllTeams();
     setRefreshing(false);
   };
 
+  // Filter and rank teams client-side
   const filteredRankings = useMemo(() => {
-    if (!searchQuery) return rankings;
-    return rankings.filter((team) =>
-      team.team_name?.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-  }, [rankings, searchQuery]);
+    let filtered = allTeams;
+
+    // Apply filters
+    if (mode === "state" && stateFilter) {
+      filtered = filtered.filter((t) => t.state === stateFilter);
+    }
+    if (genderFilter) {
+      filtered = filtered.filter((t) => t.gender === genderFilter);
+    }
+    if (ageGroupFilter) {
+      filtered = filtered.filter((t) => t.age_group === ageGroupFilter);
+    }
+
+    // Apply search
+    if (searchQuery) {
+      filtered = filtered.filter((t) =>
+        t.team_name?.toLowerCase().includes(searchQuery.toLowerCase()),
+      );
+    }
+
+    // Re-rank after filtering
+    return filtered.map((team, index) => ({
+      ...team,
+      rank: index + 1,
+    }));
+  }, [allTeams, mode, stateFilter, genderFilter, ageGroupFilter, searchQuery]);
 
   const handleModeChange = (newMode: "national" | "state") => {
     setMode(newMode);
@@ -187,11 +175,16 @@ export default function RankingsTab() {
   };
 
   const hasFilters =
-    stateFilter !== "" || genderFilter !== "" || ageGroupFilter !== "";
+    stateFilter !== "" ||
+    genderFilter !== "" ||
+    ageGroupFilter !== "" ||
+    searchQuery !== "";
 
   const renderTeamItem = ({ item }: { item: TeamRankRow }) => {
     const details = getTeamDetails(item);
     const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
+    const elo = Math.round(item.elo_rating ?? 1500);
+    const { grade, color } = getEloGrade(elo);
 
     // Medal colors for top 3
     const getMedalColor = (rank: number | undefined) => {
@@ -225,10 +218,8 @@ export default function RankingsTab() {
           </Text>
         </View>
         <View style={styles.ratingContainer}>
-          <Text style={styles.rating}>
-            {item.elo_rating?.toFixed(0) ?? "—"}
-          </Text>
-          <Text style={styles.ratingLabel}>ELO</Text>
+          <Text style={[styles.ratingGrade, { color }]}>{grade}</Text>
+          <Text style={styles.ratingElo}>{elo}</Text>
         </View>
         <Ionicons
           name="chevron-forward"
@@ -259,7 +250,7 @@ export default function RankingsTab() {
   );
 
   const ListHeader = () => (
-    <Animated.View style={{ opacity: filtersOpacity }}>
+    <View>
       <View style={styles.filtersContainer}>
         {/* Search */}
         <View style={styles.searchContainer}>
@@ -270,11 +261,16 @@ export default function RankingsTab() {
             style={{ marginRight: 8 }}
           />
           <TextInput
+            ref={searchInputRef}
             style={styles.searchInput}
             placeholder="Search teams..."
             placeholderTextColor="#6b7280"
             value={searchQuery}
             onChangeText={setSearchQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            blurOnSubmit={false}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
@@ -289,6 +285,7 @@ export default function RankingsTab() {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.chipScroll}
+          keyboardShouldPersistTaps="handled"
         >
           {renderChip("🌎 National", mode === "national", () =>
             handleModeChange("national"),
@@ -298,63 +295,61 @@ export default function RankingsTab() {
           )}
         </ScrollView>
 
-        {/* State Filter (only when State mode) */}
-        {mode === "state" && allStates.length > 0 && (
+        {/* State filter - only show when in state mode */}
+        {mode === "state" && (
           <>
-            <Text style={styles.sectionHeader}>State</Text>
+            <Text style={styles.sectionHeader}>Select State</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.chipScroll}
+              keyboardShouldPersistTaps="handled"
             >
-              {allStates.map((state) => (
-                <View key={state}>
-                  {renderChip(state, stateFilter === state, () =>
-                    setStateFilter(stateFilter === state ? "" : state),
-                  )}
-                </View>
-              ))}
+              {allStates.map((state) =>
+                renderChip(state, stateFilter === state, () =>
+                  setStateFilter(stateFilter === state ? "" : state),
+                ),
+              )}
             </ScrollView>
           </>
         )}
 
-        {/* Gender Filter */}
+        {/* Gender filter */}
         <Text style={styles.sectionHeader}>Gender</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.chipScroll}
+          keyboardShouldPersistTaps="handled"
         >
-          {allGenders.map((gender) => (
-            <View key={gender}>
-              {renderChip(gender, genderFilter === gender, () =>
-                setGenderFilter(genderFilter === gender ? "" : gender),
-              )}
-            </View>
-          ))}
+          {allGenders.map((gender) =>
+            renderChip(gender, genderFilter === gender, () =>
+              setGenderFilter(genderFilter === gender ? "" : gender),
+            ),
+          )}
         </ScrollView>
 
-        {/* Age Group Filter */}
+        {/* Age group filter */}
         <Text style={styles.sectionHeader}>Age Group</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.chipScroll}
+          keyboardShouldPersistTaps="handled"
         >
-          {allAgeGroups.map((age) => (
-            <View key={age}>
-              {renderChip(age, ageGroupFilter === age, () =>
-                setAgeGroupFilter(ageGroupFilter === age ? "" : age),
-              )}
-            </View>
-          ))}
+          {allAgeGroups.map((age) =>
+            renderChip(age, ageGroupFilter === age, () =>
+              setAgeGroupFilter(ageGroupFilter === age ? "" : age),
+            ),
+          )}
         </ScrollView>
 
+        {/* Clear filters button */}
         {hasFilters && (
           <TouchableOpacity style={styles.clearChip} onPress={clearFilters}>
             <Ionicons
               name="close"
-              size={14}
+              size={16}
               color="#fff"
               style={{ marginRight: 4 }}
             />
@@ -363,13 +358,24 @@ export default function RankingsTab() {
         )}
       </View>
 
-      {/* Results count */}
+      {/* Results count with info button */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
           {filteredRankings.length.toLocaleString()} teams ranked
         </Text>
+        <TouchableOpacity
+          style={styles.infoButton}
+          onPress={() => setInfoModalVisible(true)}
+        >
+          <Ionicons
+            name="information-circle-outline"
+            size={20}
+            color="#3B82F6"
+          />
+          <Text style={styles.infoButtonText}>How Rankings Work</Text>
+        </TouchableOpacity>
       </View>
-    </Animated.View>
+    </View>
   );
 
   // Empty state component
@@ -377,11 +383,9 @@ export default function RankingsTab() {
     <View style={styles.emptyContainer}>
       <Ionicons name="trophy-outline" size={48} color="#374151" />
       <Text style={styles.noDataText}>
-        {hasFilters || searchQuery
-          ? "No teams match your filters"
-          : "No rankings available"}
+        {hasFilters ? "No teams match your filters" : "No rankings available"}
       </Text>
-      {(hasFilters || searchQuery) && (
+      {hasFilters && (
         <TouchableOpacity
           style={styles.clearFiltersButton}
           onPress={clearFilters}
@@ -400,7 +404,7 @@ export default function RankingsTab() {
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => void fetchRankings()}
+            onPress={() => void fetchAllTeams()}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
@@ -424,13 +428,14 @@ export default function RankingsTab() {
           <Text style={styles.loadingText}>Loading rankings...</Text>
         </View>
       ) : (
-        <AnimatedFlatList
+        <FlatList
           data={filteredRankings}
           renderItem={renderTeamItem}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={EmptyComponent}
           contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -438,16 +443,57 @@ export default function RankingsTab() {
               tintColor="#3B82F6"
             />
           }
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: true },
-          )}
-          scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
           maxToRenderPerBatch={30}
         />
       )}
+
+      {/* Info Modal */}
+      <Modal
+        visible={infoModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setInfoModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setInfoModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>How Rankings Work</Text>
+              <TouchableOpacity onPress={() => setInfoModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>ELO Rating System</Text>
+              {"\n"}Teams start at 1500 ELO. Winning increases your rating,
+              losing decreases it. The change depends on opponent strength -
+              beating a stronger team earns more points.
+            </Text>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>Letter Grades</Text>
+              {"\n"}A+ (1650+) - Elite teams{"\n"}
+              A/A- (1550-1649) - Excellent{"\n"}
+              B+/B/B- (1475-1549) - Above Average{"\n"}
+              C+/C/C- (1400-1474) - Average{"\n"}
+              D+/D/D- (below 1400) - Developing
+            </Text>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>Ranking Scope</Text>
+              {"\n"}National rankings compare all teams. State rankings show
+              teams from the selected state. Use filters to compare teams in
+              your age group and gender.
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -540,6 +586,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   resultsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: "#000",
@@ -548,6 +597,15 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontSize: 14,
     fontWeight: "500",
+  },
+  infoButton: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  infoButtonText: {
+    color: "#3B82F6",
+    fontSize: 12,
+    marginLeft: 4,
   },
   listContent: {
     paddingBottom: 24,
@@ -592,17 +650,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   ratingContainer: {
-    alignItems: "flex-end",
+    alignItems: "center",
+    minWidth: 50,
   },
-  rating: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
+  ratingGrade: {
+    fontSize: 20,
+    fontWeight: "bold",
   },
-  ratingLabel: {
+  ratingElo: {
     color: "#6b7280",
     fontSize: 11,
-    fontWeight: "500",
+    marginTop: 2,
   },
   chevron: {
     marginLeft: 8,
@@ -658,5 +716,41 @@ const styles = StyleSheet.create({
     color: "#3B82F6",
     fontSize: 14,
     fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  modalContent: {
+    backgroundColor: "#1F2937",
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  modalTitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  modalText: {
+    color: "#d1d5db",
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  modalBold: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });

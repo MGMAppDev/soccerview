@@ -11,7 +11,6 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
   Modal,
   Platform,
@@ -57,134 +56,48 @@ function scoreText(m: MatchRow): string {
   return `${hs} - ${as}`;
 }
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<MatchRow>);
-
 export default function MatchesScreen() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
-  const [matches, setMatches] = useState<MatchRow[]>([]);
-  const [teamNameById, setTeamNameById] = useState<Record<string, string>>({});
+  const [allMatches, setAllMatches] = useState<MatchRow[]>([]);
   const [timeframe, setTimeframe] = useState<Timeframe>("all");
   const [modalVisible, setModalVisible] = useState(false);
 
-  const [scrollY] = useState(new Animated.Value(0));
+  const searchInputRef = useRef<TextInput>(null);
 
-  // Fade filters as user scrolls down
-  const filtersOpacity = scrollY.interpolate({
-    inputRange: [0, 150],
-    outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
+  const loadMatches = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) setLoading(true);
 
-  const teamNameRef = useRef<Record<string, string>>({});
-  useEffect(() => {
-    teamNameRef.current = teamNameById;
-  }, [teamNameById]);
+    try {
+      // Load ALL matches, filter client-side for responsiveness
+      const { data, error } = await supabase
+        .from("matches")
+        .select("*")
+        .order("match_date", { ascending: false, nullsFirst: false })
+        .limit(2000);
 
-  const hydrateTeamNames = useCallback(async (rows: MatchRow[]) => {
-    const ids = new Set<string>();
+      if (error) {
+        console.error("Matches query error:", error);
+        setAllMatches([]);
+        return;
+      }
 
-    for (const r of rows) {
-      const homeId = pickFirst(r, ["home_team_id", "homeTeamId", "home_id"]);
-      const awayId = pickFirst(r, ["away_team_id", "awayTeamId", "away_id"]);
-      if (homeId) ids.add(String(homeId));
-      if (awayId) ids.add(String(awayId));
-    }
-
-    const all = Array.from(ids);
-    if (all.length === 0) return;
-
-    const missing = all.filter((id) => !teamNameRef.current[id]);
-    if (missing.length === 0) return;
-
-    const { data, error } = await supabase
-      .from("v_teams_resolved")
-      .select("*")
-      .in("id", missing);
-
-    if (error) return;
-
-    const next: Record<string, string> = {};
-    for (const t of data ?? []) {
-      const id = String(t.id);
-      const name =
-        pickFirst(t, ["display_name", "team_name", "name", "short_name"]) ??
-        `Team ${id}`;
-      next[id] = String(name);
-    }
-
-    if (Object.keys(next).length > 0) {
-      setTeamNameById((prev) => ({ ...prev, ...next }));
+      setAllMatches((data ?? []) as MatchRow[]);
+    } catch (err) {
+      console.error("Error loading matches:", err);
+      setAllMatches([]);
+    } finally {
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  const loadMatches = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      const silent = opts?.silent ?? false;
-      if (!silent) setLoading(true);
-
-      try {
-        let supabaseQuery = supabase
-          .from("matches")
-          .select("*")
-          .order("match_date", { ascending: false, nullsFirst: false })
-          .limit(1000);
-
-        const now = new Date();
-        const nowStr = now.toISOString().split("T")[0];
-        if (timeframe === "recent") {
-          const thirtyDaysAgo = new Date();
-          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-          const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
-          supabaseQuery = supabaseQuery
-            .gte("match_date", thirtyDaysAgoStr)
-            .lte("match_date", nowStr);
-        } else if (timeframe === "upcoming") {
-          supabaseQuery = supabaseQuery.gt("match_date", nowStr);
-        }
-
-        const { data, error } = await supabaseQuery;
-
-        if (error) {
-          console.error("Matches query error:", error);
-          setMatches([]);
-          return;
-        }
-
-        const rows = (data ?? []) as MatchRow[];
-        setMatches(rows);
-        hydrateTeamNames(rows);
-      } catch (err) {
-        console.error("Error loading matches:", err);
-        setMatches([]);
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [hydrateTeamNames, timeframe],
-  );
-
   useEffect(() => {
     loadMatches();
-
-    const channel = supabase
-      .channel("matches_changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "matches" },
-        () => {
-          loadMatches({ silent: true });
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [timeframe, loadMatches]);
+  }, [loadMatches]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -192,38 +105,57 @@ export default function MatchesScreen() {
     setRefreshing(false);
   }, [loadMatches]);
 
-  const filtered = useMemo(() => {
+  // Filter matches client-side based on timeframe and search
+  const filteredMatches = useMemo(() => {
+    const now = new Date();
+    const nowStr = now.toISOString().split("T")[0];
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
+
+    let filtered = allMatches;
+
+    // Apply timeframe filter
+    if (timeframe === "recent") {
+      filtered = filtered.filter((m) => {
+        const matchDate = m.match_date?.split("T")[0];
+        return (
+          matchDate && matchDate >= thirtyDaysAgoStr && matchDate <= nowStr
+        );
+      });
+    } else if (timeframe === "upcoming") {
+      filtered = filtered.filter((m) => {
+        const matchDate = m.match_date?.split("T")[0];
+        return matchDate && matchDate > nowStr;
+      });
+    }
+
+    // Apply search filter
     const q = query.trim().toLowerCase();
-    if (!q) return matches;
+    if (q) {
+      filtered = filtered.filter((m) => {
+        const homeName =
+          pickFirst(m, ["home_team_name", "homeName", "home_team"]) ?? "";
+        const awayName =
+          pickFirst(m, ["away_team_name", "awayName", "away_team"]) ?? "";
+        const compName =
+          pickFirst(m, [
+            "competition_name",
+            "league_name",
+            "competition",
+            "league",
+          ]) ?? "";
+        const location =
+          pickFirst(m, ["location", "venue_name", "venue"]) ?? "";
 
-    return matches.filter((m) => {
-      const compName =
-        pickFirst(m, [
-          "competition_name",
-          "league_name",
-          "competition",
-          "league",
-        ]) ?? "";
-      const compKey =
-        pickFirst(m, ["competition_key", "competition_id", "league_id"]) ?? "";
+        const searchable =
+          `${homeName} ${awayName} ${compName} ${location}`.toLowerCase();
+        return searchable.includes(q);
+      });
+    }
 
-      const homeId = pickFirst(m, ["home_team_id", "homeTeamId", "home_id"]);
-      const awayId = pickFirst(m, ["away_team_id", "awayTeamId", "away_id"]);
-
-      const homeName =
-        pickFirst(m, ["home_team_name", "homeName", "home_team"]) ??
-        (homeId ? teamNameById[String(homeId)] : "") ??
-        "";
-      const awayName =
-        pickFirst(m, ["away_team_name", "awayName", "away_team"]) ??
-        (awayId ? teamNameById[String(awayId)] : "") ??
-        "";
-
-      const searchable =
-        `${homeName} ${awayName} ${compName} ${compKey}`.toLowerCase();
-      return searchable.includes(q);
-    });
-  }, [matches, query, teamNameById]);
+    return filtered;
+  }, [allMatches, timeframe, query]);
 
   const timeframeLabels: Record<Timeframe, string> = {
     all: "All Matches",
@@ -241,15 +173,6 @@ export default function MatchesScreen() {
   const getMatchDetails = (item: MatchRow): string => {
     const parts: string[] = [];
 
-    const compName = pickFirst(item, [
-      "competition_name",
-      "league_name",
-      "competition",
-      "league",
-    ]);
-    // Filter out generic source names like "GotSport"
-    if (isValidValue(compName) && compName !== "GotSport") parts.push(compName);
-
     const date = toDisplayDate(item.match_date ?? item.played_at ?? item.date);
     if (date) parts.push(date);
 
@@ -260,17 +183,10 @@ export default function MatchesScreen() {
   };
 
   const renderItem = ({ item }: { item: MatchRow }) => {
-    const homeId = pickFirst(item, ["home_team_id", "homeTeamId", "home_id"]);
-    const awayId = pickFirst(item, ["away_team_id", "awayTeamId", "away_id"]);
-
     const homeName =
-      pickFirst(item, ["home_team_name", "homeName", "home_team"]) ??
-      (homeId ? teamNameById[String(homeId)] : "") ??
-      "TBD";
+      pickFirst(item, ["home_team_name", "homeName", "home_team"]) ?? "TBD";
     const awayName =
-      pickFirst(item, ["away_team_name", "awayName", "away_team"]) ??
-      (awayId ? teamNameById[String(awayId)] : "") ??
-      "TBD";
+      pickFirst(item, ["away_team_name", "awayName", "away_team"]) ?? "TBD";
 
     const details = getMatchDetails(item);
     const score = scoreText(item);
@@ -303,7 +219,7 @@ export default function MatchesScreen() {
         </View>
         <View style={styles.scoreContainer}>
           <Text style={hasScore ? styles.score : styles.scorePending}>
-            {hasScore ? score : "–"}
+            {hasScore ? score : "—"}
           </Text>
         </View>
         <Ionicons
@@ -317,9 +233,9 @@ export default function MatchesScreen() {
   };
 
   const ListHeader = () => (
-    <Animated.View style={{ opacity: filtersOpacity }}>
+    <View>
       <View style={styles.filtersContainer}>
-        {/* Timeframe Selector */}
+        {/* Timeframe selector button */}
         <TouchableOpacity
           style={styles.timeframeSelector}
           onPress={() => {
@@ -347,11 +263,16 @@ export default function MatchesScreen() {
             style={{ marginRight: 8 }}
           />
           <TextInput
+            ref={searchInputRef}
             style={styles.searchInput}
             placeholder="Search matches..."
             placeholderTextColor="#6b7280"
             value={query}
             onChangeText={setQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            blurOnSubmit={false}
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>
@@ -364,15 +285,15 @@ export default function MatchesScreen() {
       {/* Results count */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
-          {filtered.length.toLocaleString()}{" "}
-          {filtered.length === 1 ? "match" : "matches"} found
+          {filteredMatches.length.toLocaleString()} matches found
         </Text>
       </View>
-    </Animated.View>
+    </View>
   );
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Static Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Matches</Text>
         <Text style={styles.subtitle}>Browse game results and schedules</Text>
@@ -384,10 +305,12 @@ export default function MatchesScreen() {
           <Text style={styles.loadingText}>Loading matches...</Text>
         </View>
       ) : (
-        <AnimatedFlatList
-          data={filtered}
+        <FlatList
+          data={filteredMatches}
+          keyExtractor={(item, index) =>
+            item.id ?? item.match_id ?? `match-${index}`
+          }
           renderItem={renderItem}
-          keyExtractor={(item, idx) => String(item.id ?? item.match_id ?? idx)}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
@@ -395,16 +318,24 @@ export default function MatchesScreen() {
               <Text style={styles.noDataText}>
                 {query
                   ? "No matches match your search"
-                  : "No matches available yet"}
+                  : timeframe === "upcoming"
+                    ? "No upcoming matches scheduled"
+                    : timeframe === "recent"
+                      ? "No recent matches in the last 30 days"
+                      : "No matches available yet"}
               </Text>
-              {!query && (
-                <Text style={styles.emptySubtext}>
-                  Pull to refresh or check back later
-                </Text>
+              {query && (
+                <TouchableOpacity
+                  style={styles.clearButton}
+                  onPress={() => setQuery("")}
+                >
+                  <Text style={styles.clearButtonText}>Clear Search</Text>
+                </TouchableOpacity>
               )}
             </View>
           }
           contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -412,11 +343,6 @@ export default function MatchesScreen() {
               tintColor="#3B82F6"
             />
           }
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: true },
-          )}
-          scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
           maxToRenderPerBatch={30}
@@ -623,11 +549,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 16,
   },
-  emptySubtext: {
-    color: "#4b5563",
+  clearButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+  },
+  clearButtonText: {
+    color: "#3B82F6",
     fontSize: 14,
-    textAlign: "center",
-    marginTop: 8,
+    fontWeight: "600",
   },
   modalOverlay: {
     flex: 1,

@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -31,7 +31,21 @@ type TeamEloRow = {
   age_group: string | null;
 };
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<TeamEloRow>);
+// Convert ELO to letter grade for intuitive display
+function getEloGrade(elo: number): { grade: string; color: string } {
+  if (elo >= 1650) return { grade: "A+", color: "#22c55e" };
+  if (elo >= 1600) return { grade: "A", color: "#22c55e" };
+  if (elo >= 1550) return { grade: "A-", color: "#4ade80" };
+  if (elo >= 1525) return { grade: "B+", color: "#3B82F6" };
+  if (elo >= 1500) return { grade: "B", color: "#3B82F6" };
+  if (elo >= 1475) return { grade: "B-", color: "#60a5fa" };
+  if (elo >= 1450) return { grade: "C+", color: "#f59e0b" };
+  if (elo >= 1425) return { grade: "C", color: "#f59e0b" };
+  if (elo >= 1400) return { grade: "C-", color: "#fbbf24" };
+  if (elo >= 1375) return { grade: "D+", color: "#ef4444" };
+  if (elo >= 1350) return { grade: "D", color: "#ef4444" };
+  return { grade: "D-", color: "#dc2626" };
+}
 
 export default function TeamsTab() {
   const [teams, setTeams] = useState<TeamEloRow[]>([]);
@@ -39,41 +53,22 @@ export default function TeamsTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Search state - use refs to prevent focus loss
   const [searchQuery, setSearchQuery] = useState("");
-  const [tempSearchQuery, setTempSearchQuery] = useState("");
   const [stateSearch, setStateSearch] = useState("");
-  const [tempStateSearch, setTempStateSearch] = useState("");
+  const searchInputRef = useRef<TextInput>(null);
+  const stateInputRef = useRef<TextInput>(null);
 
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
   const [selectedAges, setSelectedAges] = useState<string[]>([]);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
 
-  const [scrollY] = useState(new Animated.Value(0));
-
-  // Fade filters as user scrolls down
-  const filtersOpacity = scrollY.interpolate({
-    inputRange: [0, 150],
-    outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
+  // Info modal state
+  const [infoModalVisible, setInfoModalVisible] = useState(false);
 
   useEffect(() => {
     void fetchTeams();
   }, []);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setSearchQuery(tempSearchQuery);
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [tempSearchQuery]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setStateSearch(tempStateSearch);
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [tempStateSearch]);
 
   // Helper to check if a value is valid (not null, empty, or "??")
   const isValidValue = (v: string | null | undefined): v is string => {
@@ -88,7 +83,7 @@ export default function TeamsTab() {
 
   const uniqueAges = useMemo(() => {
     const values = teams.map((t) => t.age_group?.trim()).filter(isValidValue);
-    // Sort age groups numerically (U9, U10, U11, etc.)
+    // Sort age groups numerically (U8, U9, U10, U11, etc.)
     return [...new Set(values)].sort((a, b) => {
       const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
       const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
@@ -105,7 +100,7 @@ export default function TeamsTab() {
     try {
       setError(null);
 
-      // Query team_elo table (has all 4,224 ranked teams)
+      // Query team_elo table - NO LIMIT to get all teams
       const { data, error } = await supabase
         .from("team_elo")
         .select(
@@ -146,9 +141,7 @@ export default function TeamsTab() {
     setSelectedGenders([]);
     setSelectedAges([]);
     setSelectedStates([]);
-    setTempSearchQuery("");
     setSearchQuery("");
-    setTempStateSearch("");
     setStateSearch("");
   };
 
@@ -193,6 +186,13 @@ export default function TeamsTab() {
     selectedStates,
   ]);
 
+  const hasFilters =
+    selectedGenders.length > 0 ||
+    selectedAges.length > 0 ||
+    selectedStates.length > 0 ||
+    searchQuery.length > 0 ||
+    stateSearch.length > 0;
+
   // Build display string for team metadata
   const getTeamMeta = (team: TeamEloRow): string => {
     const parts: string[] = [];
@@ -206,6 +206,7 @@ export default function TeamsTab() {
     const meta = getTeamMeta(item);
     const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
     const elo = Math.round(item.elo_rating ?? 1500);
+    const { grade, color } = getEloGrade(elo);
 
     return (
       <TouchableOpacity
@@ -227,8 +228,8 @@ export default function TeamsTab() {
             </Text>
           </View>
           <View style={styles.eloContainer}>
+            <Text style={[styles.eloGrade, { color }]}>{grade}</Text>
             <Text style={styles.eloRating}>{elo}</Text>
-            <Text style={styles.eloLabel}>ELO</Text>
           </View>
           <Ionicons
             name="chevron-forward"
@@ -246,6 +247,7 @@ export default function TeamsTab() {
       horizontal
       showsHorizontalScrollIndicator={false}
       style={styles.chipScroll}
+      keyboardShouldPersistTaps="handled"
     >
       {uniqueGenders.map((item) => (
         <TouchableOpacity
@@ -267,6 +269,7 @@ export default function TeamsTab() {
       horizontal
       showsHorizontalScrollIndicator={false}
       style={styles.chipScroll}
+      keyboardShouldPersistTaps="handled"
     >
       {uniqueAges.map((item) => (
         <TouchableOpacity
@@ -295,6 +298,7 @@ export default function TeamsTab() {
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.chipScroll}
+        keyboardShouldPersistTaps="handled"
       >
         {filteredStates.map((item) => (
           <TouchableOpacity
@@ -312,19 +316,10 @@ export default function TeamsTab() {
     );
   };
 
-  const hasFilters =
-    selectedGenders.length > 0 ||
-    selectedAges.length > 0 ||
-    selectedStates.length > 0 ||
-    searchQuery !== "" ||
-    stateSearch !== "";
-
-  // ListHeaderComponent: contains all filters (scrolls with list)
   const ListHeader = () => (
-    <Animated.View style={{ opacity: filtersOpacity }}>
-      {/* Filters Section */}
+    <View>
       <View style={styles.filtersContainer}>
-        {/* Search with icon */}
+        {/* Search teams */}
         <View style={styles.searchContainer}>
           <Ionicons
             name="search"
@@ -333,38 +328,41 @@ export default function TeamsTab() {
             style={styles.searchIcon}
           />
           <TextInput
+            ref={searchInputRef}
             style={styles.searchInput}
             placeholder="Search teams..."
             placeholderTextColor="#6b7280"
-            value={tempSearchQuery}
-            onChangeText={setTempSearchQuery}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            blurOnSubmit={false}
           />
-          {tempSearchQuery.length > 0 && (
-            <TouchableOpacity
-              onPress={() => {
-                setTempSearchQuery("");
-                setSearchQuery("");
-              }}
-            >
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
               <Ionicons name="close-circle" size={18} color="#6b7280" />
             </TouchableOpacity>
           )}
         </View>
 
+        {/* Gender filter */}
         <Text style={styles.sectionHeader}>Gender</Text>
         {uniqueGenders.length > 0 ? (
           renderGenderChips()
         ) : (
-          <Text style={styles.noOptionsText}>No genders available</Text>
+          <Text style={styles.noOptionsText}>No gender data available</Text>
         )}
 
+        {/* Age group filter */}
         <Text style={styles.sectionHeader}>Age Group</Text>
         {uniqueAges.length > 0 ? (
           renderAgeChips()
         ) : (
-          <Text style={styles.noOptionsText}>No age groups available</Text>
+          <Text style={styles.noOptionsText}>No age group data available</Text>
         )}
 
+        {/* State filter with search */}
         <Text style={styles.sectionHeader}>State</Text>
         <View style={styles.searchContainer}>
           <Ionicons
@@ -374,19 +372,19 @@ export default function TeamsTab() {
             style={styles.searchIcon}
           />
           <TextInput
+            ref={stateInputRef}
             style={styles.searchInput}
             placeholder="Search states..."
             placeholderTextColor="#6b7280"
-            value={tempStateSearch}
-            onChangeText={setTempStateSearch}
+            value={stateSearch}
+            onChangeText={setStateSearch}
+            autoCorrect={false}
+            autoCapitalize="characters"
+            returnKeyType="search"
+            blurOnSubmit={false}
           />
-          {tempStateSearch.length > 0 && (
-            <TouchableOpacity
-              onPress={() => {
-                setTempStateSearch("");
-                setStateSearch("");
-              }}
-            >
+          {stateSearch.length > 0 && (
+            <TouchableOpacity onPress={() => setStateSearch("")}>
               <Ionicons name="close-circle" size={18} color="#6b7280" />
             </TouchableOpacity>
           )}
@@ -394,14 +392,15 @@ export default function TeamsTab() {
         {uniqueStates.length > 0 ? (
           renderStateChips()
         ) : (
-          <Text style={styles.noOptionsText}>No states available</Text>
+          <Text style={styles.noOptionsText}>No state data available</Text>
         )}
 
+        {/* Clear Filters */}
         {hasFilters && (
           <TouchableOpacity style={styles.clearChip} onPress={clearFilters}>
             <Ionicons
               name="close"
-              size={14}
+              size={16}
               color="#fff"
               style={{ marginRight: 4 }}
             />
@@ -410,14 +409,25 @@ export default function TeamsTab() {
         )}
       </View>
 
-      {/* Results count */}
+      {/* Results count with info button */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
           {filteredTeams.length.toLocaleString()}{" "}
           {filteredTeams.length === 1 ? "team" : "teams"} found
         </Text>
+        <TouchableOpacity
+          style={styles.infoButton}
+          onPress={() => setInfoModalVisible(true)}
+        >
+          <Ionicons
+            name="information-circle-outline"
+            size={20}
+            color="#3B82F6"
+          />
+          <Text style={styles.infoButtonText}>How Rankings Work</Text>
+        </TouchableOpacity>
       </View>
-    </Animated.View>
+    </View>
   );
 
   // Empty state component
@@ -460,7 +470,7 @@ export default function TeamsTab() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Static Header - does NOT animate/shrink */}
+      {/* Static Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Teams</Text>
         <Text style={styles.subtitle}>Browse youth soccer teams</Text>
@@ -472,13 +482,14 @@ export default function TeamsTab() {
           <Text style={styles.loadingText}>Loading teams...</Text>
         </View>
       ) : (
-        <AnimatedFlatList
+        <FlatList
           data={filteredTeams}
           renderItem={renderTeam}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={EmptyComponent}
           contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -486,17 +497,57 @@ export default function TeamsTab() {
               tintColor="#3B82F6"
             />
           }
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: true },
-          )}
-          scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
           maxToRenderPerBatch={30}
           windowSize={10}
         />
       )}
+
+      {/* Info Modal */}
+      <Modal
+        visible={infoModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setInfoModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setInfoModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>How Rankings Work</Text>
+              <TouchableOpacity onPress={() => setInfoModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>ELO Rating System</Text>
+              {"\n"}Teams start at 1500 ELO. Winning increases your rating,
+              losing decreases it. The amount gained/lost depends on opponent
+              strength.
+            </Text>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>Letter Grades</Text>
+              {"\n"}A+ (1650+) - Elite{"\n"}
+              A/A- (1550-1649) - Excellent{"\n"}
+              B+/B/B- (1475-1549) - Above Average{"\n"}
+              C+/C/C- (1400-1474) - Average{"\n"}
+              D+/D/D- (below 1400) - Developing
+            </Text>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>Data Period</Text>
+              {"\n"}Rankings are based on the current season's results. Teams
+              are re-evaluated after each match.
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -593,6 +644,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   resultsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: "#000",
@@ -601,6 +655,15 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontSize: 14,
     fontWeight: "500",
+  },
+  infoButton: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  infoButtonText: {
+    color: "#3B82F6",
+    fontSize: 12,
+    marginLeft: 4,
   },
   listContent: {
     paddingBottom: 24,
@@ -643,14 +706,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minWidth: 60,
   },
-  eloRating: {
-    color: "#3B82F6",
-    fontSize: 20,
+  eloGrade: {
+    fontSize: 24,
     fontWeight: "bold",
   },
-  eloLabel: {
+  eloRating: {
     color: "#6b7280",
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   chevron: {
@@ -707,5 +769,41 @@ const styles = StyleSheet.create({
     color: "#3B82F6",
     fontSize: 14,
     fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  modalContent: {
+    backgroundColor: "#1F2937",
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  modalTitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  modalText: {
+    color: "#d1d5db",
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  modalBold: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });
