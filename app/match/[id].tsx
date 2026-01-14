@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router, Stack, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
 type MatchRow = Record<string, any>;
@@ -117,47 +118,53 @@ export default function MatchDetailScreen() {
     load();
   }, [id]);
 
+  // Loading state
   if (loading) {
     return (
-      <>
-        <Stack.Screen
-          options={{
-            title: "Match",
-            headerStyle: { backgroundColor: "#000" },
-            headerTintColor: "#fff",
-          }}
-        />
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Match Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
         <View style={styles.centered}>
           <ActivityIndicator color="#3B82F6" size="large" />
           <Text style={styles.loadingText}>Loading match...</Text>
         </View>
-      </>
+      </SafeAreaView>
     );
   }
 
+  // Error state
   if (error || !match) {
     return (
-      <>
-        <Stack.Screen
-          options={{
-            title: "Match",
-            headerStyle: { backgroundColor: "#000" },
-            headerTintColor: "#fff",
-          }}
-        />
-        <View style={styles.container}>
-          <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
-            <Text style={styles.errorText}>{error || "Match not found"}</Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.retryButtonText}>Go Back</Text>
-            </TouchableOpacity>
-          </View>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Match Details</Text>
+          <View style={{ width: 40 }} />
         </View>
-      </>
+        <View style={styles.centered}>
+          <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+          <Text style={styles.errorText}>{error || "Match not found"}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.retryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -221,17 +228,24 @@ export default function MatchDetailScreen() {
   };
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Match Details",
-          headerStyle: { backgroundColor: "#000" },
-          headerTintColor: "#fff",
-          headerTitleStyle: { fontWeight: "600" },
-        }}
-      />
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Consistent Header with Back Button */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Match Details</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
       <ScrollView
-        style={styles.container}
+        style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
@@ -365,25 +379,55 @@ export default function MatchDetailScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
-    </>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  contentContainer: { padding: 16, paddingBottom: 40 },
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.05)",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#1F2937",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    flex: 1,
+    textAlign: "center",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 16,
+    paddingBottom: 40,
+  },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#000",
   },
-  loadingText: { marginTop: 12, color: "#9ca3af", fontSize: 16 },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
+  loadingText: {
+    marginTop: 12,
+    color: "#9ca3af",
+    fontSize: 16,
   },
   errorText: {
     color: "#EF4444",
@@ -398,7 +442,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
   },
-  retryButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  retryButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 16,
+  },
   competitionBadge: {
     backgroundColor: "#1F2937",
     paddingHorizontal: 12,
@@ -407,7 +455,11 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 16,
   },
-  competitionText: { color: "#9ca3af", fontSize: 13, fontWeight: "500" },
+  competitionText: {
+    color: "#9ca3af",
+    fontSize: 13,
+    fontWeight: "500",
+  },
   scoreCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -418,7 +470,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  teamScoreSection: { flex: 1, alignItems: "center" },
+  teamScoreSection: {
+    flex: 1,
+    alignItems: "center",
+  },
   teamNameLarge: {
     color: "#fff",
     fontSize: 14,
@@ -434,9 +489,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
   },
-  scoreNumber: { color: "#3B82F6", fontSize: 36, fontWeight: "bold" },
-  vsContainer: { paddingHorizontal: 16 },
-  vsText: { color: "#6b7280", fontSize: 14, fontWeight: "500" },
+  scoreNumber: {
+    color: "#3B82F6",
+    fontSize: 36,
+    fontWeight: "bold",
+  },
+  vsContainer: {
+    paddingHorizontal: 16,
+  },
+  vsText: {
+    color: "#6b7280",
+    fontSize: 14,
+    fontWeight: "500",
+  },
   infoCard: {
     backgroundColor: "#111",
     borderRadius: 12,
@@ -445,9 +510,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  infoRow: { flexDirection: "row", marginBottom: 12 },
-  infoItem: { flex: 1, alignItems: "center" },
-  infoLabel: { color: "#6b7280", fontSize: 12, marginTop: 4 },
+  infoRow: {
+    flexDirection: "row",
+    marginBottom: 12,
+  },
+  infoItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  infoLabel: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginTop: 4,
+  },
   infoValue: {
     color: "#fff",
     fontSize: 14,
@@ -475,7 +550,11 @@ const styles = StyleSheet.create({
   teamCardDisabled: {
     opacity: 0.6,
   },
-  teamCardContent: { flexDirection: "row", alignItems: "center", flex: 1 },
+  teamCardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
   teamBadge: {
     width: 44,
     height: 44,
@@ -485,11 +564,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  awayBadge: { backgroundColor: "#6366F1" },
-  teamBadgeText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
-  teamCardInfo: { flex: 1 },
-  teamCardName: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  teamCardLabel: { color: "#6b7280", fontSize: 12, marginTop: 2 },
+  awayBadge: {
+    backgroundColor: "#6366F1",
+  },
+  teamBadgeText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  teamCardInfo: {
+    flex: 1,
+  },
+  teamCardName: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  teamCardLabel: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginTop: 2,
+  },
   noDataLabel: {
     color: "#6b7280",
     fontSize: 12,

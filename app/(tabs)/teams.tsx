@@ -47,18 +47,24 @@ function getEloGrade(elo: number): { grade: string; color: string } {
   return { grade: "D-", color: "#dc2626" };
 }
 
+// Helper to check if a value is valid (not null, empty, or "??")
+function isValidValue(v: string | null | undefined): v is string {
+  return !!v && v.trim().length > 0 && v.trim() !== "??";
+}
+
 export default function TeamsTab() {
   const [teams, setTeams] = useState<TeamEloRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Search state - use refs to prevent focus loss
+  // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [stateSearch, setStateSearch] = useState("");
   const searchInputRef = useRef<TextInput>(null);
   const stateInputRef = useRef<TextInput>(null);
 
+  // Multi-select filters
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
   const [selectedAges, setSelectedAges] = useState<string[]>([]);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
@@ -69,11 +75,6 @@ export default function TeamsTab() {
   useEffect(() => {
     void fetchTeams();
   }, []);
-
-  // Helper to check if a value is valid (not null, empty, or "??")
-  const isValidValue = (v: string | null | undefined): v is string => {
-    return !!v && v.trim().length > 0 && v.trim() !== "??";
-  };
 
   // Compute unique values client-side from fetched teams
   const uniqueGenders = useMemo(() => {
@@ -145,25 +146,34 @@ export default function TeamsTab() {
     setStateSearch("");
   };
 
+  // FIXED FILTER LOGIC:
+  // - If NO filters selected in a category, show ALL teams (including those with null values)
+  // - If filters ARE selected, show teams that MATCH any of the selected values
+  // - Teams with null/empty values are INCLUDED when no filter is active for that category
   const filteredTeams = useMemo(() => {
     return teams.filter((team) => {
+      // Name search - always applies if text entered
       const nameMatch =
         !searchQuery ||
         (team.team_name?.toLowerCase().includes(searchQuery.toLowerCase()) ??
           false);
 
+      // Gender filter: if none selected, include all; if selected, team must match one
       const genderMatch =
         selectedGenders.length === 0 ||
-        (team.gender && selectedGenders.includes(team.gender));
+        (isValidValue(team.gender) && selectedGenders.includes(team.gender));
 
+      // Age filter: if none selected, include all; if selected, team must match one
       const ageMatch =
         selectedAges.length === 0 ||
-        (team.age_group && selectedAges.includes(team.age_group));
+        (isValidValue(team.age_group) && selectedAges.includes(team.age_group));
 
+      // State filter (chips): if none selected, include all; if selected, team must match one
       const stateMatchChip =
         selectedStates.length === 0 ||
-        (team.state && selectedStates.includes(team.state));
+        (isValidValue(team.state) && selectedStates.includes(team.state));
 
+      // State search text - always applies if text entered
       const stateMatchSearch =
         !stateSearch ||
         (team.state?.toLowerCase().includes(stateSearch.toLowerCase()) ??
@@ -541,9 +551,18 @@ export default function TeamsTab() {
             </Text>
 
             <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>Data Period</Text>
-              {"\n"}Rankings are based on the current season's results. Teams
-              are re-evaluated after each match.
+              <Text style={styles.modalBold}>Season Definition</Text>
+              {"\n"}The "current season" runs from August 1st through July 31st
+              of the following year. This aligns with the typical youth soccer
+              calendar where teams form in fall and compete through
+              spring/summer.
+            </Text>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>Why Filter Results Vary</Text>
+              {"\n"}Some teams don't have complete data for gender, age group,
+              or state. When you apply a filter, only teams with that specific
+              data will appear.
             </Text>
           </View>
         </TouchableOpacity>
@@ -780,6 +799,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2937",
     borderRadius: 16,
     padding: 20,
+    maxHeight: "80%",
   },
   modalHeader: {
     flexDirection: "row",

@@ -76,8 +76,7 @@ export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [team, setTeam] = useState<TeamData | null>(null);
-  const [recentMatches, setRecentMatches] = useState<MatchData[]>([]);
-  const [upcomingMatches, setUpcomingMatches] = useState<MatchData[]>([]);
+  const [allMatches, setAllMatches] = useState<MatchData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,35 +102,18 @@ export default function TeamDetailScreen() {
       if (teamError) throw teamError;
       setTeam(teamData as TeamData);
 
-      // Fetch matches for this team
+      // Fetch ALL matches for this team (increased limit to 100)
       const teamName = teamData?.team_name;
       if (teamName) {
-        const now = new Date().toISOString();
-
-        // Fetch recent (past) matches
-        const { data: recentData } = await supabase
+        const { data: matchData, error: matchError } = await supabase
           .from("matches")
           .select("*")
           .or(`home_team.eq.${teamName},away_team.eq.${teamName}`)
-          .lte("match_date", now)
           .order("match_date", { ascending: false })
-          .limit(20);
+          .limit(100);
 
-        if (recentData) {
-          setRecentMatches(recentData as MatchData[]);
-        }
-
-        // Fetch upcoming matches (GAME-CHANGER FEATURE!)
-        const { data: upcomingData } = await supabase
-          .from("matches")
-          .select("*")
-          .or(`home_team.eq.${teamName},away_team.eq.${teamName}`)
-          .gt("match_date", now)
-          .order("match_date", { ascending: true })
-          .limit(10);
-
-        if (upcomingData) {
-          setUpcomingMatches(upcomingData as MatchData[]);
+        if (!matchError && matchData) {
+          setAllMatches(matchData as MatchData[]);
         }
       }
     } catch (err: any) {
@@ -151,6 +133,36 @@ export default function TeamDetailScreen() {
     await fetchTeamData();
     setRefreshing(false);
   };
+
+  // Split matches into recent (past) and upcoming (future)
+  const { recentMatches, upcomingMatches } = React.useMemo(() => {
+    const now = new Date();
+    const recent: MatchData[] = [];
+    const upcoming: MatchData[] = [];
+
+    allMatches.forEach((match) => {
+      if (match.match_date) {
+        const matchDate = new Date(match.match_date);
+        if (matchDate <= now) {
+          recent.push(match);
+        } else {
+          upcoming.push(match);
+        }
+      } else {
+        // No date - put in recent
+        recent.push(match);
+      }
+    });
+
+    // Sort upcoming by date ascending (soonest first)
+    upcoming.sort((a, b) => {
+      const dateA = new Date(a.match_date || 0);
+      const dateB = new Date(b.match_date || 0);
+      return dateA.getTime() - dateB.getTime();
+    });
+
+    return { recentMatches: recent, upcomingMatches: upcoming };
+  }, [allMatches]);
 
   const getTeamMeta = (): string => {
     if (!team) return "";
@@ -388,7 +400,10 @@ export default function TeamDetailScreen() {
           <View style={styles.tabsContainer}>
             <TouchableOpacity
               style={[styles.tab, activeTab === "recent" && styles.activeTab]}
-              onPress={() => setActiveTab("recent")}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setActiveTab("recent");
+              }}
             >
               <Text
                 style={[
@@ -401,7 +416,10 @@ export default function TeamDetailScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, activeTab === "upcoming" && styles.activeTab]}
-              onPress={() => setActiveTab("upcoming")}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setActiveTab("upcoming");
+              }}
             >
               <Text
                 style={[
@@ -440,6 +458,11 @@ export default function TeamDetailScreen() {
                 ? "No recent matches found"
                 : "No upcoming matches scheduled"}
             </Text>
+            {activeTab === "upcoming" && (
+              <Text style={styles.emptySubtext}>
+                Check back later for schedule updates
+              </Text>
+            )}
           </View>
         )}
       </ScrollView>
@@ -650,6 +673,10 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#6b7280",
     fontSize: 14,
+  },
+  emptySubtext: {
+    color: "#4b5563",
+    fontSize: 12,
   },
   centered: {
     flex: 1,

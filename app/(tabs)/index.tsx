@@ -23,6 +23,7 @@ type MatchRow = {
   away_score: number | null;
   match_date: string | null;
   location: string | null;
+  competition_name?: string | null;
 };
 
 type TeamEloRow = {
@@ -41,8 +42,24 @@ type TeamEloRow = {
 type StatsData = {
   totalTeams: number;
   totalMatches: number;
-  totalCompetitions: number;
+  totalStates: number;
 };
+
+// Convert ELO to letter grade
+function getEloGrade(elo: number): { grade: string; color: string } {
+  if (elo >= 1650) return { grade: "A+", color: "#22c55e" };
+  if (elo >= 1600) return { grade: "A", color: "#22c55e" };
+  if (elo >= 1550) return { grade: "A-", color: "#4ade80" };
+  if (elo >= 1525) return { grade: "B+", color: "#3B82F6" };
+  if (elo >= 1500) return { grade: "B", color: "#3B82F6" };
+  if (elo >= 1475) return { grade: "B-", color: "#60a5fa" };
+  if (elo >= 1450) return { grade: "C+", color: "#f59e0b" };
+  if (elo >= 1425) return { grade: "C", color: "#f59e0b" };
+  if (elo >= 1400) return { grade: "C-", color: "#fbbf24" };
+  if (elo >= 1375) return { grade: "D+", color: "#ef4444" };
+  if (elo >= 1350) return { grade: "D", color: "#ef4444" };
+  return { grade: "D-", color: "#dc2626" };
+}
 
 function formatDate(isoDate: string | null): string {
   if (!isoDate) return "";
@@ -72,7 +89,7 @@ export default function HomeScreen() {
   const [stats, setStats] = useState<StatsData>({
     totalTeams: 0,
     totalMatches: 0,
-    totalCompetitions: 0,
+    totalStates: 0,
   });
   const [recentMatches, setRecentMatches] = useState<MatchRow[]>([]);
   const [featuredTeams, setFeaturedTeams] = useState<TeamEloRow[]>([]);
@@ -84,26 +101,39 @@ export default function HomeScreen() {
     try {
       setError(null);
 
-      // Fetch stats - use team_elo for accurate team count
-      const [teamsCount, matchesCount, competitionsCount] = await Promise.all([
-        supabase.from("team_elo").select("id", { count: "exact", head: true }),
-        supabase.from("matches").select("id", { count: "exact", head: true }),
-        supabase
-          .from("competitions")
-          .select("id", { count: "exact", head: true }),
-      ]);
+      // Fetch all teams to get accurate counts
+      const { data: allTeams, error: teamsError } = await supabase
+        .from("team_elo")
+        .select("id, state");
+
+      if (teamsError) throw teamsError;
+
+      const teamCount = allTeams?.length ?? 0;
+
+      // Count unique states from teams data
+      const uniqueStates = new Set(
+        (allTeams ?? [])
+          .map((t) => t.state)
+          .filter((s) => s && s.trim().length > 0 && s.trim() !== "??"),
+      );
+      const stateCount = uniqueStates.size;
+
+      // Count matches
+      const { count: matchCount } = await supabase
+        .from("matches")
+        .select("id", { count: "exact", head: true });
 
       setStats({
-        totalTeams: teamsCount.count ?? 0,
-        totalMatches: matchesCount.count ?? 0,
-        totalCompetitions: competitionsCount.count ?? 0,
+        totalTeams: teamCount,
+        totalMatches: matchCount ?? 0,
+        totalStates: stateCount,
       });
 
-      // Fetch recent matches - use text columns directly (no joins)
+      // Fetch recent matches - use text columns directly
       const { data: matchesData, error: matchesError } = await supabase
         .from("matches")
         .select(
-          "id, home_team, away_team, home_score, away_score, match_date, location",
+          "id, home_team, away_team, home_score, away_score, match_date, location, competition_name",
         )
         .not("home_score", "is", null)
         .order("match_date", { ascending: false, nullsFirst: false })
@@ -115,7 +145,7 @@ export default function HomeScreen() {
       setRecentMatches((matchesData as MatchRow[]) ?? []);
 
       // Fetch featured teams from team_elo (top rated)
-      const { data: teamsData, error: teamsError } = await supabase
+      const { data: teamsData, error: featuredError } = await supabase
         .from("team_elo")
         .select(
           "id, team_name, elo_rating, matches_played, wins, losses, draws, state, gender, age_group",
@@ -123,8 +153,8 @@ export default function HomeScreen() {
         .order("elo_rating", { ascending: false })
         .limit(10);
 
-      if (teamsError) {
-        console.error("Teams error:", teamsError);
+      if (featuredError) {
+        console.error("Teams error:", featuredError);
       }
       setFeaturedTeams((teamsData as TeamEloRow[]) ?? []);
     } catch (err) {
@@ -145,7 +175,7 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Build match location string - FIXED encoding
+  // Build match location string
   const getMatchLocation = (item: MatchRow): string => {
     const parts: string[] = [];
     const date = formatDate(item.match_date);
@@ -154,7 +184,7 @@ export default function HomeScreen() {
     return parts.length > 0 ? parts.join(" · ") : "";
   };
 
-  // Build team meta string (state, gender, age) - FIXED encoding
+  // Build team meta string (state, gender, age)
   const getTeamMeta = (item: TeamEloRow): string => {
     const parts: string[] = [];
     if (isValidValue(item.state)) parts.push(item.state!);
@@ -191,6 +221,8 @@ export default function HomeScreen() {
   const renderFeaturedTeam = ({ item }: { item: TeamEloRow }) => {
     const meta = getTeamMeta(item);
     const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
+    const elo = Math.round(item.elo_rating ?? 1500);
+    const { grade, color } = getEloGrade(elo);
 
     return (
       <TouchableOpacity
@@ -207,10 +239,8 @@ export default function HomeScreen() {
         {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
         <Text style={styles.recordText}>{record}</Text>
         <View style={styles.eloRow}>
-          <Text style={styles.ratingText}>
-            {Math.round(item.elo_rating ?? 1500)}
-          </Text>
-          <Text style={styles.eloLabel}>ELO</Text>
+          <Text style={[styles.gradeText, { color }]}>{grade}</Text>
+          <Text style={styles.ratingText}>{elo}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -315,9 +345,9 @@ export default function HomeScreen() {
             router.push("/(tabs)/rankings");
           }}
         >
-          <Ionicons name="trophy" size={24} color="#f59e0b" />
+          <Ionicons name="location" size={24} color="#f59e0b" />
           <Text style={styles.statText}>
-            {stats.totalCompetitions} Competitions
+            {stats.totalStates} States Covered
           </Text>
           <Ionicons
             name="chevron-forward"
@@ -512,12 +542,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "baseline",
     marginTop: 8,
-    gap: 4,
+    gap: 6,
+  },
+  gradeText: {
+    fontSize: 22,
+    fontWeight: "bold",
   },
   ratingText: {
-    color: "#3B82F6",
-    fontSize: 18,
-    fontWeight: "700",
+    color: "#6b7280",
+    fontSize: 14,
+    fontWeight: "500",
   },
   eloLabel: {
     color: "#6b7280",

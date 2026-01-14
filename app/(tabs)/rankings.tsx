@@ -33,7 +33,7 @@ type TeamRankRow = {
 };
 
 // Helper to check if a value is valid
-function isValidValue(v: string | null | undefined): boolean {
+function isValidValue(v: string | null | undefined): v is string {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
 }
 
@@ -55,9 +55,11 @@ function getEloGrade(elo: number): { grade: string; color: string } {
 
 export default function RankingsTab() {
   const [mode, setMode] = useState<"national" | "state">("national");
-  const [stateFilter, setStateFilter] = useState<string>("");
-  const [genderFilter, setGenderFilter] = useState<string>("");
-  const [ageGroupFilter, setAgeGroupFilter] = useState<string>("");
+  // Changed to arrays for multi-select
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
+  const [selectedAges, setSelectedAges] = useState<string[]>([]);
+
   const [allTeams, setAllTeams] = useState<TeamRankRow[]>([]);
   const [allStates, setAllStates] = useState<string[]>([]);
   const [allGenders, setAllGenders] = useState<string[]>([]);
@@ -80,7 +82,7 @@ export default function RankingsTab() {
     setError(null);
 
     try {
-      // Fetch ALL teams - no limit
+      // Fetch ALL teams - NO LIMIT
       const { data, error } = await supabase
         .from("team_elo")
         .select("*")
@@ -106,9 +108,9 @@ export default function RankingsTab() {
         return numA - numB;
       });
 
-      setAllStates(states as string[]);
-      setAllGenders(genders as string[]);
-      setAllAgeGroups(ages as string[]);
+      setAllStates(states);
+      setAllGenders(genders);
+      setAllAgeGroups(ages);
     } catch (err: any) {
       console.error("Error fetching rankings:", err);
       setError(err.message || "Failed to load rankings");
@@ -123,19 +125,41 @@ export default function RankingsTab() {
     setRefreshing(false);
   };
 
-  // Filter and rank teams client-side
+  // Multi-select toggle helper
+  const toggleSelection = (
+    item: string,
+    selected: string[],
+    setSelected: React.Dispatch<React.SetStateAction<string[]>>,
+  ) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelected((prev) =>
+      prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item],
+    );
+  };
+
+  // Filter and rank teams client-side with multi-select support
   const filteredRankings = useMemo(() => {
     let filtered = allTeams;
 
-    // Apply filters
-    if (mode === "state" && stateFilter) {
-      filtered = filtered.filter((t) => t.state === stateFilter);
+    // Apply state filter (multi-select) - only in state mode
+    if (mode === "state" && selectedStates.length > 0) {
+      filtered = filtered.filter(
+        (t) => isValidValue(t.state) && selectedStates.includes(t.state),
+      );
     }
-    if (genderFilter) {
-      filtered = filtered.filter((t) => t.gender === genderFilter);
+
+    // Apply gender filter (multi-select)
+    if (selectedGenders.length > 0) {
+      filtered = filtered.filter(
+        (t) => isValidValue(t.gender) && selectedGenders.includes(t.gender),
+      );
     }
-    if (ageGroupFilter) {
-      filtered = filtered.filter((t) => t.age_group === ageGroupFilter);
+
+    // Apply age filter (multi-select)
+    if (selectedAges.length > 0) {
+      filtered = filtered.filter(
+        (t) => isValidValue(t.age_group) && selectedAges.includes(t.age_group),
+      );
     }
 
     // Apply search
@@ -150,34 +174,43 @@ export default function RankingsTab() {
       ...team,
       rank: index + 1,
     }));
-  }, [allTeams, mode, stateFilter, genderFilter, ageGroupFilter, searchQuery]);
+  }, [
+    allTeams,
+    mode,
+    selectedStates,
+    selectedGenders,
+    selectedAges,
+    searchQuery,
+  ]);
 
   const handleModeChange = (newMode: "national" | "state") => {
     setMode(newMode);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (newMode !== "state") setStateFilter("");
+    if (newMode === "national") {
+      setSelectedStates([]); // Clear state selection in national mode
+    }
   };
 
   const clearFilters = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setStateFilter("");
-    setGenderFilter("");
-    setAgeGroupFilter("");
+    setSelectedStates([]);
+    setSelectedGenders([]);
+    setSelectedAges([]);
     setSearchQuery("");
   };
 
   const getTeamDetails = (item: TeamRankRow): string => {
     const parts: string[] = [];
-    if (isValidValue(item.state)) parts.push(item.state!);
-    if (isValidValue(item.gender)) parts.push(item.gender!);
-    if (isValidValue(item.age_group)) parts.push(item.age_group!);
+    if (isValidValue(item.state)) parts.push(item.state);
+    if (isValidValue(item.gender)) parts.push(item.gender);
+    if (isValidValue(item.age_group)) parts.push(item.age_group);
     return parts.join(" · ");
   };
 
   const hasFilters =
-    stateFilter !== "" ||
-    genderFilter !== "" ||
-    ageGroupFilter !== "" ||
+    selectedStates.length > 0 ||
+    selectedGenders.length > 0 ||
+    selectedAges.length > 0 ||
     searchQuery !== "";
 
   const renderTeamItem = ({ item }: { item: TeamRankRow }) => {
@@ -231,6 +264,7 @@ export default function RankingsTab() {
     );
   };
 
+  // Chip component for multi-select
   const renderChip = (
     label: string,
     selected: boolean,
@@ -238,10 +272,7 @@ export default function RankingsTab() {
   ) => (
     <TouchableOpacity
       style={[styles.baseChip, selected && styles.selectedChip]}
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
-      }}
+      onPress={onPress}
     >
       <Text style={[styles.chipText, selected && styles.selectedChipText]}>
         {label}
@@ -290,15 +321,19 @@ export default function RankingsTab() {
           {renderChip("🌎 National", mode === "national", () =>
             handleModeChange("national"),
           )}
-          {renderChip("📍 State", mode === "state", () =>
+          {renderChip("📍 By State", mode === "state", () =>
             handleModeChange("state"),
           )}
         </ScrollView>
 
-        {/* State filter - only show when in state mode */}
+        {/* State filter - only show when in state mode, now multi-select */}
         {mode === "state" && (
           <>
-            <Text style={styles.sectionHeader}>Select State</Text>
+            <Text style={styles.sectionHeader}>
+              States{" "}
+              {selectedStates.length > 0 &&
+                `(${selectedStates.length} selected)`}
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -306,16 +341,19 @@ export default function RankingsTab() {
               keyboardShouldPersistTaps="handled"
             >
               {allStates.map((state) =>
-                renderChip(state, stateFilter === state, () =>
-                  setStateFilter(stateFilter === state ? "" : state),
+                renderChip(state, selectedStates.includes(state), () =>
+                  toggleSelection(state, selectedStates, setSelectedStates),
                 ),
               )}
             </ScrollView>
           </>
         )}
 
-        {/* Gender filter */}
-        <Text style={styles.sectionHeader}>Gender</Text>
+        {/* Gender filter - now multi-select */}
+        <Text style={styles.sectionHeader}>
+          Gender{" "}
+          {selectedGenders.length > 0 && `(${selectedGenders.length} selected)`}
+        </Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -323,14 +361,17 @@ export default function RankingsTab() {
           keyboardShouldPersistTaps="handled"
         >
           {allGenders.map((gender) =>
-            renderChip(gender, genderFilter === gender, () =>
-              setGenderFilter(genderFilter === gender ? "" : gender),
+            renderChip(gender, selectedGenders.includes(gender), () =>
+              toggleSelection(gender, selectedGenders, setSelectedGenders),
             ),
           )}
         </ScrollView>
 
-        {/* Age group filter */}
-        <Text style={styles.sectionHeader}>Age Group</Text>
+        {/* Age group filter - now multi-select */}
+        <Text style={styles.sectionHeader}>
+          Age Group{" "}
+          {selectedAges.length > 0 && `(${selectedAges.length} selected)`}
+        </Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -338,8 +379,8 @@ export default function RankingsTab() {
           keyboardShouldPersistTaps="handled"
         >
           {allAgeGroups.map((age) =>
-            renderChip(age, ageGroupFilter === age, () =>
-              setAgeGroupFilter(ageGroupFilter === age ? "" : age),
+            renderChip(age, selectedAges.includes(age), () =>
+              toggleSelection(age, selectedAges, setSelectedAges),
             ),
           )}
         </ScrollView>
@@ -486,10 +527,18 @@ export default function RankingsTab() {
             </Text>
 
             <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>Ranking Scope</Text>
-              {"\n"}National rankings compare all teams. State rankings show
-              teams from the selected state. Use filters to compare teams in
-              your age group and gender.
+              <Text style={styles.modalBold}>Season Definition</Text>
+              {"\n"}The "current season" runs from August 1st through July 31st
+              of the following year, aligning with the typical youth soccer
+              calendar where teams form in fall and compete through
+              spring/summer tournaments.
+            </Text>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>Multi-Select Filters</Text>
+              {"\n"}You can select multiple states, genders, or age groups to
+              compare teams across different categories. Rankings are
+              recalculated based on your filter selection.
             </Text>
           </View>
         </TouchableOpacity>
@@ -727,6 +776,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2937",
     borderRadius: 16,
     padding: 20,
+    maxHeight: "80%",
   },
   modalHeader: {
     flexDirection: "row",
