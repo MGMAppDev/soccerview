@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -122,6 +122,8 @@ export default function MatchDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
+        {/* Hide the default Expo Router header */}
+        <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -144,6 +146,8 @@ export default function MatchDetailScreen() {
   if (error || !match) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
+        {/* Hide the default Expo Router header */}
+        <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -229,6 +233,9 @@ export default function MatchDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Hide the default Expo Router header */}
+      <Stack.Screen options={{ headerShown: false }} />
+
       {/* Consistent Header with Back Button */}
       <View style={styles.header}>
         <TouchableOpacity

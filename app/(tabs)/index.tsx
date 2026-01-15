@@ -23,7 +23,6 @@ type MatchRow = {
   away_score: number | null;
   match_date: string | null;
   location: string | null;
-  competition_name?: string | null;
 };
 
 type TeamEloRow = {
@@ -45,7 +44,39 @@ type StatsData = {
   totalStates: number;
 };
 
-// Convert ELO to letter grade
+// Pagination helper to fetch ALL rows (Supabase limits to 1000 per query)
+async function fetchAllRows<T>(
+  table: string,
+  selectColumns: string = "*",
+): Promise<T[]> {
+  const allRows: T[] = [];
+  const pageSize = 1000;
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(selectColumns)
+      .range(offset, offset + pageSize - 1);
+
+    if (error) {
+      console.error(`Error fetching ${table}:`, error);
+      break;
+    }
+
+    if (data && data.length > 0) {
+      allRows.push(...(data as T[]));
+      offset += pageSize;
+      hasMore = data.length === pageSize;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return allRows;
+}
+
 function getEloGrade(elo: number): { grade: string; color: string } {
   if (elo >= 1650) return { grade: "A+", color: "#22c55e" };
   if (elo >= 1600) return { grade: "A", color: "#22c55e" };
@@ -64,21 +95,13 @@ function getEloGrade(elo: number): { grade: string; color: string } {
 function formatDate(isoDate: string | null): string {
   if (!isoDate) return "";
   try {
-    const datePart = isoDate.split("T")[0];
-    const [y, m, d] = datePart.split("-").map(Number);
-    if (!y || !m || !d) return "";
-    return `${m}/${d}/${y}`;
+    const d = new Date(isoDate);
+    return d.toLocaleDateString();
   } catch {
     return "";
   }
 }
 
-function scoreText(home: number | null, away: number | null): string {
-  if (home === null || away === null) return "vs";
-  return `${home} - ${away}`;
-}
-
-// Helper to check if a value is valid (not null, empty, or "??")
 function isValidValue(v: string | null | undefined): boolean {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
 }
@@ -101,61 +124,50 @@ export default function HomeScreen() {
     try {
       setError(null);
 
-      // Fetch all teams to get accurate counts
-      const { data: allTeams, error: teamsError } = await supabase
-        .from("team_elo")
-        .select("id, state");
+      // Get EXACT counts using head:true (bypasses 1000 limit)
+      const [teamsCountResult, matchesCountResult] = await Promise.all([
+        supabase.from("team_elo").select("*", { count: "exact", head: true }),
+        supabase.from("matches").select("*", { count: "exact", head: true }),
+      ]);
 
-      if (teamsError) throw teamsError;
+      const teamCount = teamsCountResult.count ?? 0;
+      const matchCount = matchesCountResult.count ?? 0;
 
-      const teamCount = allTeams?.length ?? 0;
+      // Fetch ALL teams to count unique states (using pagination)
+      const allTeamStates = await fetchAllRows<{ state: string | null }>(
+        "team_elo",
+        "state",
+      );
 
-      // Count unique states from teams data
       const uniqueStates = new Set(
-        (allTeams ?? [])
+        allTeamStates
           .map((t) => t.state)
           .filter((s) => s && s.trim().length > 0 && s.trim() !== "??"),
       );
-      const stateCount = uniqueStates.size;
-
-      // Count matches
-      const { count: matchCount } = await supabase
-        .from("matches")
-        .select("id", { count: "exact", head: true });
 
       setStats({
         totalTeams: teamCount,
-        totalMatches: matchCount ?? 0,
-        totalStates: stateCount,
+        totalMatches: matchCount,
+        totalStates: uniqueStates.size,
       });
 
-      // Fetch recent matches - use text columns directly
-      const { data: matchesData, error: matchesError } = await supabase
+      // Fetch recent matches (just top 10)
+      const { data: matchesData } = await supabase
         .from("matches")
-        .select(
-          "id, home_team, away_team, home_score, away_score, match_date, location, competition_name",
-        )
+        .select("*")
         .not("home_score", "is", null)
-        .order("match_date", { ascending: false, nullsFirst: false })
-        .limit(5);
+        .order("match_date", { ascending: false })
+        .limit(10);
 
-      if (matchesError) {
-        console.error("Matches error:", matchesError);
-      }
       setRecentMatches((matchesData as MatchRow[]) ?? []);
 
-      // Fetch featured teams from team_elo (top rated)
-      const { data: teamsData, error: featuredError } = await supabase
+      // Fetch top 10 teams by ELO
+      const { data: teamsData } = await supabase
         .from("team_elo")
-        .select(
-          "id, team_name, elo_rating, matches_played, wins, losses, draws, state, gender, age_group",
-        )
+        .select("*")
         .order("elo_rating", { ascending: false })
         .limit(10);
 
-      if (featuredError) {
-        console.error("Teams error:", featuredError);
-      }
       setFeaturedTeams((teamsData as TeamEloRow[]) ?? []);
     } catch (err) {
       console.error("Error fetching home data:", err);
@@ -175,16 +187,14 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Build match location string
   const getMatchLocation = (item: MatchRow): string => {
     const parts: string[] = [];
     const date = formatDate(item.match_date);
     if (date) parts.push(date);
     if (item.location) parts.push(item.location);
-    return parts.length > 0 ? parts.join(" · ") : "";
+    return parts.join(" · ");
   };
 
-  // Build team meta string (state, gender, age)
   const getTeamMeta = (item: TeamEloRow): string => {
     const parts: string[] = [];
     if (isValidValue(item.state)) parts.push(item.state!);
@@ -195,7 +205,7 @@ export default function HomeScreen() {
 
   const renderMatch = ({ item }: { item: MatchRow }) => {
     const locationStr = getMatchLocation(item);
-    const score = scoreText(item.home_score, item.away_score);
+    const hasScore = item.home_score !== null && item.away_score !== null;
 
     return (
       <TouchableOpacity
@@ -213,7 +223,9 @@ export default function HomeScreen() {
           {item.home_team ?? "Home Team"}
         </Text>
         <Text style={styles.vsText}>vs {item.away_team ?? "Away Team"}</Text>
-        <Text style={styles.scoreText}>{score}</Text>
+        <Text style={styles.scoreText}>
+          {hasScore ? `${item.home_score} - ${item.away_score}` : "vs"}
+        </Text>
       </TouchableOpacity>
     );
   };
@@ -246,7 +258,6 @@ export default function HomeScreen() {
     );
   };
 
-  // Loading state
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -256,7 +267,6 @@ export default function HomeScreen() {
     );
   }
 
-  // Error state
   if (error) {
     return (
       <View style={styles.centered}>
@@ -266,7 +276,7 @@ export default function HomeScreen() {
           style={styles.retryButton}
           onPress={() => {
             setLoading(true);
-            void fetchData();
+            fetchData();
           }}
         >
           <Text style={styles.retryButtonText}>Retry</Text>
@@ -295,7 +305,6 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      {/* Stats Cards */}
       <View style={styles.statsContainer}>
         <TouchableOpacity
           style={styles.statCard}
@@ -309,12 +318,7 @@ export default function HomeScreen() {
           <Text style={styles.statText}>
             {stats.totalTeams.toLocaleString()} Teams
           </Text>
-          <Ionicons
-            name="chevron-forward"
-            size={16}
-            color="#6b7280"
-            style={styles.statArrow}
-          />
+          <Ionicons name="chevron-forward" size={16} color="#6b7280" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -329,12 +333,7 @@ export default function HomeScreen() {
           <Text style={styles.statText}>
             {stats.totalMatches.toLocaleString()} Matches
           </Text>
-          <Ionicons
-            name="chevron-forward"
-            size={16}
-            color="#6b7280"
-            style={styles.statArrow}
-          />
+          <Ionicons name="chevron-forward" size={16} color="#6b7280" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -349,16 +348,10 @@ export default function HomeScreen() {
           <Text style={styles.statText}>
             {stats.totalStates} States Covered
           </Text>
-          <Ionicons
-            name="chevron-forward"
-            size={16}
-            color="#6b7280"
-            style={styles.statArrow}
-          />
+          <Ionicons name="chevron-forward" size={16} color="#6b7280" />
         </TouchableOpacity>
       </View>
 
-      {/* Latest Matches Section */}
       <View style={styles.sectionRow}>
         <Text style={styles.sectionHeader}>Latest Matches</Text>
         <TouchableOpacity
@@ -376,7 +369,6 @@ export default function HomeScreen() {
           data={recentMatches}
           renderItem={renderMatch}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
           scrollEnabled={false}
         />
       ) : (
@@ -386,7 +378,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Top Ranked Teams Section */}
       <View style={styles.sectionRow}>
         <Text style={styles.sectionHeader}>Top Ranked Teams</Text>
         <TouchableOpacity
@@ -419,25 +410,10 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  title: {
-    color: "#fff",
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: "#9ca3af",
-    fontSize: 16,
-    marginBottom: 24,
-  },
+  container: { flex: 1, backgroundColor: "#000" },
+  contentContainer: { padding: 16, paddingBottom: 32 },
+  title: { color: "#fff", fontSize: 32, fontWeight: "bold", marginBottom: 8 },
+  subtitle: { color: "#9ca3af", fontSize: 16, marginBottom: 24 },
   sectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -445,20 +421,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 8,
   },
-  sectionHeader: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  seeAllText: {
-    color: "#3B82F6",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  statsContainer: {
-    gap: 12,
-    marginBottom: 24,
-  },
+  sectionHeader: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  seeAllText: { color: "#3B82F6", fontSize: 14, fontWeight: "600" },
+  statsContainer: { gap: 12, marginBottom: 24 },
   statCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -469,45 +434,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  statText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-    flex: 1,
-  },
-  statArrow: {
-    marginLeft: "auto",
-  },
-  listContent: {
-    gap: 12,
-  },
-  horizontalListContent: {
-    paddingRight: 16,
-    gap: 12,
-  },
+  statText: { color: "#fff", fontSize: 15, fontWeight: "600", flex: 1 },
+  horizontalListContent: { paddingRight: 16, gap: 12 },
   matchCard: {
     padding: 14,
     borderRadius: 12,
     backgroundColor: "#111",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
+    marginBottom: 12,
   },
-  locationText: {
-    color: "#6b7280",
-    fontSize: 12,
-    marginBottom: 8,
-    fontWeight: "500",
-  },
-  teamName: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  vsText: {
-    color: "#9ca3af",
-    fontSize: 14,
-    marginTop: 4,
-  },
+  locationText: { color: "#6b7280", fontSize: 12, marginBottom: 8 },
+  teamName: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  vsText: { color: "#9ca3af", fontSize: 14, marginTop: 4 },
   scoreText: {
     color: "#3B82F6",
     fontSize: 20,
@@ -528,52 +467,19 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 4,
   },
-  teamMeta: {
-    color: "#9ca3af",
-    fontSize: 12,
-    marginTop: 4,
-  },
-  recordText: {
-    color: "#6b7280",
-    fontSize: 12,
-    marginTop: 6,
-  },
+  teamMeta: { color: "#9ca3af", fontSize: 12, marginTop: 4 },
+  recordText: { color: "#6b7280", fontSize: 12, marginTop: 6 },
   eloRow: {
     flexDirection: "row",
     alignItems: "baseline",
     marginTop: 8,
     gap: 6,
   },
-  gradeText: {
-    fontSize: 22,
-    fontWeight: "bold",
-  },
-  ratingText: {
-    color: "#6b7280",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  eloLabel: {
-    color: "#6b7280",
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  emptySection: {
-    alignItems: "center",
-    paddingVertical: 24,
-    gap: 8,
-  },
-  noDataText: {
-    color: "#6b7280",
-    fontSize: 14,
-    textAlign: "center",
-    fontStyle: "italic",
-  },
-  loadingText: {
-    color: "#9ca3af",
-    fontSize: 14,
-    marginTop: 12,
-  },
+  gradeText: { fontSize: 22, fontWeight: "bold" },
+  ratingText: { color: "#6b7280", fontSize: 14 },
+  emptySection: { alignItems: "center", paddingVertical: 24, gap: 8 },
+  noDataText: { color: "#6b7280", fontSize: 14, textAlign: "center" },
+  loadingText: { color: "#9ca3af", fontSize: 14, marginTop: 12 },
   errorText: {
     color: "#EF4444",
     textAlign: "center",
@@ -593,9 +499,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
   },
-  retryButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
+  retryButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
 });

@@ -1,17 +1,11 @@
-// app/(tabs)/matches.tsx
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { router } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
   Modal,
   Platform,
   RefreshControl,
@@ -19,239 +13,220 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
-type MatchRow = Record<string, any>;
-type Timeframe = "recent" | "upcoming" | "all";
+type MatchRow = {
+  id: string;
+  home_team: string | null;
+  away_team: string | null;
+  home_score: number | null;
+  away_score: number | null;
+  match_date: string | null;
+  location: string | null;
+  state: string | null;
+};
 
-// Helper to check if a value is valid (not null, empty, or "??")
-function isValidValue(v: any): boolean {
-  if (v === null || v === undefined) return false;
-  const str = String(v).trim();
-  return str.length > 0 && str !== "??" && str !== "TBD";
-}
+type TimeFilter = "all" | "today" | "week" | "month";
 
-function toDisplayDate(value: any): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString();
-}
+// Pagination helper - fetches ALL rows bypassing Supabase's 1000 limit
+async function fetchAllMatches(): Promise<MatchRow[]> {
+  const allRows: MatchRow[] = [];
+  const pageSize = 1000;
+  let offset = 0;
+  let hasMore = true;
 
-function pickFirst(obj: any, keys: string[]): any {
-  for (const k of keys) {
-    const v = obj?.[k];
-    if (v !== null && v !== undefined && `${v}`.trim() !== "") return v;
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from("matches")
+      .select(
+        "id, home_team, away_team, home_score, away_score, match_date, location, state",
+      )
+      .order("match_date", { ascending: false })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) {
+      console.error("Error fetching matches:", error);
+      throw error;
+    }
+
+    if (data && data.length > 0) {
+      allRows.push(...(data as MatchRow[]));
+      offset += pageSize;
+      hasMore = data.length === pageSize;
+    } else {
+      hasMore = false;
+    }
   }
-  return undefined;
+
+  console.log(`Matches: Fetched ${allRows.length} total matches`);
+  return allRows;
 }
 
-function scoreText(m: MatchRow): string {
-  const hs = pickFirst(m, ["home_score", "home_goals", "homeTeamScore"]);
-  const as = pickFirst(m, ["away_score", "away_goals", "awayTeamScore"]);
-  if (hs === undefined || as === undefined) return "";
-  return `${hs} - ${as}`;
+function formatDate(isoDate: string | null): string {
+  if (!isoDate) return "";
+  try {
+    const d = new Date(isoDate);
+    return d.toLocaleDateString("en-US", {
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return "";
+  }
 }
 
-export default function MatchesScreen() {
-  const router = useRouter();
+function isWithinDays(dateStr: string | null, days: number): boolean {
+  if (!dateStr) return false;
+  const matchDate = new Date(dateStr);
+  const now = new Date();
+  const diff = Math.abs(now.getTime() - matchDate.getTime());
+  return diff <= days * 24 * 60 * 60 * 1000;
+}
 
+export default function MatchesTab() {
+  const [allMatches, setAllMatches] = useState<MatchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
-  const [allMatches, setAllMatches] = useState<MatchRow[]>([]);
-  const [timeframe, setTimeframe] = useState<Timeframe>("all");
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const searchInputRef = useRef<TextInput>(null);
-
-  const loadMatches = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent ?? false;
-    if (!silent) setLoading(true);
-
-    try {
-      // Load ALL matches, filter client-side for responsiveness
-      const { data, error } = await supabase
-        .from("matches")
-        .select("*")
-        .order("match_date", { ascending: false, nullsFirst: false })
-        .limit(2000);
-
-      if (error) {
-        console.error("Matches query error:", error);
-        setAllMatches([]);
-        return;
-      }
-
-      setAllMatches((data ?? []) as MatchRow[]);
-    } catch (err) {
-      console.error("Error loading matches:", err);
-      setAllMatches([]);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, []);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [dropdownVisible, setDropdownVisible] = useState(false);
 
   useEffect(() => {
     loadMatches();
-  }, [loadMatches]);
+  }, []);
 
-  const onRefresh = useCallback(async () => {
+  const loadMatches = async () => {
+    try {
+      setError(null);
+      const data = await fetchAllMatches();
+      setAllMatches(data);
+    } catch (err: any) {
+      console.error("Error:", err);
+      setError(err.message || "Failed to load matches");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    await loadMatches({ silent: true });
+    await loadMatches();
     setRefreshing(false);
-  }, [loadMatches]);
+  };
 
-  // Filter matches client-side based on timeframe and search
+  // Filter matches client-side
   const filteredMatches = useMemo(() => {
-    const now = new Date();
-    const nowStr = now.toISOString().split("T")[0];
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
-
     let filtered = allMatches;
 
-    // Apply timeframe filter
-    if (timeframe === "recent") {
-      filtered = filtered.filter((m) => {
-        const matchDate = m.match_date?.split("T")[0];
-        return (
-          matchDate && matchDate >= thirtyDaysAgoStr && matchDate <= nowStr
-        );
-      });
-    } else if (timeframe === "upcoming") {
-      filtered = filtered.filter((m) => {
-        const matchDate = m.match_date?.split("T")[0];
-        return matchDate && matchDate > nowStr;
-      });
+    // Time filter
+    if (timeFilter === "today") {
+      filtered = filtered.filter((m) => isWithinDays(m.match_date, 1));
+    } else if (timeFilter === "week") {
+      filtered = filtered.filter((m) => isWithinDays(m.match_date, 7));
+    } else if (timeFilter === "month") {
+      filtered = filtered.filter((m) => isWithinDays(m.match_date, 30));
     }
 
-    // Apply search filter
-    const q = query.trim().toLowerCase();
-    if (q) {
-      filtered = filtered.filter((m) => {
-        const homeName =
-          pickFirst(m, ["home_team_name", "homeName", "home_team"]) ?? "";
-        const awayName =
-          pickFirst(m, ["away_team_name", "awayName", "away_team"]) ?? "";
-        const compName =
-          pickFirst(m, [
-            "competition_name",
-            "league_name",
-            "competition",
-            "league",
-          ]) ?? "";
-        const location =
-          pickFirst(m, ["location", "venue_name", "venue"]) ?? "";
-
-        const searchable =
-          `${homeName} ${awayName} ${compName} ${location}`.toLowerCase();
-        return searchable.includes(q);
-      });
+    // Search filter
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (m) =>
+          m.home_team?.toLowerCase().includes(q) ||
+          m.away_team?.toLowerCase().includes(q) ||
+          m.location?.toLowerCase().includes(q) ||
+          m.state?.toLowerCase().includes(q),
+      );
     }
 
     return filtered;
-  }, [allMatches, timeframe, query]);
+  }, [allMatches, timeFilter, searchQuery]);
 
-  const timeframeLabels: Record<Timeframe, string> = {
-    all: "All Matches",
-    recent: "Recent (30 Days)",
-    upcoming: "Upcoming",
+  const getTimeFilterLabel = (): string => {
+    switch (timeFilter) {
+      case "today":
+        return "Today";
+      case "week":
+        return "This Week";
+      case "month":
+        return "This Month";
+      default:
+        return "All Matches";
+    }
   };
 
-  const timeframeIcons: Record<Timeframe, string> = {
-    all: "📋",
-    recent: "🕐",
-    upcoming: "📅",
-  };
-
-  // Build match details string (competition, date, location)
-  const getMatchDetails = (item: MatchRow): string => {
-    const parts: string[] = [];
-
-    const date = toDisplayDate(item.match_date ?? item.played_at ?? item.date);
-    if (date) parts.push(date);
-
-    const location = pickFirst(item, ["location", "venue_name", "venue"]);
-    if (isValidValue(location)) parts.push(location);
-
-    return parts.join(" · ");
-  };
-
-  const renderItem = ({ item }: { item: MatchRow }) => {
-    const homeName =
-      pickFirst(item, ["home_team_name", "homeName", "home_team"]) ?? "TBD";
-    const awayName =
-      pickFirst(item, ["away_team_name", "awayName", "away_team"]) ?? "TBD";
-
-    const details = getMatchDetails(item);
-    const score = scoreText(item);
-    const hasScore = score.length > 0;
+  const renderMatch = useCallback(({ item }: { item: MatchRow }) => {
+    const dateStr = formatDate(item.match_date);
+    const hasScore = item.home_score !== null && item.away_score !== null;
+    const locationParts: string[] = [];
+    if (dateStr) locationParts.push(dateStr);
+    if (item.state) locationParts.push(item.state);
+    if (item.location) locationParts.push(item.location);
+    const locationStr = locationParts.join(" · ");
 
     return (
       <TouchableOpacity
+        style={styles.matchCard}
+        activeOpacity={0.7}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          const matchId = item.id ?? item.match_id;
-          if (matchId) {
-            router.push(`/match/${matchId}`);
-          }
+          router.push(`/match/${item.id}`);
         }}
-        style={styles.matchItem}
-        activeOpacity={0.7}
       >
-        <View style={styles.matchInfo}>
-          {details ? (
-            <Text style={styles.matchDetails} numberOfLines={1}>
-              {details}
+        {/* Top row: Date/Location */}
+        {locationStr ? (
+          <Text style={styles.locationText} numberOfLines={1}>
+            {locationStr}
+          </Text>
+        ) : null}
+
+        {/* Main content row: Teams + Score */}
+        <View style={styles.matchContent}>
+          {/* Teams column */}
+          <View style={styles.teamsContainer}>
+            <Text style={styles.homeTeam} numberOfLines={1}>
+              {item.home_team ?? "Home Team"}
             </Text>
-          ) : null}
-          <Text style={styles.teamName} numberOfLines={1}>
-            {homeName}
-          </Text>
-          <Text style={styles.vsText} numberOfLines={1}>
-            vs {awayName}
-          </Text>
+            <Text style={styles.awayTeam} numberOfLines={1}>
+              vs {item.away_team ?? "Away Team"}
+            </Text>
+          </View>
+
+          {/* Score column */}
+          <View style={styles.scoreContainer}>
+            {hasScore ? (
+              <Text style={styles.scoreText}>
+                {item.home_score} - {item.away_score}
+              </Text>
+            ) : (
+              <Text style={styles.pendingText}>—</Text>
+            )}
+          </View>
+
+          {/* Chevron */}
+          <Ionicons name="chevron-forward" size={18} color="#4b5563" />
         </View>
-        <View style={styles.scoreContainer}>
-          <Text style={hasScore ? styles.score : styles.scorePending}>
-            {hasScore ? score : "—"}
-          </Text>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color="#4b5563"
-          style={styles.chevron}
-        />
       </TouchableOpacity>
     );
-  };
+  }, []);
 
-  const ListHeader = () => (
-    <View>
+  const ListHeader = useMemo(
+    () => (
       <View style={styles.filtersContainer}>
-        {/* Timeframe selector button */}
+        {/* Time Filter Dropdown */}
         <TouchableOpacity
-          style={styles.timeframeSelector}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setModalVisible(true);
-          }}
+          style={styles.dropdownButton}
+          onPress={() => setDropdownVisible(true)}
         >
-          <Text style={styles.timeframeText}>
-            {timeframeIcons[timeframe]} {timeframeLabels[timeframe]}
-          </Text>
-          <Ionicons
-            name="chevron-down"
-            size={16}
-            color="#fff"
-            style={{ marginLeft: 6 }}
-          />
+          <Ionicons name="calendar" size={18} color="#3B82F6" />
+          <Text style={styles.dropdownButtonText}>{getTimeFilterLabel()}</Text>
+          <Ionicons name="chevron-down" size={18} color="#6b7280" />
         </TouchableOpacity>
 
         {/* Search */}
@@ -263,79 +238,80 @@ export default function MatchesScreen() {
             style={{ marginRight: 8 }}
           />
           <TextInput
-            ref={searchInputRef}
             style={styles.searchInput}
             placeholder="Search matches..."
             placeholderTextColor="#6b7280"
-            value={query}
-            onChangeText={setQuery}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
             autoCorrect={false}
             autoCapitalize="none"
             returnKeyType="search"
-            blurOnSubmit={false}
           />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery("")}>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
               <Ionicons name="close-circle" size={18} color="#6b7280" />
             </TouchableOpacity>
           )}
         </View>
-      </View>
 
-      {/* Results count */}
-      <View style={styles.resultsHeader}>
         <Text style={styles.resultsText}>
-          {filteredMatches.length.toLocaleString()} matches found
+          {filteredMatches.length.toLocaleString()} of{" "}
+          {allMatches.length.toLocaleString()} matches found
         </Text>
       </View>
-    </View>
+    ),
+    [searchQuery, timeFilter, filteredMatches.length, allMatches.length],
   );
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => {
+              setLoading(true);
+              loadMatches();
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Static Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Matches</Text>
-        <Text style={styles.subtitle}>Browse game results and schedules</Text>
-      </View>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Matches</Text>
+          <Text style={styles.subtitle}>Browse game results and schedules</Text>
+        </View>
+      </TouchableWithoutFeedback>
 
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
-          <Text style={styles.loadingText}>Loading matches...</Text>
+          <Text style={styles.loadingText}>Loading all matches...</Text>
         </View>
       ) : (
         <FlatList
           data={filteredMatches}
-          keyExtractor={(item, index) =>
-            item.id ?? item.match_id ?? `match-${index}`
-          }
-          renderItem={renderItem}
+          renderItem={renderMatch}
+          keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="football-outline" size={48} color="#374151" />
-              <Text style={styles.noDataText}>
-                {query
-                  ? "No matches match your search"
-                  : timeframe === "upcoming"
-                    ? "No upcoming matches scheduled"
-                    : timeframe === "recent"
-                      ? "No recent matches in the last 30 days"
-                      : "No matches available yet"}
-              </Text>
-              {query && (
-                <TouchableOpacity
-                  style={styles.clearButton}
-                  onPress={() => setQuery("")}
-                >
-                  <Text style={styles.clearButtonText}>Clear Search</Text>
-                </TouchableOpacity>
-              )}
+              <Text style={styles.emptyText}>No matches found</Text>
             </View>
           }
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -346,55 +322,64 @@ export default function MatchesScreen() {
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
           maxToRenderPerBatch={30}
+          removeClippedSubviews={true}
+          getItemLayout={(_, index) => ({
+            length: 100,
+            offset: 100 * index,
+            index,
+          })}
         />
       )}
 
-      {/* Timeframe Selection Modal */}
+      {/* Time Filter Modal */}
       <Modal
-        visible={modalVisible}
-        transparent={true}
+        visible={dropdownVisible}
+        transparent
         animationType="fade"
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => setDropdownVisible(false)}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+          onPress={() => setDropdownVisible(false)}
         >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Timeframe</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            {(["all", "recent", "upcoming"] as Timeframe[]).map((tf) => (
-              <TouchableOpacity
-                key={tf}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setTimeframe(tf);
-                  setModalVisible(false);
-                }}
-                style={[
-                  styles.timeframeRow,
-                  timeframe === tf && styles.timeframeRowSelected,
-                ]}
-              >
-                <Text style={styles.timeframeIcon}>{timeframeIcons[tf]}</Text>
-                <Text
+          <View style={styles.dropdownContent}>
+            <Text style={styles.dropdownTitle}>Select Time Range</Text>
+            {(["all", "today", "week", "month"] as TimeFilter[]).map(
+              (filter) => (
+                <TouchableOpacity
+                  key={filter}
                   style={[
-                    styles.timeframeRowText,
-                    timeframe === tf && styles.timeframeRowTextSelected,
+                    styles.dropdownOption,
+                    timeFilter === filter && styles.dropdownOptionSelected,
                   ]}
+                  onPress={() => {
+                    setTimeFilter(filter);
+                    setDropdownVisible(false);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
                 >
-                  {timeframeLabels[tf]}
-                </Text>
-                {timeframe === tf && (
-                  <Ionicons name="checkmark" size={20} color="#3B82F6" />
-                )}
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.dropdownOptionText,
+                      timeFilter === filter &&
+                        styles.dropdownOptionTextSelected,
+                    ]}
+                  >
+                    {filter === "all"
+                      ? "All Matches"
+                      : filter === "today"
+                        ? "Today"
+                        : filter === "week"
+                          ? "This Week"
+                          : "This Month"}
+                  </Text>
+                  {timeFilter === filter && (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  )}
+                </TouchableOpacity>
+              ),
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -403,53 +388,23 @@ export default function MatchesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    backgroundColor: "#000",
-  },
-  title: {
-    color: "#fff",
-    fontSize: 32,
-    fontWeight: "bold",
-  },
-  subtitle: {
-    color: "#9ca3af",
-    fontSize: 16,
-    marginTop: 4,
-  },
-  filtersContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    backgroundColor: "#000",
-  },
-  timeframeSelector: {
+  container: { flex: 1, backgroundColor: "#000" },
+  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  title: { color: "#fff", fontSize: 32, fontWeight: "bold" },
+  subtitle: { color: "#9ca3af", fontSize: 16, marginTop: 4 },
+  filtersContainer: { paddingHorizontal: 16, paddingTop: 8 },
+  dropdownButton: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
+    backgroundColor: "#1F2937",
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: "#1F2937",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    marginBottom: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 8,
+    alignSelf: "flex-start",
   },
-  timeframeText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  chipText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
+  dropdownButtonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -457,7 +412,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.15)",
     borderRadius: 12,
     paddingHorizontal: 12,
-    marginBottom: 8,
+    marginBottom: 16,
     backgroundColor: "#1F2937",
   },
   searchInput: {
@@ -466,23 +421,9 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 12 : 10,
     fontSize: 16,
   },
-  resultsHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#000",
-  },
-  resultsText: {
-    color: "#9ca3af",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  listContent: {
-    paddingBottom: 24,
-    flexGrow: 1,
-  },
-  matchItem: {
-    flexDirection: "row",
-    alignItems: "center",
+  resultsText: { color: "#9ca3af", fontSize: 14, marginBottom: 12 },
+  listContent: { paddingBottom: 24, flexGrow: 1 },
+  matchCard: {
     padding: 14,
     borderRadius: 12,
     backgroundColor: "#111",
@@ -491,125 +432,93 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  matchInfo: {
-    flex: 1,
-  },
-  matchDetails: {
+  locationText: {
     color: "#6b7280",
     fontSize: 12,
-    marginBottom: 6,
-    fontWeight: "500",
+    marginBottom: 8,
   },
-  teamName: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  vsText: {
-    color: "#9ca3af",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  scoreContainer: {
-    alignItems: "flex-end",
-    marginLeft: 12,
-  },
-  score: {
-    color: "#3B82F6",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  scorePending: {
-    color: "#374151",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  chevron: {
-    marginLeft: 8,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
+  matchContent: {
+    flexDirection: "row",
     alignItems: "center",
   },
-  loadingText: {
+  teamsContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  homeTeam: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  awayTeam: {
     color: "#9ca3af",
     fontSize: 14,
-    marginTop: 12,
   },
+  scoreContainer: {
+    minWidth: 60,
+    alignItems: "center",
+    marginRight: 8,
+  },
+  scoreText: {
+    color: "#3B82F6",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  pendingText: {
+    color: "#6b7280",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { color: "#9ca3af", fontSize: 14, marginTop: 12 },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 16,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingTop: 60,
   },
-  noDataText: {
-    color: "#6b7280",
-    fontSize: 16,
-    textAlign: "center",
-    marginTop: 16,
-  },
-  clearButton: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: "#1F2937",
-    borderRadius: 8,
-  },
-  clearButtonText: {
-    color: "#3B82F6",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  emptyText: { color: "#6b7280", fontSize: 16, marginTop: 16 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(0,0,0,0.8)",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
-  modalContent: {
+  dropdownContent: {
     backgroundColor: "#1F2937",
     borderRadius: 16,
     padding: 16,
   },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-  modalTitle: {
+  dropdownTitle: {
     color: "#fff",
     fontSize: 18,
     fontWeight: "700",
+    marginBottom: 16,
+    textAlign: "center",
   },
-  timeframeRow: {
+  dropdownOption: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
-  },
-  timeframeRowSelected: {
-    backgroundColor: "rgba(59, 130, 246, 0.1)",
-    marginHorizontal: -16,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     borderRadius: 8,
   },
-  timeframeIcon: {
-    fontSize: 18,
-    marginRight: 12,
-  },
-  timeframeRowText: {
-    color: "#fff",
-    fontSize: 15,
-    flex: 1,
-  },
-  timeframeRowTextSelected: {
-    color: "#3B82F6",
-    fontWeight: "600",
-  },
+  dropdownOptionSelected: { backgroundColor: "rgba(59,130,246,0.15)" },
+  dropdownOptionText: { color: "#d1d5db", fontSize: 16 },
+  dropdownOptionTextSelected: { color: "#3B82F6", fontWeight: "600" },
 });

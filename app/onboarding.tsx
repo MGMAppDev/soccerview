@@ -5,10 +5,10 @@ import {
   Animated,
   Dimensions,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -74,7 +74,9 @@ export default function OnboardingScreen() {
         const index = Math.round(
           event.nativeEvent.contentOffset.x / SCREEN_WIDTH,
         );
-        setCurrentIndex(index);
+        if (index >= 0 && index < slides.length) {
+          setCurrentIndex(index);
+        }
       },
     },
   );
@@ -99,28 +101,30 @@ export default function OnboardingScreen() {
   };
 
   const completeOnboarding = async () => {
+    console.log("Completing onboarding...");
     try {
       await AsyncStorage.setItem(ONBOARDING_KEY, "true");
-      router.replace("/(tabs)");
+      console.log("Onboarding status saved, navigating to tabs...");
     } catch (error) {
       console.error("Error saving onboarding status:", error);
-      // Still navigate even if save fails
-      router.replace("/(tabs)");
     }
+    // Always navigate, even if save fails
+    router.replace("/(tabs)");
   };
 
   const isLastSlide = currentIndex === slides.length - 1;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Skip button */}
+      {/* Skip button - always visible except on last slide */}
       {!isLastSlide && (
-        <Pressable
+        <TouchableOpacity
           style={[styles.skipButton, { top: insets.top + 16 }]}
           onPress={handleSkip}
+          activeOpacity={0.7}
         >
           <Text style={styles.skipText}>Skip</Text>
-        </Pressable>
+        </TouchableOpacity>
       )}
 
       {/* Slides */}
@@ -202,18 +206,18 @@ export default function OnboardingScreen() {
         </View>
 
         {/* Action button */}
-        <Pressable
-          style={({ pressed }) => [
+        <TouchableOpacity
+          style={[
             styles.actionButton,
             { backgroundColor: slides[currentIndex].color },
-            pressed && styles.actionButtonPressed,
           ]}
           onPress={handleNext}
+          activeOpacity={0.8}
         >
           <Text style={styles.actionButtonText}>
             {isLastSlide ? "Get Started" : "Next"}
           </Text>
-        </Pressable>
+        </TouchableOpacity>
 
         {/* Page indicator text */}
         <Text style={styles.pageIndicator}>
@@ -307,10 +311,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-  },
-  actionButtonPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.98 }],
   },
   actionButtonText: {
     color: "#fff",

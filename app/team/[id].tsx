@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -38,6 +38,16 @@ type MatchData = {
   location: string | null;
 };
 
+// Calculated stats from actual match data
+type CalculatedStats = {
+  matchesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  winPercentage: string;
+  source: "team_elo" | "calculated";
+};
+
 function isValidValue(v: string | null | undefined): boolean {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
 }
@@ -72,6 +82,17 @@ function getEloGrade(elo: number): { grade: string; color: string } {
   return { grade: "D-", color: "#dc2626" };
 }
 
+// Normalize age group display
+function normalizeAgeGroup(age: string | null | undefined): string | null {
+  if (!age) return null;
+  const trimmed = age.trim();
+  const match = trimmed.match(/^(U)0*(\d+)$/i);
+  if (match) {
+    return `U${parseInt(match[2], 10)}`;
+  }
+  return trimmed;
+}
+
 export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -102,18 +123,38 @@ export default function TeamDetailScreen() {
       if (teamError) throw teamError;
       setTeam(teamData as TeamData);
 
-      // Fetch ALL matches for this team (increased limit to 100)
+      // FIXED: Fetch matches using separate queries to avoid special character issues
       const teamName = teamData?.team_name;
       if (teamName) {
-        const { data: matchData, error: matchError } = await supabase
+        // Query for home matches
+        const { data: homeMatches, error: homeError } = await supabase
           .from("matches")
           .select("*")
-          .or(`home_team.eq.${teamName},away_team.eq.${teamName}`)
+          .eq("home_team", teamName)
           .order("match_date", { ascending: false })
-          .limit(100);
+          .limit(50);
 
-        if (!matchError && matchData) {
-          setAllMatches(matchData as MatchData[]);
+        // Query for away matches
+        const { data: awayMatches, error: awayError } = await supabase
+          .from("matches")
+          .select("*")
+          .eq("away_team", teamName)
+          .order("match_date", { ascending: false })
+          .limit(50);
+
+        if (!homeError && !awayError) {
+          // Combine and deduplicate matches
+          const allMatchData = [...(homeMatches || []), ...(awayMatches || [])];
+          const uniqueMatches = Array.from(
+            new Map(allMatchData.map((m) => [m.id, m])).values(),
+          );
+          // Sort by date descending
+          uniqueMatches.sort((a, b) => {
+            const dateA = new Date(a.match_date || 0).getTime();
+            const dateB = new Date(b.match_date || 0).getTime();
+            return dateB - dateA;
+          });
+          setAllMatches(uniqueMatches as MatchData[]);
         }
       }
     } catch (err: any) {
@@ -135,7 +176,7 @@ export default function TeamDetailScreen() {
   };
 
   // Split matches into recent (past) and upcoming (future)
-  const { recentMatches, upcomingMatches } = React.useMemo(() => {
+  const { recentMatches, upcomingMatches } = useMemo(() => {
     const now = new Date();
     const recent: MatchData[] = [];
     const upcoming: MatchData[] = [];
@@ -164,19 +205,74 @@ export default function TeamDetailScreen() {
     return { recentMatches: recent, upcomingMatches: upcoming };
   }, [allMatches]);
 
+  // FIXED: Calculate stats from actual match data when team_elo stats are missing/zero
+  const calculatedStats = useMemo((): CalculatedStats => {
+    // Check if team_elo has valid stats (matches_played > 0)
+    const hasTeamEloStats =
+      team && team.matches_played !== null && team.matches_played > 0;
+
+    if (hasTeamEloStats) {
+      // Use team_elo stats - these are the authoritative stats
+      const mp = team.matches_played || 0;
+      const w = team.wins || 0;
+      const winPct = mp > 0 ? ((w / mp) * 100).toFixed(0) : "0";
+      return {
+        matchesPlayed: mp,
+        wins: w,
+        losses: team.losses || 0,
+        draws: team.draws || 0,
+        winPercentage: `${winPct}%`,
+        source: "team_elo",
+      };
+    }
+
+    // Calculate from actual matches with scores
+    let wins = 0;
+    let losses = 0;
+    let draws = 0;
+    let matchesWithScores = 0;
+
+    recentMatches.forEach((match) => {
+      // Only count matches that have BOTH scores recorded
+      if (match.home_score !== null && match.away_score !== null) {
+        matchesWithScores++;
+        const isHome = match.home_team === team?.team_name;
+        const teamScore = isHome ? match.home_score : match.away_score;
+        const oppScore = isHome ? match.away_score : match.home_score;
+
+        if (teamScore > oppScore) {
+          wins++;
+        } else if (teamScore < oppScore) {
+          losses++;
+        } else {
+          draws++;
+        }
+      }
+    });
+
+    const winPct =
+      matchesWithScores > 0
+        ? ((wins / matchesWithScores) * 100).toFixed(0)
+        : "0";
+
+    return {
+      matchesPlayed: matchesWithScores,
+      wins,
+      losses,
+      draws,
+      winPercentage: `${winPct}%`,
+      source: "calculated",
+    };
+  }, [team, recentMatches]);
+
   const getTeamMeta = (): string => {
     if (!team) return "";
     const parts: string[] = [];
     if (isValidValue(team.state)) parts.push(team.state!);
     if (isValidValue(team.gender)) parts.push(team.gender!);
-    if (isValidValue(team.age_group)) parts.push(team.age_group!);
+    const normalizedAge = normalizeAgeGroup(team.age_group);
+    if (normalizedAge) parts.push(normalizedAge);
     return parts.join(" · ");
-  };
-
-  const getWinPercentage = (): string => {
-    if (!team || !team.matches_played || team.matches_played === 0) return "0%";
-    const winPct = ((team.wins || 0) / team.matches_played) * 100;
-    return `${winPct.toFixed(1)}%`;
   };
 
   const renderRecentMatch = ({ item }: { item: MatchData }) => {
@@ -245,16 +341,16 @@ export default function TeamDetailScreen() {
         }}
       >
         <View style={[styles.resultBadge, { backgroundColor: "#3B82F6" }]}>
-          <Ionicons name="calendar" size={14} color="#fff" />
+          <Ionicons name="calendar-outline" size={16} color="#fff" />
         </View>
         <View style={styles.matchInfo}>
           <Text style={styles.opponentText} numberOfLines={1}>
-            {isHome ? "vs" : "@"} {opponent || "TBD"}
+            {isHome ? "vs" : "@"} {opponent || "Unknown"}
           </Text>
           <Text style={styles.matchDateText}>{dateStr}</Text>
           {item.location && (
             <Text style={styles.matchLocationText} numberOfLines={1}>
-              📍 {item.location}
+              {item.location}
             </Text>
           )}
         </View>
@@ -263,10 +359,23 @@ export default function TeamDetailScreen() {
     );
   };
 
-  // Loading state
+  const matchesToShow =
+    activeTab === "recent" ? recentMatches : upcomingMatches;
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Team Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
           <Text style={styles.loadingText}>Loading team...</Text>
@@ -275,10 +384,10 @@ export default function TeamDetailScreen() {
     );
   }
 
-  // Error state
   if (error || !team) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
+        <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -286,14 +395,17 @@ export default function TeamDetailScreen() {
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Team Details</Text>
+          <View style={{ width: 40 }} />
         </View>
         <View style={styles.centered}>
-          <Ionicons name="alert-circle-outline" size={48} color="#374151" />
+          <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
           <Text style={styles.errorText}>{error || "Team not found"}</Text>
           <TouchableOpacity
             style={styles.retryButton}
             onPress={() => {
               setLoading(true);
+              setError(null);
               void fetchTeamData();
             }}
           >
@@ -304,36 +416,27 @@ export default function TeamDetailScreen() {
     );
   }
 
-  const meta = getTeamMeta();
-  const record = `${team.wins ?? 0}-${team.losses ?? 0}-${team.draws ?? 0}`;
   const elo = Math.round(team.elo_rating ?? 1500);
   const { grade, color } = getEloGrade(elo);
-  const matchesToShow =
-    activeTab === "recent" ? recentMatches : upcomingMatches;
+  const meta = getTeamMeta();
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Header with back button */}
+      <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
-          }}
+          onPress={() => router.back()}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          Team Details
-        </Text>
+        <Text style={styles.headerTitle}>Team Details</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -341,15 +444,12 @@ export default function TeamDetailScreen() {
             tintColor="#3B82F6"
           />
         }
+        showsVerticalScrollIndicator={false}
       >
-        {/* Team Name Card */}
+        {/* Team Card */}
         <View style={styles.teamCard}>
-          <Text style={styles.teamName}>
-            {team.team_name || "Unknown Team"}
-          </Text>
+          <Text style={styles.teamName}>{team.team_name ?? "Unknown"}</Text>
           {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
-
-          {/* ELO Rating with Grade */}
           <View style={styles.eloSection}>
             <View style={styles.eloGradeContainer}>
               <Text style={[styles.eloGrade, { color }]}>{grade}</Text>
@@ -359,42 +459,57 @@ export default function TeamDetailScreen() {
           </View>
         </View>
 
-        {/* Stats Grid */}
+        {/* Season Stats */}
         <Text style={styles.sectionTitle}>Season Stats</Text>
         <View style={styles.statsGrid}>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{record}</Text>
+            <Text style={styles.statValue}>
+              {calculatedStats.wins}-{calculatedStats.losses}-
+              {calculatedStats.draws}
+            </Text>
             <Text style={styles.statLabel}>Record (W-L-D)</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{team.matches_played ?? 0}</Text>
+            <Text style={styles.statValue}>
+              {calculatedStats.matchesPlayed}
+            </Text>
             <Text style={styles.statLabel}>Games Played</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={[styles.statValue, { color: "#10b981" }]}>
-              {team.wins ?? 0}
+            <Text style={[styles.statValue, { color: "#22c55e" }]}>
+              {calculatedStats.wins}
             </Text>
             <Text style={styles.statLabel}>Wins</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={[styles.statValue, { color: "#ef4444" }]}>
-              {team.losses ?? 0}
+              {calculatedStats.losses}
             </Text>
             <Text style={styles.statLabel}>Losses</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={[styles.statValue, { color: "#f59e0b" }]}>
-              {team.draws ?? 0}
+              {calculatedStats.draws}
             </Text>
             <Text style={styles.statLabel}>Draws</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{getWinPercentage()}</Text>
+            <Text style={styles.statValue}>
+              {calculatedStats.winPercentage}
+            </Text>
             <Text style={styles.statLabel}>Win Rate</Text>
           </View>
         </View>
+        {calculatedStats.source === "calculated" &&
+          calculatedStats.matchesPlayed === 0 &&
+          recentMatches.length > 0 && (
+            <Text style={styles.statsNote}>
+              Scores pending for {recentMatches.length} match
+              {recentMatches.length > 1 ? "es" : ""}
+            </Text>
+          )}
 
-        {/* Matches Tabs */}
+        {/* Matches Section */}
         <View style={styles.tabsHeader}>
           <Text style={styles.sectionTitle}>Matches</Text>
           <View style={styles.tabsContainer}>
@@ -565,7 +680,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   statBox: {
     width: "30%",
@@ -587,6 +702,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
     textAlign: "center",
+  },
+  statsNote: {
+    color: "#4b5563",
+    fontSize: 11,
+    fontStyle: "italic",
+    textAlign: "center",
+    marginBottom: 24,
   },
   tabsHeader: {
     flexDirection: "row",
@@ -663,7 +785,10 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontSize: 16,
     fontWeight: "600",
+    marginLeft: 12,
     marginRight: 8,
+    minWidth: 50,
+    textAlign: "center",
   },
   emptyMatches: {
     alignItems: "center",
