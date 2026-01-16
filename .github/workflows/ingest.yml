@@ -24,6 +24,14 @@ on:
         options:
           - "true"
           - "false"
+      skip_rankings:
+        description: "Skip GotSport rankings update"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 jobs:
   # Weekly tournament discovery job
@@ -69,11 +77,42 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ingest_heartland.js
 
-  # ELO recalculation job (runs after ingestion)
+  # Daily GotSport rankings update job (NEW)
+  rankings:
+    runs-on: ubuntu-latest
+    needs: [discover]
+    if: always() && (needs.discover.result == 'success' || needs.discover.result == 'skipped') && github.event.inputs.skip_rankings != 'true'
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run GotSport rankings scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/scrape_gotsport_rankings.js --import
+
+      - name: Upload rankings artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rankings-data-${{ github.run_number }}
+          path: gotsport_rankings_data/
+          retention-days: 7
+
+  # ELO recalculation job (runs after ingestion AND rankings)
   elo:
     runs-on: ubuntu-latest
-    needs: [ingest]
-    if: always() && needs.ingest.result == 'success' && github.event.inputs.skip_elo != 'true'
+    needs: [ingest, rankings]
+    if: always() && (needs.ingest.result == 'success' || needs.rankings.result == 'success') && github.event.inputs.skip_elo != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -95,6 +134,7 @@ jobs:
       - name: Summary
         run: |
           echo "## Daily Pipeline Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- Ingestion: ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Ingestion: ${{ needs.ingest.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Rankings: ${{ needs.rankings.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- ELO Recalculation: ✅" >> $GITHUB_STEP_SUMMARY
           echo "- Timestamp: $(date -u)" >> $GITHUB_STEP_SUMMARY

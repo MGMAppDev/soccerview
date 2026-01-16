@@ -20,6 +20,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
+// ============================================================
+// TYPES
+// ============================================================
+
 type TeamRankRow = {
   id: string;
   team_name: string | null;
@@ -31,8 +35,40 @@ type TeamRankRow = {
   draws: number | null;
   gender: string | null;
   age_group: string | null;
+  // GotSport official rankings (will be populated by scraper)
+  national_rank: number | null;
+  regional_rank: number | null;
+  state_rank: number | null;
+  gotsport_points: number | null;
+  // Awards
+  national_award: string | null;
+  regional_award: string | null;
+  state_cup_award: string | null;
+  // Display rank (computed)
   rank?: number;
 };
+
+type ViewMode = "leaderboard" | "national" | "state";
+
+// Valid age groups - U8 through U19 only
+const VALID_AGE_GROUPS = [
+  "U8",
+  "U9",
+  "U10",
+  "U11",
+  "U12",
+  "U13",
+  "U14",
+  "U15",
+  "U16",
+  "U17",
+  "U18",
+  "U19",
+];
+
+// ============================================================
+// DATA FETCHING
+// ============================================================
 
 async function fetchAllTeams(): Promise<TeamRankRow[]> {
   const allRows: TeamRankRow[] = [];
@@ -44,7 +80,7 @@ async function fetchAllTeams(): Promise<TeamRankRow[]> {
     const { data, error } = await supabase
       .from("team_elo")
       .select(
-        "id, team_name, state, elo_rating, matches_played, wins, losses, draws, gender, age_group",
+        "id, team_name, state, elo_rating, matches_played, wins, losses, draws, gender, age_group, national_rank, regional_rank, state_rank, gotsport_points, national_award, regional_award, state_cup_award",
       )
       .order("elo_rating", { ascending: false })
       .range(offset, offset + pageSize - 1);
@@ -66,6 +102,10 @@ async function fetchAllTeams(): Promise<TeamRankRow[]> {
   console.log(`Rankings: Fetched ${allRows.length} total teams`);
   return allRows;
 }
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
 
 function isValidValue(v: string | null | undefined): v is string {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
@@ -96,8 +136,37 @@ function getEloGrade(elo: number): { grade: string; color: string } {
   return { grade: "D-", color: "#dc2626" };
 }
 
+function getMedalEmoji(rank: number): string {
+  if (rank === 1) return "🥇";
+  if (rank === 2) return "🥈";
+  if (rank === 3) return "🥉";
+  return "";
+}
+
+function getMedalColor(rank: number | undefined): string {
+  if (rank === 1) return "#FFD700";
+  if (rank === 2) return "#C0C0C0";
+  if (rank === 3) return "#CD7F32";
+  if (rank && rank <= 10) return "#10b981";
+  if (rank && rank <= 25) return "#3B82F6";
+  if (rank && rank <= 100) return "#8b5cf6";
+  return "#9ca3af";
+}
+
+function getAwardBadges(team: TeamRankRow): string {
+  const badges: string[] = [];
+  if (team.national_award) badges.push("🏆");
+  if (team.regional_award) badges.push("🥇");
+  if (team.state_cup_award) badges.push("🏅");
+  return badges.join(" ");
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
 export default function RankingsTab() {
-  const [mode, setMode] = useState<"national" | "state">("national");
+  const [mode, setMode] = useState<ViewMode>("leaderboard");
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
   const [selectedAges, setSelectedAges] = useState<string[]>([]);
@@ -132,6 +201,10 @@ export default function RankingsTab() {
     setRefreshing(false);
   };
 
+  // ============================================================
+  // DERIVED DATA
+  // ============================================================
+
   const allStates = useMemo(() => {
     return [
       ...new Set(allTeams.map((t) => t.state).filter(isValidValue)),
@@ -144,15 +217,25 @@ export default function RankingsTab() {
     ].sort();
   }, [allTeams]);
 
+  // Filter age groups to U9-U19 only
   const allAgeGroups = useMemo(() => {
     const normalizedValues = allTeams
       .map((t) => normalizeAgeGroup(t.age_group))
       .filter(isValidValue);
-    return [...new Set(normalizedValues)].sort((a, b) => {
-      const numA = parseInt(a?.replace(/\D/g, "") || "0", 10);
-      const numB = parseInt(b?.replace(/\D/g, "") || "0", 10);
-      return numA - numB;
-    });
+    const uniqueAges = [...new Set(normalizedValues)];
+    // Only include valid age groups (U9-U19)
+    return uniqueAges
+      .filter((age) => VALID_AGE_GROUPS.includes(age))
+      .sort((a, b) => {
+        const numA = parseInt(a?.replace(/\D/g, "") || "0", 10);
+        const numB = parseInt(b?.replace(/\D/g, "") || "0", 10);
+        return numA - numB;
+      });
+  }, [allTeams]);
+
+  // Count teams with official national rank
+  const teamsWithNationalRank = useMemo(() => {
+    return allTeams.filter((t) => t.national_rank !== null).length;
   }, [allTeams]);
 
   const toggleSelection = useCallback(
@@ -169,21 +252,37 @@ export default function RankingsTab() {
     [],
   );
 
+  // ============================================================
+  // FILTERED RANKINGS - Different logic per mode
+  // ============================================================
+
   const filteredRankings = useMemo(() => {
     let filtered = allTeams;
 
+    // LEADERBOARD MODE: Only teams with official national_rank, sorted by rank
+    if (mode === "leaderboard") {
+      filtered = filtered.filter((t) => t.national_rank !== null);
+      // Sort by national_rank ascending (1 is best)
+      filtered = [...filtered].sort(
+        (a, b) => (a.national_rank || 9999) - (b.national_rank || 9999),
+      );
+    }
+
+    // STATE MODE: Filter by selected states
     if (mode === "state" && selectedStates.length > 0) {
       filtered = filtered.filter(
         (t) => isValidValue(t.state) && selectedStates.includes(t.state),
       );
     }
 
+    // Apply gender filter (all modes)
     if (selectedGenders.length > 0) {
       filtered = filtered.filter(
         (t) => isValidValue(t.gender) && selectedGenders.includes(t.gender),
       );
     }
 
+    // Apply age filter (all modes)
     if (selectedAges.length > 0) {
       filtered = filtered.filter((t) => {
         const normalizedTeamAge = normalizeAgeGroup(t.age_group);
@@ -191,13 +290,20 @@ export default function RankingsTab() {
       });
     }
 
+    // Apply search filter (all modes)
     if (searchQuery) {
       filtered = filtered.filter((t) =>
         t.team_name?.toLowerCase().includes(searchQuery.toLowerCase()),
       );
     }
 
-    return filtered.map((team, index) => ({ ...team, rank: index + 1 }));
+    // For non-leaderboard modes, add computed rank based on position
+    if (mode !== "leaderboard") {
+      return filtered.map((team, index) => ({ ...team, rank: index + 1 }));
+    }
+
+    // For leaderboard mode, use the official national_rank
+    return filtered;
   }, [
     allTeams,
     mode,
@@ -207,10 +313,14 @@ export default function RankingsTab() {
     searchQuery,
   ]);
 
-  const handleModeChange = useCallback((newMode: "national" | "state") => {
+  // ============================================================
+  // HANDLERS
+  // ============================================================
+
+  const handleModeChange = useCallback((newMode: ViewMode) => {
     setMode(newMode);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (newMode === "national") {
+    if (newMode === "national" || newMode === "leaderboard") {
       setSelectedStates([]);
     }
   }, []);
@@ -238,13 +348,89 @@ export default function RankingsTab() {
     return parts.join(" · ");
   }, []);
 
-  const getMedalColor = (rank: number | undefined) => {
-    if (rank === 1) return "#FFD700";
-    if (rank === 2) return "#C0C0C0";
-    if (rank === 3) return "#CD7F32";
-    return "#3B82F6";
-  };
+  // ============================================================
+  // RENDER ITEMS
+  // ============================================================
 
+  // Premium leaderboard item with official ranking
+  const renderLeaderboardItem = useCallback(
+    ({ item }: { item: TeamRankRow }) => {
+      const details = getTeamDetails(item);
+      const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
+      const elo = Math.round(item.elo_rating ?? 1500);
+      const { grade, color: eloColor } = getEloGrade(elo);
+      const rank = item.national_rank || 0;
+      const isTopThree = rank <= 3;
+      const isTopTen = rank <= 10;
+      const medalEmoji = getMedalEmoji(rank);
+      const awards = getAwardBadges(item);
+
+      return (
+        <TouchableOpacity
+          style={[
+            styles.leaderboardItem,
+            isTopThree && styles.leaderboardItemTopThree,
+            isTopTen && !isTopThree && styles.leaderboardItemTopTen,
+          ]}
+          activeOpacity={0.7}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push(`/team/${item.id}`);
+          }}
+        >
+          {/* Rank Badge */}
+          <View
+            style={[
+              styles.leaderboardRankBadge,
+              { backgroundColor: getMedalColor(rank) + "20" },
+            ]}
+          >
+            {isTopThree ? (
+              <Text style={styles.medalEmoji}>{medalEmoji}</Text>
+            ) : (
+              <Text
+                style={[styles.leaderboardRank, { color: getMedalColor(rank) }]}
+              >
+                {rank}
+              </Text>
+            )}
+          </View>
+
+          {/* Team Info */}
+          <View style={styles.leaderboardInfo}>
+            <View style={styles.leaderboardNameRow}>
+              <Text style={styles.leaderboardName} numberOfLines={1}>
+                {item.team_name ?? "Unknown"}
+              </Text>
+              {awards ? <Text style={styles.awardBadges}>{awards}</Text> : null}
+            </View>
+            <Text style={styles.leaderboardDetails}>{details}</Text>
+            <View style={styles.leaderboardStats}>
+              <Text style={styles.leaderboardRecord}>{record}</Text>
+              {item.gotsport_points ? (
+                <Text style={styles.leaderboardPoints}>
+                  {Math.round(item.gotsport_points)} pts
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          {/* ELO Grade */}
+          <View style={styles.leaderboardRating}>
+            <Text style={[styles.leaderboardGrade, { color: eloColor }]}>
+              {grade}
+            </Text>
+            <Text style={styles.leaderboardElo}>{elo}</Text>
+          </View>
+
+          <Ionicons name="chevron-forward" size={18} color="#4b5563" />
+        </TouchableOpacity>
+      );
+    },
+    [getTeamDetails],
+  );
+
+  // Standard team item (for national/state modes)
   const renderTeamItem = useCallback(
     ({ item }: { item: TeamRankRow }) => {
       const details = getTeamDetails(item);
@@ -286,6 +472,10 @@ export default function RankingsTab() {
     [getTeamDetails],
   );
 
+  // ============================================================
+  // LIST HEADER
+  // ============================================================
+
   const ListHeader = useMemo(
     () => (
       <View style={styles.filtersContainer}>
@@ -323,6 +513,24 @@ export default function RankingsTab() {
           keyboardShouldPersistTaps="always"
         >
           <TouchableOpacity
+            key="leaderboard"
+            style={[
+              styles.baseChip,
+              styles.leaderboardChip,
+              mode === "leaderboard" && styles.leaderboardChipSelected,
+            ]}
+            onPress={() => handleModeChange("leaderboard")}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                mode === "leaderboard" && styles.leaderboardChipText,
+              ]}
+            >
+              🏆 Leaderboard
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             key="national"
             style={[
               styles.baseChip,
@@ -341,7 +549,7 @@ export default function RankingsTab() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* State filter (only in state mode) - removed "(X selected)" */}
+        {/* State filter (only in state mode) */}
         {mode === "state" && (
           <>
             <Text style={styles.sectionHeader}>States</Text>
@@ -369,7 +577,7 @@ export default function RankingsTab() {
           </>
         )}
 
-        {/* Gender - removed "(X selected)" */}
+        {/* Gender */}
         <Text style={styles.sectionHeader}>Gender</Text>
         <ScrollView
           horizontal
@@ -393,7 +601,7 @@ export default function RankingsTab() {
           ))}
         </ScrollView>
 
-        {/* Age - removed "(X selected)" */}
+        {/* Age - Filtered to U9-U19 only */}
         <Text style={styles.sectionHeader}>Age Group</Text>
         <ScrollView
           horizontal
@@ -417,7 +625,7 @@ export default function RankingsTab() {
           ))}
         </ScrollView>
 
-        {/* Clear Filters - neutral gray styling */}
+        {/* Clear Filters */}
         {hasFilters && (
           <TouchableOpacity
             style={styles.clearChip}
@@ -436,8 +644,10 @@ export default function RankingsTab() {
 
         <View style={styles.resultsHeader}>
           <Text style={styles.resultsText}>
-            {filteredRankings.length.toLocaleString()} of{" "}
-            {allTeams.length.toLocaleString()} teams
+            {filteredRankings.length.toLocaleString()}
+            {mode !== "leaderboard" &&
+              ` of ${allTeams.length.toLocaleString()}`}{" "}
+            teams
           </Text>
           <TouchableOpacity
             style={styles.infoButton}
@@ -465,11 +675,16 @@ export default function RankingsTab() {
       hasFilters,
       filteredRankings.length,
       allTeams.length,
+      teamsWithNationalRank,
       handleModeChange,
       toggleSelection,
       clearFilters,
     ],
   );
+
+  // ============================================================
+  // ERROR STATE
+  // ============================================================
 
   if (error) {
     return (
@@ -491,14 +706,15 @@ export default function RankingsTab() {
     );
   }
 
+  // ============================================================
+  // MAIN RENDER
+  // ============================================================
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.header}>
           <Text style={styles.title}>Rankings</Text>
-          <Text style={styles.subtitle}>
-            Top youth soccer teams across the US
-          </Text>
         </View>
       </TouchableWithoutFeedback>
 
@@ -510,14 +726,20 @@ export default function RankingsTab() {
       ) : (
         <FlatList
           data={filteredRankings}
-          renderItem={renderTeamItem}
+          renderItem={
+            mode === "leaderboard" ? renderLeaderboardItem : renderTeamItem
+          }
           keyExtractor={(item) => item.id}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="trophy-outline" size={48} color="#374151" />
               <Text style={styles.noDataText}>
-                {hasFilters ? "No teams match filters" : "No rankings"}
+                {hasFilters
+                  ? "No teams match filters"
+                  : mode === "leaderboard"
+                    ? "No ranked teams yet"
+                    : "No rankings"}
               </Text>
               {hasFilters && (
                 <TouchableOpacity
@@ -543,14 +765,19 @@ export default function RankingsTab() {
           initialNumToRender={20}
           maxToRenderPerBatch={30}
           removeClippedSubviews={true}
-          getItemLayout={(_, index) => ({
-            length: 85,
-            offset: 85 * index,
-            index,
-          })}
+          getItemLayout={
+            mode !== "leaderboard"
+              ? (_, index) => ({
+                  length: 85,
+                  offset: 85 * index,
+                  index,
+                })
+              : undefined
+          }
         />
       )}
 
+      {/* Info Modal */}
       <Modal
         visible={infoModalVisible}
         transparent
@@ -569,12 +796,21 @@ export default function RankingsTab() {
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
+
+            <Text style={styles.modalText}>
+              <Text style={styles.modalBold}>🏆 Leaderboard</Text>
+              {"\n"}
+              Official GotSport national rankings - the same rankings tournament
+              directors use for seeding.
+            </Text>
+
             <Text style={styles.modalText}>
               <Text style={styles.modalBold}>ELO Rating System</Text>
               {"\n"}
               Teams start at 1500 ELO. Winning increases rating, losing
               decreases it. Beating stronger teams earns more points.
             </Text>
+
             <Text style={styles.modalText}>
               <Text style={styles.modalBold}>Letter Grades</Text>
               {"\n"}
@@ -583,11 +819,13 @@ export default function RankingsTab() {
               C+/C/C- (1400-1474) Average{"\n"}
               D+/D/D- (below 1400) Developing
             </Text>
+
             <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>Season</Text>
+              <Text style={styles.modalBold}>Award Badges</Text>
               {"\n"}
-              August 1st through July 31st (typical youth soccer calendar)
+              🏆 National Champion | 🥇 Regional Winner | 🏅 State Cup Winner
             </Text>
+
             <Text style={styles.modalText}>
               <Text style={styles.modalBold}>Multi-Select</Text>
               {"\n"}
@@ -601,11 +839,14 @@ export default function RankingsTab() {
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
   title: { color: "#fff", fontSize: 32, fontWeight: "bold" },
-  subtitle: { color: "#9ca3af", fontSize: 16, marginTop: 4 },
   filtersContainer: { paddingHorizontal: 16, paddingTop: 8 },
   sectionHeader: {
     color: "#fff",
@@ -625,6 +866,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2937",
   },
   selectedChip: { backgroundColor: "#3B82F6", borderColor: "#3B82F6" },
+
+  // Leaderboard chip - special gold styling
+  leaderboardChip: {
+    borderColor: "#f59e0b",
+  },
+  leaderboardChipSelected: {
+    backgroundColor: "#f59e0b",
+    borderColor: "#f59e0b",
+  },
+  leaderboardChipText: {
+    color: "#000",
+  },
+
   chipText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   clearChip: {
     flexDirection: "row",
@@ -655,6 +909,7 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 12 : 10,
     fontSize: 16,
   },
+
   resultsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -675,6 +930,8 @@ const styles = StyleSheet.create({
   },
   infoButtonText: { color: "#3B82F6", fontSize: 12, marginLeft: 4 },
   listContent: { paddingBottom: 24, flexGrow: 1 },
+
+  // Standard team item (national/state modes)
   teamItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -695,6 +952,94 @@ const styles = StyleSheet.create({
   ratingContainer: { alignItems: "center", minWidth: 50 },
   ratingGrade: { fontSize: 20, fontWeight: "bold" },
   ratingElo: { color: "#6b7280", fontSize: 11, marginTop: 2 },
+
+  // Leaderboard item (premium styling)
+  leaderboardItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: "#111",
+    marginBottom: 10,
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
+  },
+  leaderboardItemTopThree: {
+    backgroundColor: "rgba(245, 158, 11, 0.08)",
+    borderColor: "rgba(245, 158, 11, 0.3)",
+  },
+  leaderboardItemTopTen: {
+    backgroundColor: "rgba(16, 185, 129, 0.05)",
+    borderColor: "rgba(16, 185, 129, 0.2)",
+  },
+  leaderboardRankBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  leaderboardRank: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  medalEmoji: {
+    fontSize: 24,
+  },
+  leaderboardInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  leaderboardNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  leaderboardName: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+    flex: 1,
+  },
+  awardBadges: {
+    fontSize: 12,
+  },
+  leaderboardDetails: {
+    color: "#9ca3af",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  leaderboardStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 4,
+  },
+  leaderboardRecord: {
+    color: "#6b7280",
+    fontSize: 12,
+  },
+  leaderboardPoints: {
+    color: "#f59e0b",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  leaderboardRating: {
+    alignItems: "center",
+    minWidth: 44,
+  },
+  leaderboardGrade: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  leaderboardElo: {
+    color: "#6b7280",
+    fontSize: 10,
+    marginTop: 2,
+  },
+
+  // States
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { color: "#9ca3af", fontSize: 14, marginTop: 12 },
   errorText: {

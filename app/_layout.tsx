@@ -130,6 +130,15 @@ export default function RootLayout() {
         }}
       />
 
+      {/* Prediction screen - NEW! */}
+      <Stack.Screen
+        name="predict"
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+
       {/* Modal */}
       <Stack.Screen
         name="modal"

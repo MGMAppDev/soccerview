@@ -305,6 +305,27 @@ export default function HomeScreen() {
         </Text>
       </View>
 
+      {/* ⚔️ PREDICT MATCH - Hero Button */}
+      <TouchableOpacity
+        style={styles.predictButton}
+        activeOpacity={0.8}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          router.push("/predict");
+        }}
+      >
+        <View style={styles.predictIconContainer}>
+          <Text style={styles.predictEmoji}>⚔️</Text>
+        </View>
+        <View style={styles.predictTextContainer}>
+          <Text style={styles.predictTitle}>Predict Match</Text>
+          <Text style={styles.predictSubtitle}>
+            AI-powered predictions • Who would win?
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={24} color="#10b981" />
+      </TouchableOpacity>
+
       <View style={styles.statsContainer}>
         <TouchableOpacity
           style={styles.statCard}
@@ -423,6 +444,45 @@ const styles = StyleSheet.create({
   },
   sectionHeader: { color: "#fff", fontSize: 20, fontWeight: "700" },
   seeAllText: { color: "#3B82F6", fontSize: 14, fontWeight: "600" },
+
+  // ⚔️ Predict Match Button Styles
+  predictButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#10b981",
+  },
+  predictIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  predictEmoji: {
+    fontSize: 24,
+  },
+  predictTextContainer: {
+    flex: 1,
+  },
+  predictTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  predictSubtitle: {
+    color: "#10b981",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+
   statsContainer: { gap: 12, marginBottom: 24 },
   statCard: {
     flexDirection: "row",

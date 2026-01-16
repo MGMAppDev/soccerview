@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
+// UPDATED: Added GotSport fields for championship badges
 type TeamData = {
   id: string;
   team_name: string | null;
@@ -26,6 +27,18 @@ type TeamData = {
   state: string | null;
   gender: string | null;
   age_group: string | null;
+  // GotSport fields (v7)
+  national_rank: number | null;
+  regional_rank: number | null;
+  state_rank: number | null;
+  gotsport_points: number | null;
+  goals_for: number | null;
+  goals_against: number | null;
+  national_award: string | null;
+  regional_award: string | null;
+  state_cup_award: string | null;
+  logo_url: string | null;
+  club_name: string | null;
 };
 
 type MatchData = {
@@ -93,6 +106,12 @@ function normalizeAgeGroup(age: string | null | undefined): string | null {
   return trimmed;
 }
 
+// Format large numbers with commas
+function formatNumber(num: number | null): string {
+  if (num === null || num === undefined) return "—";
+  return num.toLocaleString();
+}
+
 export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -113,7 +132,7 @@ export default function TeamDetailScreen() {
     try {
       setError(null);
 
-      // Fetch team info from team_elo
+      // Fetch team info from team_elo (including all GotSport fields)
       const { data: teamData, error: teamError } = await supabase
         .from("team_elo")
         .select("*")
@@ -264,6 +283,18 @@ export default function TeamDetailScreen() {
       source: "calculated",
     };
   }, [team, recentMatches]);
+
+  // Check if team has any championship badges
+  const hasAnyBadge = useMemo(() => {
+    return (
+      team?.national_award || team?.regional_award || team?.state_cup_award
+    );
+  }, [team]);
+
+  // Check if team has GotSport ranking data
+  const hasRankingData = useMemo(() => {
+    return team?.national_rank !== null && team?.national_rank !== undefined;
+  }, [team]);
 
   const getTeamMeta = (): string => {
     if (!team) return "";
@@ -420,6 +451,12 @@ export default function TeamDetailScreen() {
   const { grade, color } = getEloGrade(elo);
   const meta = getTeamMeta();
 
+  // Goal differential
+  const goalDiff =
+    team.goals_for !== null && team.goals_against !== null
+      ? team.goals_for - team.goals_against
+      : null;
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -450,6 +487,31 @@ export default function TeamDetailScreen() {
         <View style={styles.teamCard}>
           <Text style={styles.teamName}>{team.team_name ?? "Unknown"}</Text>
           {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
+
+          {/* 🏆 CHAMPIONSHIP BADGES - NEW! */}
+          {hasAnyBadge && (
+            <View style={styles.badgesContainer}>
+              {team.national_award && (
+                <View style={[styles.badge, styles.nationalBadge]}>
+                  <Text style={styles.badgeEmoji}>🏆</Text>
+                  <Text style={styles.badgeText}>National Champion</Text>
+                </View>
+              )}
+              {team.regional_award && (
+                <View style={[styles.badge, styles.regionalBadge]}>
+                  <Text style={styles.badgeEmoji}>🥇</Text>
+                  <Text style={styles.badgeText}>Regional Winner</Text>
+                </View>
+              )}
+              {team.state_cup_award && (
+                <View style={[styles.badge, styles.stateBadge]}>
+                  <Text style={styles.badgeEmoji}>🏅</Text>
+                  <Text style={styles.badgeText}>State Cup</Text>
+                </View>
+              )}
+            </View>
+          )}
+
           <View style={styles.eloSection}>
             <View style={styles.eloGradeContainer}>
               <Text style={[styles.eloGrade, { color }]}>{grade}</Text>
@@ -458,6 +520,95 @@ export default function TeamDetailScreen() {
             <Text style={styles.eloLabel}>Team Rating</Text>
           </View>
         </View>
+
+        {/* 📊 NATIONAL RANKING CARD - NEW! (Only shows if team has ranking data) */}
+        {hasRankingData && (
+          <View style={styles.rankingCard}>
+            <View style={styles.rankingHeader}>
+              <Text style={styles.rankingTitle}>🏆 Official Rankings</Text>
+            </View>
+            <View style={styles.rankingGrid}>
+              {team.national_rank && (
+                <View style={styles.rankItem}>
+                  <Text style={styles.rankValue}>#{team.national_rank}</Text>
+                  <Text style={styles.rankLabel}>National</Text>
+                </View>
+              )}
+              {team.regional_rank && (
+                <View style={styles.rankItem}>
+                  <Text style={styles.rankValue}>#{team.regional_rank}</Text>
+                  <Text style={styles.rankLabel}>Regional</Text>
+                </View>
+              )}
+              {team.state_rank && (
+                <View style={styles.rankItem}>
+                  <Text style={styles.rankValue}>#{team.state_rank}</Text>
+                  <Text style={styles.rankLabel}>State</Text>
+                </View>
+              )}
+              {team.gotsport_points && (
+                <View style={styles.rankItem}>
+                  <Text style={styles.rankValuePoints}>
+                    {formatNumber(team.gotsport_points)}
+                  </Text>
+                  <Text style={styles.rankLabel}>Points</Text>
+                </View>
+              )}
+            </View>
+            {/* Goals For/Against row */}
+            {(team.goals_for !== null || team.goals_against !== null) && (
+              <View style={styles.goalsRow}>
+                <View style={styles.goalItem}>
+                  <Text style={styles.goalValue}>{team.goals_for ?? "—"}</Text>
+                  <Text style={styles.goalLabel}>Goals For</Text>
+                </View>
+                <View style={styles.goalItem}>
+                  <Text style={styles.goalValue}>
+                    {team.goals_against ?? "—"}
+                  </Text>
+                  <Text style={styles.goalLabel}>Goals Against</Text>
+                </View>
+                <View style={styles.goalItem}>
+                  <Text
+                    style={[
+                      styles.goalValue,
+                      goalDiff !== null && goalDiff > 0 && { color: "#22c55e" },
+                      goalDiff !== null && goalDiff < 0 && { color: "#ef4444" },
+                    ]}
+                  >
+                    {goalDiff !== null
+                      ? goalDiff > 0
+                        ? `+${goalDiff}`
+                        : goalDiff
+                      : "—"}
+                  </Text>
+                  <Text style={styles.goalLabel}>Differential</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ⚔️ PREDICT MATCH BUTTON */}
+        <TouchableOpacity
+          style={styles.predictButton}
+          activeOpacity={0.8}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push(`/predict?teamId=${id}`);
+          }}
+        >
+          <View style={styles.predictIconContainer}>
+            <Text style={styles.predictEmoji}>⚔️</Text>
+          </View>
+          <View style={styles.predictTextContainer}>
+            <Text style={styles.predictTitle}>Predict Match</Text>
+            <Text style={styles.predictSubtitle}>
+              See how this team would fare vs any opponent
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color="#10b981" />
+        </TouchableOpacity>
 
         {/* Season Stats */}
         <Text style={styles.sectionTitle}>Season Stats</Text>
@@ -625,7 +776,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#111",
     borderRadius: 16,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
     alignItems: "center",
@@ -641,7 +792,107 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     fontSize: 14,
     textAlign: "center",
+    marginBottom: 12,
+  },
+  // 🏆 CHAMPIONSHIP BADGES STYLES - NEW!
+  badgesContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
     marginBottom: 16,
+  },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  nationalBadge: {
+    backgroundColor: "rgba(255, 215, 0, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 215, 0, 0.4)",
+  },
+  regionalBadge: {
+    backgroundColor: "rgba(192, 192, 192, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(192, 192, 192, 0.4)",
+  },
+  stateBadge: {
+    backgroundColor: "rgba(205, 127, 50, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(205, 127, 50, 0.4)",
+  },
+  badgeEmoji: {
+    fontSize: 14,
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  // 📊 RANKING CARD STYLES - NEW!
+  rankingCard: {
+    backgroundColor: "#111",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(59, 130, 246, 0.3)",
+  },
+  rankingHeader: {
+    marginBottom: 12,
+  },
+  rankingTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  rankingGrid: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 8,
+  },
+  rankItem: {
+    alignItems: "center",
+  },
+  rankValue: {
+    color: "#3B82F6",
+    fontSize: 24,
+    fontWeight: "bold",
+  },
+  rankValuePoints: {
+    color: "#22c55e",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  rankLabel: {
+    color: "#6b7280",
+    fontSize: 11,
+    marginTop: 4,
+  },
+  goalsRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingTop: 12,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+  },
+  goalItem: {
+    alignItems: "center",
+  },
+  goalValue: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  goalLabel: {
+    color: "#6b7280",
+    fontSize: 10,
+    marginTop: 2,
   },
   eloSection: {
     alignItems: "center",
@@ -669,6 +920,43 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 14,
     marginTop: 4,
+  },
+  // ⚔️ Predict Match Button Styles
+  predictButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: "#10b981",
+  },
+  predictIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  predictEmoji: {
+    fontSize: 22,
+  },
+  predictTextContainer: {
+    flex: 1,
+  },
+  predictTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  predictSubtitle: {
+    color: "#10b981",
+    fontSize: 12,
+    fontWeight: "500",
   },
   sectionTitle: {
     color: "#fff",
