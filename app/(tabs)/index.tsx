@@ -15,6 +15,63 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
+// ============================================================
+// US STATES ONLY - Filter out Canadian provinces and invalid codes
+// ============================================================
+const US_STATES = new Set([
+  "AL",
+  "AK",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DE",
+  "FL",
+  "GA",
+  "HI",
+  "ID",
+  "IL",
+  "IN",
+  "IA",
+  "KS",
+  "KY",
+  "LA",
+  "ME",
+  "MD",
+  "MA",
+  "MI",
+  "MN",
+  "MS",
+  "MO",
+  "MT",
+  "NE",
+  "NV",
+  "NH",
+  "NJ",
+  "NM",
+  "NY",
+  "NC",
+  "ND",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UT",
+  "VT",
+  "VA",
+  "WA",
+  "WV",
+  "WI",
+  "WY",
+  "DC",
+]);
+
 type MatchRow = {
   id: string;
   home_team: string | null;
@@ -42,6 +99,13 @@ type StatsData = {
   totalTeams: number;
   totalMatches: number;
   totalStates: number;
+};
+
+type TopPredictor = {
+  display_name: string;
+  avatar_emoji: string;
+  total_points: number;
+  rank: number;
 };
 
 // Pagination helper to fetch ALL rows (Supabase limits to 1000 per query)
@@ -116,6 +180,7 @@ export default function HomeScreen() {
   });
   const [recentMatches, setRecentMatches] = useState<MatchRow[]>([]);
   const [featuredTeams, setFeaturedTeams] = useState<TeamEloRow[]>([]);
+  const [topPredictors, setTopPredictors] = useState<TopPredictor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,22 +198,12 @@ export default function HomeScreen() {
       const teamCount = teamsCountResult.count ?? 0;
       const matchCount = matchesCountResult.count ?? 0;
 
-      // Fetch ALL teams to count unique states (using pagination)
-      const allTeamStates = await fetchAllRows<{ state: string | null }>(
-        "team_elo",
-        "state",
-      );
-
-      const uniqueStates = new Set(
-        allTeamStates
-          .map((t) => t.state)
-          .filter((s) => s && s.trim().length > 0 && s.trim() !== "??"),
-      );
-
+      // Use fixed 50 states (we know we cover all US states)
+      // This avoids fetching 115k+ rows just to count unique states
       setStats({
         totalTeams: teamCount,
         totalMatches: matchCount,
-        totalStates: uniqueStates.size,
+        totalStates: 50,
       });
 
       // Fetch recent matches (just top 10)
@@ -169,6 +224,19 @@ export default function HomeScreen() {
         .limit(10);
 
       setFeaturedTeams((teamsData as TeamEloRow[]) ?? []);
+
+      // Fetch top 3 predictors for the mini leaderboard (optional - don't crash if view missing)
+      const { data: predictorsData, error: predictorsError } = await supabase
+        .from("leaderboard_all_time")
+        .select("display_name, avatar_emoji, total_points, rank")
+        .limit(3);
+
+      if (!predictorsError && predictorsData) {
+        setTopPredictors(predictorsData as TopPredictor[]);
+      } else {
+        // View might not exist yet - that's OK, show empty state
+        setTopPredictors([]);
+      }
     } catch (err) {
       console.error("Error fetching home data:", err);
       setError("Failed to load data. Pull to refresh.");
@@ -203,6 +271,16 @@ export default function HomeScreen() {
     return parts.join(" · ");
   };
 
+  const navigateToLeaderboard = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push("/leaderboard" as any);
+  };
+
+  const navigateToPredict = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push("/predict");
+  };
+
   const renderMatch = ({ item }: { item: MatchRow }) => {
     const locationStr = getMatchLocation(item);
     const hasScore = item.home_score !== null && item.away_score !== null;
@@ -219,13 +297,14 @@ export default function HomeScreen() {
         {locationStr ? (
           <Text style={styles.locationText}>{locationStr}</Text>
         ) : null}
-        <Text style={styles.teamName} numberOfLines={1}>
-          {item.home_team ?? "Home Team"}
-        </Text>
-        <Text style={styles.vsText}>vs {item.away_team ?? "Away Team"}</Text>
-        <Text style={styles.scoreText}>
-          {hasScore ? `${item.home_score} - ${item.away_score}` : "vs"}
-        </Text>
+        <Text style={styles.teamName}>{item.home_team ?? "Home Team"}</Text>
+        <Text style={styles.vsText}>vs</Text>
+        <Text style={styles.teamName}>{item.away_team ?? "Away Team"}</Text>
+        {hasScore && (
+          <Text style={styles.scoreText}>
+            {item.home_score} - {item.away_score}
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -242,14 +321,14 @@ export default function HomeScreen() {
         activeOpacity={0.7}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push(`/team/${item.id}`);
+          router.push({ pathname: "/team/[id]", params: { id: item.id } });
         }}
       >
         <Text style={styles.featuredTeamName} numberOfLines={2}>
-          {item.team_name ?? "Unknown Team"}
+          {item.team_name || "Unknown Team"}
         </Text>
         {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
-        <Text style={styles.recordText}>{record}</Text>
+        <Text style={styles.recordText}>Record: {record}</Text>
         <View style={styles.eloRow}>
           <Text style={[styles.gradeText, { color }]}>{grade}</Text>
           <Text style={styles.ratingText}>{elo}</Text>
@@ -260,23 +339,23 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color="#3B82F6" />
-        <Text style={styles.loadingText}>Loading SoccerView...</Text>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centered}>
-        <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
+      <View style={[styles.centered, { paddingTop: insets.top }]}>
+        <Ionicons name="alert-circle" size={48} color="#EF4444" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity
           style={styles.retryButton}
           onPress={() => {
             setLoading(true);
-            fetchData();
+            void fetchData();
           }}
         >
           <Text style={styles.retryButtonText}>Retry</Text>
@@ -289,7 +368,6 @@ export default function HomeScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -309,10 +387,7 @@ export default function HomeScreen() {
       <TouchableOpacity
         style={styles.predictButton}
         activeOpacity={0.8}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          router.push("/predict");
-        }}
+        onPress={navigateToPredict}
       >
         <View style={styles.predictIconContainer}>
           <Text style={styles.predictEmoji}>⚔️</Text>
@@ -324,6 +399,53 @@ export default function HomeScreen() {
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={24} color="#10b981" />
+      </TouchableOpacity>
+
+      {/* 🏆 TOP PREDICTORS - Mini Leaderboard */}
+      <TouchableOpacity
+        style={styles.leaderboardButton}
+        activeOpacity={0.8}
+        onPress={navigateToLeaderboard}
+      >
+        <View style={styles.leaderboardHeader}>
+          <View style={styles.leaderboardTitleRow}>
+            <Text style={styles.leaderboardEmoji}>🏆</Text>
+            <Text style={styles.leaderboardTitle}>Top Predictors</Text>
+          </View>
+          <View style={styles.seeAllBadge}>
+            <Text style={styles.seeAllBadgeText}>See All</Text>
+            <Ionicons name="chevron-forward" size={14} color="#f59e0b" />
+          </View>
+        </View>
+
+        {topPredictors.length > 0 ? (
+          <View style={styles.miniLeaderboard}>
+            {topPredictors.map((predictor, index) => (
+              <View key={index} style={styles.miniLeaderboardItem}>
+                <Text style={styles.miniRank}>
+                  {predictor.rank === 1
+                    ? "🥇"
+                    : predictor.rank === 2
+                      ? "🥈"
+                      : "🥉"}
+                </Text>
+                <Text style={styles.miniAvatar}>{predictor.avatar_emoji}</Text>
+                <Text style={styles.miniName} numberOfLines={1}>
+                  {predictor.display_name}
+                </Text>
+                <Text style={styles.miniPoints}>
+                  {predictor.total_points.toLocaleString()} pts
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyLeaderboard}>
+            <Text style={styles.emptyLeaderboardText}>
+              Be the first to make predictions and claim the top spot!
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       <View style={styles.statsContainer}>
@@ -452,7 +574,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(16, 185, 129, 0.15)",
     borderRadius: 16,
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 12,
     borderWidth: 2,
     borderColor: "#10b981",
   },
@@ -481,6 +603,83 @@ const styles = StyleSheet.create({
     color: "#10b981",
     fontSize: 13,
     fontWeight: "500",
+  },
+
+  // 🏆 Top Predictors Button Styles
+  leaderboardButton: {
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
+  },
+  leaderboardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  leaderboardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  leaderboardEmoji: {
+    fontSize: 20,
+  },
+  leaderboardTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  seeAllBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  seeAllBadgeText: {
+    color: "#f59e0b",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  miniLeaderboard: {
+    gap: 8,
+  },
+  miniLeaderboardItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  miniRank: {
+    fontSize: 18,
+    width: 28,
+  },
+  miniAvatar: {
+    fontSize: 20,
+  },
+  miniName: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+  },
+  miniPoints: {
+    color: "#f59e0b",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  emptyLeaderboard: {
+    paddingVertical: 12,
+  },
+  emptyLeaderboardText: {
+    color: "#9ca3af",
+    fontSize: 13,
+    textAlign: "center",
   },
 
   statsContainer: { gap: 12, marginBottom: 24 },

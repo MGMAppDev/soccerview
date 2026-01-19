@@ -2,7 +2,7 @@
   "expo": {
     "name": "SoccerView",
     "slug": "soccerview",
-    "version": "1.0.0",
+    "version": "1.4.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "soccerview",
@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.soccerview.app",
+      "buildNumber": "4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -20,7 +21,8 @@
         "backgroundColor": "#1E3A8A"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.soccerview.app"
+      "package": "com.soccerview.app",
+      "versionCode": 4
     },
     "web": {
       "output": "static",

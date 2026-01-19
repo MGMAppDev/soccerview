@@ -1,14 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -18,19 +20,14 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import PredictionModal from "../../components/PredictionModal";
 import {
-  getConfidenceColor,
-  getShortTeamName,
-  getVeryShortTeamName,
+  generatePrediction,
   PredictionResult,
-  predictMatch,
-  TeamStats,
+  TeamData,
 } from "../../lib/predictions";
 import { supabase } from "../../lib/supabase";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-// Age groups for filter - U8 through U19
 const AGE_GROUPS = [
   "All",
   "U8",
@@ -47,44 +44,39 @@ const AGE_GROUPS = [
   "U19",
 ];
 const GENDERS = ["All", "Boys", "Girls"];
-
-// State filter options - alphabetical order
 const STATES = [
   "All",
-  "AZ",
   "CA",
-  "CO",
-  "FL",
-  "GA",
-  "IL",
-  "KS",
-  "KY",
-  "MA",
-  "MD",
-  "MO",
-  "NC",
-  "NJ",
-  "NV",
-  "NY",
-  "OH",
-  "PA",
-  "TN",
   "TX",
+  "FL",
+  "NY",
+  "PA",
+  "IL",
+  "OH",
+  "GA",
+  "NC",
+  "MI",
+  "NJ",
   "VA",
   "WA",
+  "AZ",
+  "MA",
+  "TN",
+  "IN",
+  "MO",
+  "MD",
+  "WI",
+  "CO",
+  "MN",
+  "KS",
 ];
 
-// ============================================================
-// TEAM SELECTOR MODAL - v1.3: WITH STATE FILTER + KEYBOARD FIX
-// ============================================================
-
-type TeamSelectorProps = {
+type TeamSelectorModalProps = {
   visible: boolean;
   onClose: () => void;
-  onSelect: (team: TeamStats) => void;
+  onSelect: (team: TeamData) => void;
   excludeTeamId?: string;
   title: string;
-  // Pre-filter based on selected team (match age/gender)
   suggestedAgeGroup?: string;
   suggestedGender?: string;
   suggestedState?: string;
@@ -99,794 +91,505 @@ function TeamSelectorModal({
   suggestedAgeGroup,
   suggestedGender,
   suggestedState,
-}: TeamSelectorProps) {
+}: TeamSelectorModalProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [teams, setTeams] = useState<TeamStats[]>([]);
+  const [results, setResults] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-
-  // FILTERS - initialize with suggestions if provided
-  const [selectedAge, setSelectedAge] = useState<string>(
+  const [selectedAgeGroup, setSelectedAgeGroup] = useState(
     suggestedAgeGroup || "All",
   );
-  const [selectedGender, setSelectedGender] = useState<string>(
+  const [selectedGender, setSelectedGender] = useState(
     suggestedGender || "All",
   );
-  const [selectedState, setSelectedState] = useState<string>(
-    suggestedState || "All",
-  );
+  const [selectedState, setSelectedState] = useState(suggestedState || "All");
 
-  // Reset filters when modal opens with new suggestions
   useEffect(() => {
     if (visible) {
-      if (suggestedAgeGroup && suggestedAgeGroup !== "All") {
-        setSelectedAge(suggestedAgeGroup);
-      }
-      if (suggestedGender && suggestedGender !== "All") {
-        setSelectedGender(suggestedGender);
-      }
-      if (suggestedState && suggestedState !== "All") {
-        setSelectedState(suggestedState);
-      }
+      setSelectedAgeGroup(suggestedAgeGroup || "All");
+      setSelectedGender(suggestedGender || "All");
+      setSelectedState(suggestedState || "All");
+      setSearchQuery("");
+      setResults([]);
     }
   }, [visible, suggestedAgeGroup, suggestedGender, suggestedState]);
 
-  const searchTeams = useCallback(
-    async (query: string, age: string, gender: string, state: string) => {
-      if (query.length < 2) {
-        setTeams([]);
-        setHasSearched(false);
-        return;
-      }
-
-      setLoading(true);
-      setHasSearched(true);
-
-      try {
-        let queryBuilder = supabase
-          .from("team_elo")
-          .select("*")
-          .ilike("team_name", `%${query}%`);
-
-        // Apply age filter
-        if (age !== "All") {
-          queryBuilder = queryBuilder.eq("age_group", age);
-        }
-
-        // Apply gender filter
-        if (gender !== "All") {
-          queryBuilder = queryBuilder.eq("gender", gender);
-        }
-
-        // Apply state filter
-        if (state !== "All") {
-          queryBuilder = queryBuilder.eq("state", state);
-        }
-
-        const { data, error } = await queryBuilder
-          .order("national_rank", { ascending: true, nullsFirst: false })
-          .limit(50);
-
-        if (!error && data) {
-          const filtered = excludeTeamId
-            ? data.filter((t) => t.id !== excludeTeamId)
-            : data;
-          setTeams(filtered as TeamStats[]);
-        }
-      } catch (err) {
-        console.error("Search error:", err);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [excludeTeamId],
-  );
-
-  // Debounced search - triggers on query, age, gender, or state change
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      searchTeams(searchQuery, selectedAge, selectedGender, selectedState);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery, selectedAge, selectedGender, selectedState, searchTeams]);
-
-  const handleSelect = (team: TeamStats) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSelect(team);
-    onClose();
-    setSearchQuery("");
-    setTeams([]);
-    setHasSearched(false);
+  const searchTeams = async (query: string) => {
+    if (query.length < 2) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      let dbQuery = supabase
+        .from("team_elo")
+        .select("*")
+        .ilike("team_name", `%${query}%`)
+        .order("elo_rating", { ascending: false })
+        .limit(50);
+      if (selectedAgeGroup !== "All")
+        dbQuery = dbQuery.eq("age_group", selectedAgeGroup);
+      if (selectedGender !== "All")
+        dbQuery = dbQuery.eq("gender", selectedGender);
+      if (selectedState !== "All") dbQuery = dbQuery.eq("state", selectedState);
+      if (excludeTeamId) dbQuery = dbQuery.neq("id", excludeTeamId);
+      const { data, error } = await dbQuery;
+      if (error) throw error;
+      setResults((data as TeamData[]) || []);
+    } catch (err) {
+      console.error("Search error:", err);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleClose = () => {
-    onClose();
-    setSearchQuery("");
-    setTeams([]);
-    setHasSearched(false);
-    setSelectedAge("All");
+  useEffect(() => {
+    const timer = setTimeout(() => searchTeams(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedAgeGroup, selectedGender, selectedState]);
+
+  const clearFilters = () => {
+    setSelectedAgeGroup("All");
     setSelectedGender("All");
     setSelectedState("All");
   };
 
-  const hasActiveFilters =
-    selectedAge !== "All" ||
-    selectedGender !== "All" ||
-    selectedState !== "All";
-
-  const renderTeamItem = ({ item }: { item: TeamStats }) => (
+  const renderTeamItem = ({ item }: { item: TeamData }) => (
     <TouchableOpacity
-      style={styles.teamSelectItem}
-      onPress={() => handleSelect(item)}
-      activeOpacity={0.7}
+      style={styles.teamResultItem}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onSelect(item);
+        onClose();
+      }}
     >
-      <View style={styles.teamSelectInfo}>
-        {/* v1.3: Show FULL team name - no truncation */}
-        <Text style={styles.teamSelectName} numberOfLines={2}>
-          {item.team_name || "Unknown Team"}
+      <View style={styles.teamResultInfo}>
+        <Text style={styles.teamResultName} numberOfLines={2}>
+          {item.team_name}
         </Text>
-        <View style={styles.teamSelectMetaRow}>
+        <View style={styles.teamBadgeRow}>
           {item.age_group && (
-            <View style={styles.metaBadge}>
-              <Text style={styles.metaBadgeText}>{item.age_group}</Text>
+            <View style={styles.ageBadge}>
+              <Text style={styles.ageBadgeText}>{item.age_group}</Text>
             </View>
           )}
           {item.gender && (
-            <View
-              style={[
-                styles.metaBadge,
-                item.gender === "Girls"
-                  ? styles.metaBadgeGirls
-                  : styles.metaBadgeBoys,
-              ]}
-            >
-              <Text style={styles.metaBadgeText}>{item.gender}</Text>
+            <View style={styles.genderBadge}>
+              <Text style={styles.genderBadgeText}>{item.gender}</Text>
             </View>
           )}
           {item.state && (
-            <Text style={styles.teamSelectState}>{item.state}</Text>
-          )}
-          {item.national_rank && (
-            <Text style={styles.teamSelectRank}>#{item.national_rank}</Text>
+            <View style={styles.stateBadge}>
+              <Text style={styles.stateBadgeText}>{item.state}</Text>
+            </View>
           )}
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={20} color="#6b7280" />
-    </TouchableOpacity>
-  );
-
-  // Filter chip component
-  const FilterChip = ({
-    label,
-    selected,
-    onPress,
-  }: {
-    label: string;
-    selected: boolean;
-    onPress: () => void;
-  }) => (
-    <TouchableOpacity
-      style={[styles.filterChip, selected && styles.filterChipSelected]}
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
-      }}
-      activeOpacity={0.7}
-    >
-      <Text
-        style={[
-          styles.filterChipText,
-          selected && styles.filterChipTextSelected,
-        ]}
-      >
-        {label}
-      </Text>
+      <View style={styles.teamResultRight}>
+        <Text style={styles.teamResultElo}>
+          {Math.round(item.elo_rating || 1500)}
+        </Text>
+        {item.national_rank && (
+          <Text style={styles.teamResultRank}>#{item.national_rank}</Text>
+        )}
+      </View>
     </TouchableOpacity>
   );
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={handleClose}
-    >
-      <SafeAreaView style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity
-            onPress={handleClose}
-            style={styles.modalCloseButton}
-          >
-            <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>{title}</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        {/* Search Input */}
-        <View style={styles.searchContainer}>
-          <Ionicons
-            name="search"
-            size={20}
-            color="#6b7280"
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search team name..."
-            placeholderTextColor="#6b7280"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearchQuery("")}
-              style={styles.clearButton}
-            >
-              <Ionicons name="close-circle" size={20} color="#6b7280" />
+    <Modal visible={visible} animationType="slide" transparent>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.modalOverlay}
+      >
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
+          </View>
+          <View style={styles.searchContainer}>
+            <Ionicons
+              name="search"
+              size={20}
+              color="#6b7280"
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search team name..."
+              placeholderTextColor="#6b7280"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus={true}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery("")}>
+                <Ionicons name="close-circle" size={20} color="#6b7280" />
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.filtersContainer}>
+            <View style={styles.filterRow}>
+              <Text style={styles.filterLabel}>Age</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.filterScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {AGE_GROUPS.map((age) => (
+                  <TouchableOpacity
+                    key={age}
+                    style={[
+                      styles.filterChip,
+                      selectedAgeGroup === age && styles.filterChipActive,
+                    ]}
+                    onPress={() => setSelectedAgeGroup(age)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        selectedAgeGroup === age && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {age}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={styles.filterRow}>
+              <Text style={styles.filterLabel}>Gender</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.filterScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {GENDERS.map((g) => (
+                  <TouchableOpacity
+                    key={g}
+                    style={[
+                      styles.filterChip,
+                      selectedGender === g && styles.filterChipActive,
+                    ]}
+                    onPress={() => setSelectedGender(g)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        selectedGender === g && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {g}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={styles.filterRow}>
+              <Text style={styles.filterLabel}>State</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.filterScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {STATES.map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[
+                      styles.filterChip,
+                      selectedState === s && styles.filterChipActive,
+                    ]}
+                    onPress={() => setSelectedState(s)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        selectedState === s && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {s}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            {(selectedAgeGroup !== "All" ||
+              selectedGender !== "All" ||
+              selectedState !== "All") && (
+              <TouchableOpacity
+                style={styles.clearFiltersButton}
+                onPress={clearFilters}
+              >
+                <Text style={styles.clearFiltersText}>Clear Filters</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#3B82F6" />
+            </View>
+          ) : (
+            <FlatList
+              data={results}
+              renderItem={renderTeamItem}
+              keyExtractor={(item) => item.id}
+              style={styles.resultsList}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              onScrollBeginDrag={() => Keyboard.dismiss()}
+              ListEmptyComponent={
+                searchQuery.length >= 2 ? (
+                  <View style={styles.emptyResults}>
+                    <Text style={styles.emptyResultsText}>No teams found</Text>
+                  </View>
+                ) : (
+                  <View style={styles.emptyResults}>
+                    <Ionicons name="search" size={48} color="#374151" />
+                    <Text style={styles.emptyResultsText}>
+                      Type at least 2 characters
+                    </Text>
+                  </View>
+                )
+              }
+            />
           )}
         </View>
-
-        {/* FILTER SECTION - v1.3: Fixed layout + State filter */}
-        <View style={styles.filtersContainer}>
-          {/* Gender Filter - FIXED: Inline label */}
-          <View style={styles.filterRow}>
-            <Text style={styles.filterLabel}>Gender</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterScroll}
-              keyboardShouldPersistTaps="handled"
-            >
-              {GENDERS.map((gender) => (
-                <FilterChip
-                  key={gender}
-                  label={gender}
-                  selected={selectedGender === gender}
-                  onPress={() => setSelectedGender(gender)}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Age Group Filter */}
-          <View style={styles.filterRow}>
-            <Text style={styles.filterLabel}>Age</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterScroll}
-              keyboardShouldPersistTaps="handled"
-            >
-              {AGE_GROUPS.map((age) => (
-                <FilterChip
-                  key={age}
-                  label={age}
-                  selected={selectedAge === age}
-                  onPress={() => setSelectedAge(age)}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* State Filter - NEW in v1.3 */}
-          <View style={styles.filterRow}>
-            <Text style={styles.filterLabel}>State</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterScroll}
-              keyboardShouldPersistTaps="handled"
-            >
-              {STATES.map((state) => (
-                <FilterChip
-                  key={state}
-                  label={state}
-                  selected={selectedState === state}
-                  onPress={() => setSelectedState(state)}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Active filters indicator */}
-          {hasActiveFilters && (
-            <TouchableOpacity
-              style={styles.clearFiltersButton}
-              onPress={() => {
-                setSelectedAge("All");
-                setSelectedGender("All");
-                setSelectedState("All");
-              }}
-            >
-              <Ionicons name="close-circle" size={16} color="#f59e0b" />
-              <Text style={styles.clearFiltersText}>Clear filters</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Results - v1.3: keyboard dismisses on scroll */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#10b981" />
-          </View>
-        ) : teams.length > 0 ? (
-          <FlatList
-            data={teams}
-            renderItem={renderTeamItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.teamList}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            onScrollBeginDrag={() => Keyboard.dismiss()}
-          />
-        ) : hasSearched ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="search-outline" size={48} color="#374151" />
-            <Text style={styles.emptyText}>No teams found</Text>
-            <Text style={styles.emptySubtext}>
-              Try different search terms or adjust filters
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="football-outline" size={48} color="#374151" />
-            <Text style={styles.emptyText}>Search for a team</Text>
-            <Text style={styles.emptySubtext}>
-              Use filters to narrow results
-            </Text>
-          </View>
-        )}
-      </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-// ============================================================
-// PROBABILITY BAR
-// ============================================================
-
-type ProbBarProps = {
-  homePercent: number;
-  drawPercent: number;
-  awayPercent: number;
-  homeLabel: string;
-  awayLabel: string;
-};
-
-function ProbabilityBar({
-  homePercent,
-  drawPercent,
-  awayPercent,
-  homeLabel,
-  awayLabel,
-}: ProbBarProps) {
-  const shortHome = getVeryShortTeamName(homeLabel);
-  const shortAway = getVeryShortTeamName(awayLabel);
-
-  return (
-    <View style={styles.probBarContainer}>
-      <View style={styles.probBarLabels}>
-        <Text
-          style={[styles.probBarLabel, { color: "#10b981" }]}
-          numberOfLines={1}
-        >
-          {shortHome}
-        </Text>
-        <Text style={[styles.probBarLabel, { color: "#f59e0b" }]}>Draw</Text>
-        <Text
-          style={[styles.probBarLabel, { color: "#3B82F6" }]}
-          numberOfLines={1}
-        >
-          {shortAway}
-        </Text>
-      </View>
-      <View style={styles.probBar}>
-        <View
-          style={[
-            styles.probBarSegment,
-            {
-              flex: homePercent,
-              backgroundColor: "#10b981",
-              borderTopLeftRadius: 8,
-              borderBottomLeftRadius: 8,
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.probBarSegment,
-            {
-              flex: drawPercent,
-              backgroundColor: "#f59e0b",
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.probBarSegment,
-            {
-              flex: awayPercent,
-              backgroundColor: "#3B82F6",
-              borderTopRightRadius: 8,
-              borderBottomRightRadius: 8,
-            },
-          ]}
-        />
-      </View>
-      <View style={styles.probBarPercents}>
-        <Text style={[styles.probBarPercent, { color: "#10b981" }]}>
-          {homePercent}%
-        </Text>
-        <Text style={[styles.probBarPercent, { color: "#f59e0b" }]}>
-          {drawPercent}%
-        </Text>
-        <Text style={[styles.probBarPercent, { color: "#3B82F6" }]}>
-          {awayPercent}%
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// ============================================================
-// FACTOR BAR
-// ============================================================
-
-type FactorBarProps = {
-  name: string;
-  homeValue: string | number;
-  awayValue: string | number;
-  homeAdvantage: number;
-};
-
-function FactorBar({
-  name,
-  homeValue,
-  awayValue,
-  homeAdvantage,
-}: FactorBarProps) {
-  const barWidth = Math.abs(homeAdvantage);
-  const isHomeAdvantage = homeAdvantage > 0;
-
-  return (
-    <View style={styles.factorRow}>
-      <View style={styles.factorValueLeft}>
-        <Text
-          style={[
-            styles.factorValue,
-            isHomeAdvantage && styles.factorValueWinner,
-          ]}
-          numberOfLines={1}
-        >
-          {homeValue}
-        </Text>
-      </View>
-      <View style={styles.factorBarCenter}>
-        <Text style={styles.factorName}>{name}</Text>
-        <View style={styles.factorBarTrack}>
-          <View style={styles.factorBarHalf}>
-            {isHomeAdvantage && (
-              <View
-                style={[
-                  styles.factorBarFill,
-                  styles.factorBarFillHome,
-                  { width: `${barWidth}%` },
-                ]}
-              />
-            )}
-          </View>
-          <View style={styles.factorBarCenterLine} />
-          <View style={styles.factorBarHalf}>
-            {!isHomeAdvantage && homeAdvantage !== 0 && (
-              <View
-                style={[
-                  styles.factorBarFill,
-                  styles.factorBarFillAway,
-                  { width: `${barWidth}%` },
-                ]}
-              />
-            )}
-          </View>
-        </View>
-      </View>
-      <View style={styles.factorValueRight}>
-        <Text
-          style={[
-            styles.factorValue,
-            !isHomeAdvantage && homeAdvantage !== 0 && styles.factorValueWinner,
-          ]}
-          numberOfLines={1}
-        >
-          {awayValue}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// ============================================================
-// TALE OF THE TAPE
-// ============================================================
-
-type TaleOfTapeProps = {
-  comparison: PredictionResult["comparison"];
-};
-
-function TaleOfTape({ comparison }: TaleOfTapeProps) {
-  return (
-    <View style={styles.tapeContainer}>
-      {comparison.map((item, index) => (
-        <View key={index} style={styles.tapeRow}>
-          <Text
-            style={[
-              styles.tapeValue,
-              styles.tapeValueLeft,
-              item.winner === "home" && styles.tapeValueWinner,
-            ]}
-            numberOfLines={1}
-          >
-            {item.homeValue}
-          </Text>
-          <Text style={styles.tapeCategory}>{item.category}</Text>
-          <Text
-            style={[
-              styles.tapeValue,
-              styles.tapeValueRight,
-              item.winner === "away" && styles.tapeValueWinner,
-            ]}
-            numberOfLines={1}
-          >
-            {item.awayValue}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-// ============================================================
-// MAIN SCREEN - v1.3: Fixed share message, state filter support
-// ============================================================
-
 export default function PredictScreen() {
-  // Check for pre-populated team from navigation params
   const params = useLocalSearchParams<{ teamId?: string }>();
-
-  const [homeTeam, setHomeTeam] = useState<TeamStats | null>(null);
-  const [awayTeam, setAwayTeam] = useState<TeamStats | null>(null);
+  const [homeTeam, setHomeTeam] = useState<TeamData | null>(null);
+  const [awayTeam, setAwayTeam] = useState<TeamData | null>(null);
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
+  const [loading, setLoading] = useState(false);
   const [showHomeSelector, setShowHomeSelector] = useState(false);
   const [showAwaySelector, setShowAwaySelector] = useState(false);
   const [showFactors, setShowFactors] = useState(false);
-  const [loadingPrePopulate, setLoadingPrePopulate] = useState(false);
+  const [showWhatIf, setShowWhatIf] = useState(false);
+  const [whatIfHomeBoost, setWhatIfHomeBoost] = useState(0);
+  const [whatIfAwayBoost, setWhatIfAwayBoost] = useState(0);
+  const [showUserPrediction, setShowUserPrediction] = useState(false);
+  const [userPredictionSubmitted, setUserPredictionSubmitted] = useState(false);
+  const scoreAnim = useRef(new Animated.Value(0)).current;
 
-  const scoreAnim = useState(new Animated.Value(0))[0];
-
-  // Pre-populate Team A if teamId is passed
   useEffect(() => {
-    if (params.teamId && !homeTeam) {
-      loadTeamById(params.teamId);
-    }
+    if (params.teamId) loadTeamById(params.teamId);
   }, [params.teamId]);
 
   const loadTeamById = async (teamId: string) => {
-    setLoadingPrePopulate(true);
     try {
       const { data, error } = await supabase
         .from("team_elo")
         .select("*")
         .eq("id", teamId)
         .single();
-
-      if (!error && data) {
-        setHomeTeam(data as TeamStats);
-      }
+      if (data && !error) setHomeTeam(data as TeamData);
     } catch (err) {
       console.error("Error loading team:", err);
-    } finally {
-      setLoadingPrePopulate(false);
     }
   };
 
-  // Run prediction when both teams selected
   useEffect(() => {
-    if (homeTeam && awayTeam) {
-      const result = predictMatch(homeTeam, awayTeam);
-      setPrediction(result);
+    if (homeTeam && awayTeam) runPrediction();
+    else setPrediction(null);
+  }, [homeTeam, awayTeam]);
 
-      scoreAnim.setValue(0);
+  const runPrediction = async () => {
+    if (!homeTeam || !awayTeam) return;
+    setLoading(true);
+    scoreAnim.setValue(0);
+    // Reset user prediction state when new teams are selected
+    setUserPredictionSubmitted(false);
+    try {
+      const result = await generatePrediction(homeTeam, awayTeam);
+      setPrediction(result);
       Animated.spring(scoreAnim, {
         toValue: 1,
         friction: 8,
         tension: 40,
         useNativeDriver: true,
       }).start();
-
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else {
-      setPrediction(null);
-    }
-  }, [homeTeam, awayTeam]);
-
-  // v1.3: REVERTED TO FUN SHARE FORMAT - No #YouthSoccer, No phone icon, FULL team names
-  const handleShare = async () => {
-    if (!prediction || !homeTeam || !awayTeam) return;
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    // Use FULL team names - no truncation
-    const homeName = homeTeam.team_name || "Team A";
-    const awayName = awayTeam.team_name || "Team B";
-
-    // Fun format with emojis - but NO hashtag and NO phone icon
-    const message = `⚽ Match Prediction ⚽
-
-${homeName}
-  vs
-${awayName}
-
-🎯 Score: ${prediction.predictedHomeScore} - ${prediction.predictedAwayScore}
-
-📊 Odds:
-• ${homeName}: ${prediction.homeWinProbability}%
-• Draw: ${prediction.drawProbability}%
-• ${awayName}: ${prediction.awayWinProbability}%
-
-Confidence: ${prediction.confidenceLevel}
-
-Predicted by SoccerView`;
-
-    try {
-      await Share.share({ message });
-    } catch (error) {
-      console.error("Share error:", error);
+    } catch (err) {
+      console.error("Prediction error:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleReset = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const runWhatIfPrediction = async () => {
+    if (!homeTeam || !awayTeam) return;
+    setLoading(true);
+    try {
+      const result = await generatePrediction(
+        homeTeam,
+        awayTeam,
+        whatIfHomeBoost,
+        whatIfAwayBoost,
+      );
+      setPrediction(result);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (err) {
+      console.error("What-if error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showWhatIf && homeTeam && awayTeam) {
+      const timer = setTimeout(() => runWhatIfPrediction(), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [whatIfHomeBoost, whatIfAwayBoost]);
+
+  const resetPrediction = () => {
     setHomeTeam(null);
     setAwayTeam(null);
     setPrediction(null);
+    setShowFactors(false);
+    setShowWhatIf(false);
+    setWhatIfHomeBoost(0);
+    setWhatIfAwayBoost(0);
+    setUserPredictionSubmitted(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const handleSwapTeams = () => {
+  const sharePrediction = async () => {
+    if (!prediction || !homeTeam || !awayTeam) return;
+    const message = `⚽ Match Prediction\n\n${homeTeam.team_name}\nvs\n${awayTeam.team_name}\n\n🎯 Predicted Score: ${prediction.predictedHomeScore} - ${prediction.predictedAwayScore}\n\n${prediction.homeWinProbability > prediction.awayWinProbability ? homeTeam.team_name : awayTeam.team_name} favored (${Math.round(Math.max(prediction.homeWinProbability, prediction.awayWinProbability) * 100)}%)\nDraw: ${Math.round(prediction.drawProbability * 100)}%\n\nConfidence: ${prediction.confidence}\n\n— SoccerView App`;
+    try {
+      await Share.share({ message });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      console.error("Share error:", err);
+    }
+  };
+
+  const handleOpenUserPrediction = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const temp = homeTeam;
-    setHomeTeam(awayTeam);
-    setAwayTeam(temp);
+    setShowUserPrediction(true);
   };
 
-  if (loadingPrePopulate) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingFullScreen}>
-          <ActivityIndicator size="large" color="#10b981" />
-          <Text style={styles.loadingText}>Loading team...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const handleUserPredictionSubmitted = () => {
+    setUserPredictionSubmitted(true);
+  };
+
+  const getShortTeamName = (name: string, maxLen = 16) =>
+    name.length <= maxLen ? name : name.substring(0, maxLen - 1) + "…";
+  const getConfidenceColor = (c: string) => {
+    switch (c) {
+      case "Very High":
+        return "#22c55e";
+      case "High":
+        return "#4ade80";
+      case "Medium":
+        return "#f59e0b";
+      case "Low":
+        return "#ef4444";
+      default:
+        return "#6b7280";
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <Stack.Screen options={{ headerShown: false }} />
-
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>⚔️ Match Prediction</Text>
-        {prediction && (
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-            <Ionicons name="share-outline" size={24} color="#10b981" />
-          </TouchableOpacity>
-        )}
-        {!prediction && <View style={{ width: 40 }} />}
+        <Text style={styles.headerTitle}>⚔️ VS Battle</Text>
+        <TouchableOpacity
+          style={styles.shareButton}
+          onPress={sharePrediction}
+          disabled={!prediction}
+        >
+          <Ionicons
+            name="share-outline"
+            size={24}
+            color={prediction ? "#10b981" : "#374151"}
+          />
+        </TouchableOpacity>
       </View>
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
       >
-        {/* Team Selection */}
         <View style={styles.teamsContainer}>
-          {/* Home Team */}
           <TouchableOpacity
             style={[styles.teamCard, homeTeam && styles.teamCardSelected]}
             onPress={() => setShowHomeSelector(true)}
-            activeOpacity={0.7}
           >
             {homeTeam ? (
               <>
-                <View style={styles.teamLogoPlaceholder}>
-                  <Ionicons name="shield" size={28} color="#10b981" />
-                </View>
-                <Text style={styles.teamName} numberOfLines={2}>
-                  {getShortTeamName(homeTeam.team_name || "", 16)}
+                <Text style={styles.teamCardName} numberOfLines={2}>
+                  {homeTeam.team_name}
                 </Text>
-                <Text style={styles.teamAgeGender}>
+                <Text style={styles.teamCardMeta}>
                   {homeTeam.age_group} {homeTeam.gender}
                 </Text>
-                {homeTeam.national_rank && (
-                  <Text style={styles.teamRank}>#{homeTeam.national_rank}</Text>
-                )}
+                <Text style={styles.teamCardElo}>
+                  {Math.round(homeTeam.elo_rating || 1500)} ELO
+                </Text>
               </>
             ) : (
               <>
-                <View style={styles.teamLogoPlaceholder}>
-                  <Ionicons
-                    name="add-circle-outline"
-                    size={36}
-                    color="#6b7280"
-                  />
-                </View>
-                <Text style={styles.selectTeamText}>Select{"\n"}Team A</Text>
+                <Ionicons name="add-circle-outline" size={40} color="#3B82F6" />
+                <Text style={styles.teamCardPlaceholder}>Select Team A</Text>
               </>
             )}
           </TouchableOpacity>
-
-          {/* VS Badge */}
-          <View style={styles.vsBadge}>
+          <View style={styles.vsContainer}>
             <Text style={styles.vsText}>VS</Text>
-            {homeTeam && awayTeam && (
-              <TouchableOpacity
-                style={styles.swapButton}
-                onPress={handleSwapTeams}
-              >
-                <Ionicons name="swap-horizontal" size={18} color="#6b7280" />
-              </TouchableOpacity>
-            )}
           </View>
-
-          {/* Away Team */}
           <TouchableOpacity
             style={[styles.teamCard, awayTeam && styles.teamCardSelected]}
             onPress={() => setShowAwaySelector(true)}
-            activeOpacity={0.7}
           >
             {awayTeam ? (
               <>
-                <View style={styles.teamLogoPlaceholder}>
-                  <Ionicons name="shield" size={28} color="#3B82F6" />
-                </View>
-                <Text style={styles.teamName} numberOfLines={2}>
-                  {getShortTeamName(awayTeam.team_name || "", 16)}
+                <Text style={styles.teamCardName} numberOfLines={2}>
+                  {awayTeam.team_name}
                 </Text>
-                <Text style={styles.teamAgeGender}>
+                <Text style={styles.teamCardMeta}>
                   {awayTeam.age_group} {awayTeam.gender}
                 </Text>
-                {awayTeam.national_rank && (
-                  <Text style={styles.teamRank}>#{awayTeam.national_rank}</Text>
-                )}
+                <Text style={styles.teamCardElo}>
+                  {Math.round(awayTeam.elo_rating || 1500)} ELO
+                </Text>
               </>
             ) : (
               <>
-                <View style={styles.teamLogoPlaceholder}>
-                  <Ionicons
-                    name="add-circle-outline"
-                    size={36}
-                    color="#6b7280"
-                  />
-                </View>
-                <Text style={styles.selectTeamText}>Select{"\n"}Opponent</Text>
+                <Ionicons name="add-circle-outline" size={40} color="#3B82F6" />
+                <Text style={styles.teamCardPlaceholder}>Select Team B</Text>
               </>
             )}
           </TouchableOpacity>
         </View>
-
-        {/* Prediction Results */}
-        {prediction && (
+        {loading && (
+          <View style={styles.loadingPrediction}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={styles.loadingText}>Calculating prediction...</Text>
+          </View>
+        )}
+        {prediction && !loading && (
           <Animated.View
             style={[
               styles.predictionContainer,
@@ -896,127 +599,248 @@ Predicted by SoccerView`;
                   {
                     scale: scoreAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0.9, 1],
+                      outputRange: [0.8, 1],
                     }),
                   },
                 ],
               },
             ]}
           >
-            {/* Predicted Score */}
-            <View style={styles.scoreCard}>
-              <Text style={styles.predictedLabel}>🎯 PREDICTED SCORE</Text>
-              <View style={styles.scoreDisplay}>
-                <Text style={styles.scoreNumber}>
-                  {prediction.predictedHomeScore}
+            <View style={styles.scoreContainer}>
+              <Text style={styles.scoreLabel}>Predicted Score</Text>
+              <View style={styles.scoreRow}>
+                <Text style={styles.scoreTeam}>
+                  {getShortTeamName(homeTeam?.team_name || "", 12)}
                 </Text>
-                <Text style={styles.scoreDash}>-</Text>
-                <Text style={styles.scoreNumber}>
+                <Text style={styles.scoreValue}>
+                  {prediction.predictedHomeScore} -{" "}
                   {prediction.predictedAwayScore}
+                </Text>
+                <Text style={styles.scoreTeam}>
+                  {getShortTeamName(awayTeam?.team_name || "", 12)}
                 </Text>
               </View>
             </View>
-
-            {/* Probability Bar */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Win Probability</Text>
-              <ProbabilityBar
-                homePercent={prediction.homeWinProbability}
-                drawPercent={prediction.drawProbability}
-                awayPercent={prediction.awayWinProbability}
-                homeLabel={homeTeam?.team_name || "Home"}
-                awayLabel={awayTeam?.team_name || "Away"}
-              />
-            </View>
-
-            {/* Confidence */}
-            <View style={styles.confidenceCard}>
-              <Text style={styles.confidenceLabel}>Prediction Confidence</Text>
-              <View style={styles.confidenceBar}>
+            <View style={styles.probabilityContainer}>
+              <Text style={styles.probabilityLabel}>Win Probability</Text>
+              <View style={styles.probabilityBar}>
                 <View
                   style={[
-                    styles.confidenceFill,
+                    styles.probabilitySegment,
                     {
-                      width: `${prediction.confidencePercent}%`,
-                      backgroundColor: getConfidenceColor(
-                        prediction.confidenceLevel,
-                      ),
+                      flex: prediction.homeWinProbability,
+                      backgroundColor: "#22c55e",
+                    },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.probabilitySegment,
+                    {
+                      flex: prediction.drawProbability,
+                      backgroundColor: "#f59e0b",
+                    },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.probabilitySegment,
+                    {
+                      flex: prediction.awayWinProbability,
+                      backgroundColor: "#3B82F6",
                     },
                   ]}
                 />
               </View>
+              <View style={styles.probabilityLabels}>
+                <Text style={[styles.probLabel, { color: "#22c55e" }]}>
+                  {Math.round(prediction.homeWinProbability * 100)}%
+                </Text>
+                <Text style={[styles.probLabel, { color: "#f59e0b" }]}>
+                  {Math.round(prediction.drawProbability * 100)}%
+                </Text>
+                <Text style={[styles.probLabel, { color: "#3B82F6" }]}>
+                  {Math.round(prediction.awayWinProbability * 100)}%
+                </Text>
+              </View>
+              <View style={styles.probabilityLabels}>
+                <Text style={styles.probTeamLabel}>Win</Text>
+                <Text style={styles.probTeamLabel}>Draw</Text>
+                <Text style={styles.probTeamLabel}>Win</Text>
+              </View>
+            </View>
+            <View style={styles.confidenceContainer}>
+              <Text style={styles.confidenceLabel}>Confidence</Text>
               <Text
                 style={[
-                  styles.confidenceText,
-                  { color: getConfidenceColor(prediction.confidenceLevel) },
+                  styles.confidenceValue,
+                  { color: getConfidenceColor(prediction.confidence) },
                 ]}
               >
-                {prediction.confidenceLevel} ({prediction.confidencePercent}%)
+                {prediction.confidence}
               </Text>
             </View>
-
-            {/* Factor Analysis Toggle */}
             <TouchableOpacity
-              style={styles.factorsToggle}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowFactors(!showFactors);
-              }}
+              style={styles.toggleButton}
+              onPress={() => setShowFactors(!showFactors)}
             >
-              <Text style={styles.factorsToggleText}>
-                {showFactors ? "Hide Analysis" : "Show Factor Analysis"}
+              <Text style={styles.toggleButtonText}>
+                {showFactors ? "Hide" : "Show"} Analytical Factors
               </Text>
               <Ionicons
                 name={showFactors ? "chevron-up" : "chevron-down"}
                 size={20}
-                color="#10b981"
+                color="#3B82F6"
               />
             </TouchableOpacity>
-
-            {/* Factor Breakdown */}
             {showFactors && (
-              <View style={styles.factorsCard}>
-                <Text style={styles.sectionTitle}>Factor Breakdown</Text>
-                {prediction.factors.map((factor, index) => (
-                  <FactorBar
-                    key={index}
-                    name={factor.name}
-                    homeValue={factor.homeValue}
-                    awayValue={factor.awayValue}
-                    homeAdvantage={factor.homeAdvantage}
-                  />
+              <View style={styles.factorsContainer}>
+                {prediction.factors.map((f, i) => (
+                  <View key={i} style={styles.factorRow}>
+                    <Text style={styles.factorName}>{f.name}</Text>
+                    <View style={styles.factorBarContainer}>
+                      <View
+                        style={[
+                          styles.factorBar,
+                          {
+                            width: `${Math.abs(f.impact) * 100}%`,
+                            backgroundColor:
+                              f.impact > 0 ? "#22c55e" : "#ef4444",
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.factorValue}>
+                      {f.impact > 0 ? "+" : ""}
+                      {(f.impact * 100).toFixed(0)}%
+                    </Text>
+                  </View>
                 ))}
               </View>
             )}
+            <TouchableOpacity
+              style={styles.toggleButton}
+              onPress={() => setShowWhatIf(!showWhatIf)}
+            >
+              <Text style={styles.toggleButtonText}>🎲 What If Scenarios</Text>
+              <Ionicons
+                name={showWhatIf ? "chevron-up" : "chevron-down"}
+                size={20}
+                color="#f59e0b"
+              />
+            </TouchableOpacity>
+            {showWhatIf && (
+              <View style={styles.whatIfContainer}>
+                <Text style={styles.whatIfDescription}>
+                  Adjust team performance to see how the prediction changes
+                </Text>
+                <View style={styles.sliderContainer}>
+                  <Text style={styles.sliderLabel}>
+                    {getShortTeamName(homeTeam?.team_name || "", 15)} Boost
+                  </Text>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={-20}
+                    maximumValue={20}
+                    value={whatIfHomeBoost}
+                    onValueChange={setWhatIfHomeBoost}
+                    minimumTrackTintColor="#22c55e"
+                    maximumTrackTintColor="#374151"
+                    thumbTintColor="#22c55e"
+                  />
+                  <Text style={styles.sliderValue}>
+                    {whatIfHomeBoost > 0 ? "+" : ""}
+                    {Math.round(whatIfHomeBoost)}%
+                  </Text>
+                </View>
+                <View style={styles.sliderContainer}>
+                  <Text style={styles.sliderLabel}>
+                    {getShortTeamName(awayTeam?.team_name || "", 15)} Boost
+                  </Text>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={-20}
+                    maximumValue={20}
+                    value={whatIfAwayBoost}
+                    onValueChange={setWhatIfAwayBoost}
+                    minimumTrackTintColor="#3B82F6"
+                    maximumTrackTintColor="#374151"
+                    thumbTintColor="#3B82F6"
+                  />
+                  <Text style={styles.sliderValue}>
+                    {whatIfAwayBoost > 0 ? "+" : ""}
+                    {Math.round(whatIfAwayBoost)}%
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.resetWhatIfButton}
+                  onPress={() => {
+                    setWhatIfHomeBoost(0);
+                    setWhatIfAwayBoost(0);
+                  }}
+                >
+                  <Text style={styles.resetWhatIfText}>Reset to Original</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-            {/* Tale of the Tape */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>📊 Tale of the Tape</Text>
-              <TaleOfTape comparison={prediction.comparison} />
+            {/* USER PREDICTION SECTION */}
+            <View style={styles.userPredictionSection}>
+              <View style={styles.userPredictionDivider} />
+              {userPredictionSubmitted ? (
+                <View style={styles.predictionSubmittedCard}>
+                  <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+                  <View style={styles.predictionSubmittedText}>
+                    <Text style={styles.predictionSubmittedTitle}>
+                      Your Prediction Locked In!
+                    </Text>
+                    <Text style={styles.predictionSubmittedSubtitle}>
+                      Earn points when results come in
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => router.push("/leaderboard")}
+                    style={styles.viewLeaderboardLink}
+                  >
+                    <Text style={styles.viewLeaderboardText}>Leaderboard</Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color="#3B82F6"
+                    />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.makeMyPredictionButton}
+                  onPress={handleOpenUserPrediction}
+                >
+                  <View style={styles.makeMyPredictionContent}>
+                    <Text style={styles.makeMyPredictionEmoji}>🎯</Text>
+                    <View style={styles.makeMyPredictionTextContainer}>
+                      <Text style={styles.makeMyPredictionTitle}>
+                        Make YOUR Prediction
+                      </Text>
+                      <Text style={styles.makeMyPredictionSubtitle}>
+                        Guess the score & earn points on the leaderboard
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={24} color="#f59e0b" />
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* Action Buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={styles.shareButtonLarge}
-                onPress={handleShare}
-              >
-                <Ionicons name="share-social" size={20} color="#fff" />
-                <Text style={styles.shareButtonText}>Share Prediction</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.resetButton}
-                onPress={handleReset}
-              >
-                <Ionicons name="refresh" size={20} color="#6b7280" />
-                <Text style={styles.resetButtonText}>New Prediction</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.newPredictionButton}
+              onPress={resetPrediction}
+            >
+              <Ionicons name="refresh" size={20} color="#fff" />
+              <Text style={styles.newPredictionText}>New Prediction</Text>
+            </TouchableOpacity>
           </Animated.View>
         )}
-
-        {/* Empty State */}
-        {!prediction && (
+        {!prediction && !loading && (
           <View style={styles.emptyState}>
             <Ionicons name="analytics-outline" size={64} color="#374151" />
             <Text style={styles.emptyStateTitle}>
@@ -1030,8 +854,6 @@ Predicted by SoccerView`;
           </View>
         )}
       </ScrollView>
-
-      {/* Team Selector Modals - with smart filter suggestions including state */}
       <TeamSelectorModal
         visible={showHomeSelector}
         onClose={() => setShowHomeSelector(false)}
@@ -1052,29 +874,33 @@ Predicted by SoccerView`;
         suggestedGender={homeTeam?.gender || undefined}
         suggestedState={homeTeam?.state || undefined}
       />
+
+      {/* User Prediction Modal */}
+      {homeTeam && awayTeam && (
+        <PredictionModal
+          visible={showUserPrediction}
+          onClose={() => setShowUserPrediction(false)}
+          teamA={{
+            name: homeTeam.team_name,
+            state: homeTeam.state ?? undefined,
+            ageGroup: homeTeam.age_group ?? undefined,
+            gender: homeTeam.gender ?? undefined,
+          }}
+          teamB={{
+            name: awayTeam.team_name,
+            state: awayTeam.state ?? undefined,
+            ageGroup: awayTeam.age_group ?? undefined,
+            gender: awayTeam.gender ?? undefined,
+          }}
+          onPredictionSubmitted={handleUserPredictionSubmitted}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
-// ============================================================
-// STYLES
-// ============================================================
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  loadingFullScreen: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
-  },
-  loadingText: {
-    color: "#9ca3af",
-    fontSize: 14,
-  },
+  container: { flex: 1, backgroundColor: "#000" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1092,562 +918,335 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
-  },
+  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "700" },
   shareButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    backgroundColor: "rgba(16,185,129,0.15)",
     justifyContent: "center",
     alignItems: "center",
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-
-  // Teams Selection
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 40 },
   teamsContainer: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     marginBottom: 24,
   },
   teamCard: {
     flex: 1,
     backgroundColor: "#111",
     borderRadius: 16,
-    padding: 12,
+    padding: 16,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 140,
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.1)",
-    borderStyle: "dashed",
-    minHeight: 140,
-    justifyContent: "center",
   },
-  teamCardSelected: {
-    borderColor: "#10b981",
-    borderStyle: "solid",
-  },
-  teamLogoPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#1F2937",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  teamName: {
+  teamCardSelected: { borderColor: "#3B82F6" },
+  teamCardName: {
     color: "#fff",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
-    marginBottom: 2,
-    lineHeight: 16,
-  },
-  teamAgeGender: {
-    color: "#9ca3af",
-    fontSize: 11,
     marginBottom: 4,
   },
-  teamRank: {
-    color: "#10b981",
-    fontSize: 14,
-    fontWeight: "bold",
+  teamCardMeta: { color: "#9ca3af", fontSize: 12, marginBottom: 8 },
+  teamCardElo: { color: "#3B82F6", fontSize: 16, fontWeight: "700" },
+  teamCardPlaceholder: { color: "#6b7280", fontSize: 14, marginTop: 8 },
+  vsContainer: { width: 50, alignItems: "center" },
+  vsText: { color: "#f59e0b", fontSize: 18, fontWeight: "bold" },
+  loadingPrediction: { alignItems: "center", paddingVertical: 40 },
+  loadingText: { color: "#9ca3af", fontSize: 14, marginTop: 12 },
+  predictionContainer: {
+    backgroundColor: "#111",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
   },
-  selectTeamText: {
-    color: "#6b7280",
-    fontSize: 13,
-    fontWeight: "600",
+  scoreContainer: { alignItems: "center", marginBottom: 24 },
+  scoreLabel: { color: "#9ca3af", fontSize: 14, marginBottom: 8 },
+  scoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  scoreTeam: { color: "#9ca3af", fontSize: 12, flex: 1, textAlign: "center" },
+  scoreValue: { color: "#fff", fontSize: 36, fontWeight: "bold" },
+  probabilityContainer: { marginBottom: 20 },
+  probabilityLabel: {
+    color: "#9ca3af",
+    fontSize: 14,
+    marginBottom: 8,
     textAlign: "center",
   },
-  vsBadge: {
-    width: 50,
-    alignItems: "center",
-    paddingHorizontal: 4,
+  probabilityBar: {
+    flexDirection: "row",
+    height: 24,
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 8,
   },
-  vsText: {
+  probabilitySegment: { height: "100%" },
+  probabilityLabels: { flexDirection: "row", justifyContent: "space-between" },
+  probLabel: { fontSize: 14, fontWeight: "600", flex: 1, textAlign: "center" },
+  probTeamLabel: {
+    color: "#6b7280",
+    fontSize: 11,
+    flex: 1,
+    textAlign: "center",
+  },
+  confidenceContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+    marginBottom: 16,
+  },
+  confidenceLabel: { color: "#9ca3af", fontSize: 14 },
+  confidenceValue: { fontSize: 16, fontWeight: "600" },
+  toggleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    gap: 8,
+  },
+  toggleButtonText: { color: "#3B82F6", fontSize: 14, fontWeight: "600" },
+  factorsContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+  },
+  factorRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  factorName: { color: "#9ca3af", fontSize: 12, width: 100 },
+  factorBarContainer: {
+    flex: 1,
+    height: 8,
+    backgroundColor: "#1F2937",
+    borderRadius: 4,
+    marginHorizontal: 8,
+  },
+  factorBar: { height: "100%", borderRadius: 4 },
+  factorValue: { color: "#fff", fontSize: 12, width: 45, textAlign: "right" },
+  whatIfContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+  },
+  whatIfDescription: {
+    color: "#9ca3af",
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  sliderContainer: { marginBottom: 16 },
+  sliderLabel: { color: "#fff", fontSize: 13, marginBottom: 8 },
+  slider: { width: "100%", height: 40 },
+  sliderValue: { color: "#9ca3af", fontSize: 12, textAlign: "center" },
+  resetWhatIfButton: { alignItems: "center", paddingVertical: 8 },
+  resetWhatIfText: { color: "#6b7280", fontSize: 13 },
+
+  // User Prediction Section
+  userPredictionSection: {
+    marginTop: 16,
+  },
+  userPredictionDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    marginBottom: 16,
+  },
+  makeMyPredictionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
+  },
+  makeMyPredictionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  makeMyPredictionEmoji: {
+    fontSize: 28,
+    marginRight: 12,
+  },
+  makeMyPredictionTextContainer: {
+    flex: 1,
+  },
+  makeMyPredictionTitle: {
     color: "#f59e0b",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "bold",
   },
-  swapButton: {
-    marginTop: 6,
-    padding: 6,
-    borderRadius: 16,
-    backgroundColor: "#1F2937",
+  makeMyPredictionSubtitle: {
+    color: "#9ca3af",
+    fontSize: 12,
+    marginTop: 2,
   },
-
-  // Prediction Results
-  predictionContainer: {
-    gap: 16,
-  },
-  scoreCard: {
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    borderRadius: 16,
-    padding: 24,
+  predictionSubmittedCard: {
+    flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderRadius: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: "rgba(16, 185, 129, 0.3)",
   },
-  predictedLabel: {
+  predictionSubmittedText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  predictionSubmittedTitle: {
     color: "#10b981",
     fontSize: 14,
     fontWeight: "600",
-    marginBottom: 12,
-    letterSpacing: 1,
   },
-  scoreDisplay: {
+  predictionSubmittedSubtitle: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  viewLeaderboardLink: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
   },
-  scoreNumber: {
-    color: "#fff",
-    fontSize: 56,
-    fontWeight: "bold",
-  },
-  scoreDash: {
-    color: "#6b7280",
-    fontSize: 40,
-    fontWeight: "300",
-  },
-
-  // Section Cards
-  sectionCard: {
-    backgroundColor: "#111",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-  },
-  sectionTitle: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 16,
-  },
-
-  // Probability Bar
-  probBarContainer: {
-    gap: 8,
-  },
-  probBarLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-  },
-  probBarLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    maxWidth: "30%",
-  },
-  probBar: {
-    flexDirection: "row",
-    height: 28,
-    borderRadius: 8,
-    overflow: "hidden",
-    backgroundColor: "#1F2937",
-  },
-  probBarSegment: {
-    height: "100%",
-  },
-  probBarPercents: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-  },
-  probBarPercent: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-
-  // Confidence
-  confidenceCard: {
-    backgroundColor: "#111",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-  },
-  confidenceLabel: {
-    color: "#9ca3af",
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  confidenceBar: {
-    height: 8,
-    backgroundColor: "#1F2937",
-    borderRadius: 4,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  confidenceFill: {
-    height: "100%",
-    borderRadius: 4,
-  },
-  confidenceText: {
-    fontSize: 14,
+  viewLeaderboardText: {
+    color: "#3B82F6",
+    fontSize: 13,
     fontWeight: "600",
   },
 
-  // Factors Toggle
-  factorsToggle: {
+  newPredictionButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    padding: 12,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    borderRadius: 12,
-  },
-  factorsToggleText: {
-    color: "#10b981",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // Factor Bars
-  factorsCard: {
-    backgroundColor: "#111",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-  },
-  factorRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  factorValueLeft: {
-    width: 55,
-    alignItems: "flex-end",
-    paddingRight: 8,
-  },
-  factorValueRight: {
-    width: 55,
-    alignItems: "flex-start",
-    paddingLeft: 8,
-  },
-  factorValue: {
-    color: "#9ca3af",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  factorValueWinner: {
-    color: "#10b981",
-  },
-  factorBarCenter: {
-    flex: 1,
-  },
-  factorName: {
-    color: "#6b7280",
-    fontSize: 10,
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  factorBarTrack: {
-    flexDirection: "row",
-    height: 8,
-    backgroundColor: "#1F2937",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  factorBarHalf: {
-    flex: 1,
-    flexDirection: "row",
-  },
-  factorBarFill: {
-    height: "100%",
-  },
-  factorBarFillHome: {
-    backgroundColor: "#10b981",
-    alignSelf: "flex-end",
-  },
-  factorBarFillAway: {
     backgroundColor: "#3B82F6",
-    alignSelf: "flex-start",
-  },
-  factorBarCenterLine: {
-    width: 2,
-    backgroundColor: "#374151",
-  },
-
-  // Tale of the Tape
-  tapeContainer: {
-    gap: 12,
-  },
-  tapeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  tapeValue: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#9ca3af",
-  },
-  tapeValueLeft: {
-    textAlign: "left",
-  },
-  tapeValueRight: {
-    textAlign: "right",
-  },
-  tapeValueWinner: {
-    color: "#10b981",
-  },
-  tapeCategory: {
-    color: "#6b7280",
-    fontSize: 11,
-    textAlign: "center",
-    width: 80,
-  },
-
-  // Action Buttons
-  actionButtons: {
-    gap: 12,
-  },
-  shareButtonLarge: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#10b981",
-    paddingVertical: 16,
     borderRadius: 12,
-  },
-  shareButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  resetButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#1F2937",
     paddingVertical: 14,
-    borderRadius: 12,
+    marginTop: 20,
+    gap: 8,
   },
-  resetButtonText: {
-    color: "#9ca3af",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: 48,
-    gap: 12,
-  },
+  newPredictionText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  emptyState: { alignItems: "center", paddingVertical: 60 },
   emptyStateTitle: {
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
-    textAlign: "center",
+    marginTop: 16,
+    marginBottom: 8,
   },
-  emptyStateSubtitle: {
-    color: "#6b7280",
-    fontSize: 14,
-    textAlign: "center",
-    paddingHorizontal: 32,
-  },
-
-  // Modal
-  modalContainer: {
+  emptyStateSubtitle: { color: "#6b7280", fontSize: 14, textAlign: "center" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.9)" },
+  modalContent: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: "#111",
+    marginTop: 60,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  modalCloseButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  modalTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#1F2937",
     justifyContent: "center",
     alignItems: "center",
   },
-  modalTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-  },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#111",
-    marginHorizontal: 16,
-    marginTop: 16,
+    backgroundColor: "#1F2937",
     borderRadius: 12,
+    margin: 16,
     paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
   },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 16,
-    paddingVertical: 14,
-  },
-  clearButton: {
-    padding: 4,
-  },
-
-  // FILTERS - v1.3: Fixed layout
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, color: "#fff", fontSize: 16, paddingVertical: 12 },
   filtersContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  filterLabel: {
-    color: "#6b7280",
-    fontSize: 12,
-    width: 50,
-    fontWeight: "600",
-  },
-  filterScroll: {
-    flexGrow: 0,
-    marginLeft: 4,
-  },
+  filterRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  filterLabel: { color: "#9ca3af", fontSize: 12, width: 50 },
+  filterScroll: { flex: 1, marginLeft: 8 },
   filterChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     backgroundColor: "#1F2937",
     marginRight: 8,
-    borderWidth: 1,
-    borderColor: "transparent",
   },
-  filterChipSelected: {
-    backgroundColor: "rgba(16, 185, 129, 0.2)",
-    borderColor: "#10b981",
-  },
-  filterChipText: {
-    color: "#9ca3af",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  filterChipTextSelected: {
-    color: "#10b981",
-  },
-  clearFiltersButton: {
+  filterChipActive: { backgroundColor: "#3B82F6" },
+  filterChipText: { color: "#9ca3af", fontSize: 12 },
+  filterChipTextActive: { color: "#fff" },
+  clearFiltersButton: { alignSelf: "flex-end", paddingVertical: 4 },
+  clearFiltersText: { color: "#ef4444", fontSize: 12 },
+  loadingContainer: { padding: 40, alignItems: "center" },
+  resultsList: { flex: 1, paddingHorizontal: 16 },
+  teamResultItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    alignSelf: "flex-start",
-    paddingVertical: 4,
-  },
-  clearFiltersText: {
-    color: "#f59e0b",
-    fontSize: 12,
-    fontWeight: "500",
-  },
-
-  // Team List
-  teamList: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  teamSelectItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#111",
-    padding: 14,
+    backgroundColor: "#1F2937",
     borderRadius: 12,
+    padding: 12,
     marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
   },
-  teamSelectInfo: {
-    flex: 1,
-  },
-  teamSelectName: {
+  teamResultInfo: { flex: 1 },
+  teamResultName: {
     color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: "500",
+    marginBottom: 4,
   },
-  teamSelectMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flexWrap: "wrap",
-  },
-  metaBadge: {
-    backgroundColor: "#10b981",
+  teamBadgeRow: { flexDirection: "row", gap: 6 },
+  ageBadge: {
+    backgroundColor: "rgba(34,197,94,0.2)",
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 8,
   },
-  metaBadgeBoys: {
-    backgroundColor: "#3B82F6",
+  ageBadgeText: { color: "#22c55e", fontSize: 11, fontWeight: "500" },
+  genderBadge: {
+    backgroundColor: "rgba(59,130,246,0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
-  metaBadgeGirls: {
-    backgroundColor: "#ec4899",
+  genderBadgeText: { color: "#3B82F6", fontSize: 11, fontWeight: "500" },
+  stateBadge: {
+    backgroundColor: "rgba(245,158,11,0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
-  metaBadgeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  teamSelectState: {
-    color: "#9ca3af",
-    fontSize: 12,
-  },
-  teamSelectRank: {
-    color: "#f59e0b",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
-    paddingTop: 60,
-  },
-  emptyText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  emptySubtext: {
-    color: "#6b7280",
-    fontSize: 14,
-    textAlign: "center",
-  },
+  stateBadgeText: { color: "#f59e0b", fontSize: 11, fontWeight: "500" },
+  teamResultRight: { alignItems: "flex-end" },
+  teamResultElo: { color: "#3B82F6", fontSize: 16, fontWeight: "600" },
+  teamResultRank: { color: "#9ca3af", fontSize: 12 },
+  emptyResults: { padding: 40, alignItems: "center", gap: 12 },
+  emptyResultsText: { color: "#6b7280", fontSize: 14 },
 });

@@ -4,7 +4,6 @@ import { router, Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -41,14 +40,26 @@ type TeamData = {
   club_name: string | null;
 };
 
+// UPDATED: MatchData type now matches match_results table schema
 type MatchData = {
   id: string;
-  home_team: string | null;
-  away_team: string | null;
-  home_score: number | null;
-  away_score: number | null;
+  event_id: string | null;
+  event_name: string | null;
+  match_number: string | null;
   match_date: string | null;
+  match_time: string | null;
+  home_team_name: string | null;
+  home_team_id: string | null;
+  home_score: number | null;
+  away_team_name: string | null;
+  away_team_id: string | null;
+  away_score: number | null;
+  status: string | null;
+  age_group: string | null;
+  gender: string | null;
   location: string | null;
+  source_type: string | null;
+  source_platform: string | null;
 };
 
 // Calculated stats from actual match data
@@ -142,39 +153,35 @@ export default function TeamDetailScreen() {
       if (teamError) throw teamError;
       setTeam(teamData as TeamData);
 
-      // FIXED: Fetch matches using separate queries to avoid special character issues
-      const teamName = teamData?.team_name;
-      if (teamName) {
-        // Query for home matches
-        const { data: homeMatches, error: homeError } = await supabase
-          .from("matches")
-          .select("*")
-          .eq("home_team", teamName)
-          .order("match_date", { ascending: false })
-          .limit(50);
+      // ✅ UPDATED: Fetch matches from match_results using team_id foreign keys
+      // This is much faster and more accurate than name matching!
+      const { data: homeMatches, error: homeError } = await supabase
+        .from("match_results")
+        .select("*")
+        .eq("home_team_id", id)
+        .order("match_date", { ascending: false })
+        .limit(50);
 
-        // Query for away matches
-        const { data: awayMatches, error: awayError } = await supabase
-          .from("matches")
-          .select("*")
-          .eq("away_team", teamName)
-          .order("match_date", { ascending: false })
-          .limit(50);
+      const { data: awayMatches, error: awayError } = await supabase
+        .from("match_results")
+        .select("*")
+        .eq("away_team_id", id)
+        .order("match_date", { ascending: false })
+        .limit(50);
 
-        if (!homeError && !awayError) {
-          // Combine and deduplicate matches
-          const allMatchData = [...(homeMatches || []), ...(awayMatches || [])];
-          const uniqueMatches = Array.from(
-            new Map(allMatchData.map((m) => [m.id, m])).values(),
-          );
-          // Sort by date descending
-          uniqueMatches.sort((a, b) => {
-            const dateA = new Date(a.match_date || 0).getTime();
-            const dateB = new Date(b.match_date || 0).getTime();
-            return dateB - dateA;
-          });
-          setAllMatches(uniqueMatches as MatchData[]);
-        }
+      if (!homeError && !awayError) {
+        // Combine and deduplicate matches
+        const allMatchData = [...(homeMatches || []), ...(awayMatches || [])];
+        const uniqueMatches = Array.from(
+          new Map(allMatchData.map((m) => [m.id, m])).values(),
+        );
+        // Sort by date descending
+        uniqueMatches.sort((a, b) => {
+          const dateA = new Date(a.match_date || 0).getTime();
+          const dateB = new Date(b.match_date || 0).getTime();
+          return dateB - dateA;
+        });
+        setAllMatches(uniqueMatches as MatchData[]);
       }
     } catch (err: any) {
       console.error("Error fetching team:", err);
@@ -203,10 +210,13 @@ export default function TeamDetailScreen() {
     allMatches.forEach((match) => {
       if (match.match_date) {
         const matchDate = new Date(match.match_date);
-        if (matchDate <= now) {
+        // Also check status - 'completed' goes to recent, 'scheduled' goes to upcoming
+        if (match.status === "completed" || matchDate <= now) {
           recent.push(match);
-        } else {
+        } else if (match.status === "scheduled" || matchDate > now) {
           upcoming.push(match);
+        } else {
+          recent.push(match);
         }
       } else {
         // No date - put in recent
@@ -255,7 +265,7 @@ export default function TeamDetailScreen() {
       // Only count matches that have BOTH scores recorded
       if (match.home_score !== null && match.away_score !== null) {
         matchesWithScores++;
-        const isHome = match.home_team === team?.team_name;
+        const isHome = match.home_team_id === id;
         const teamScore = isHome ? match.home_score : match.away_score;
         const oppScore = isHome ? match.away_score : match.home_score;
 
@@ -282,7 +292,7 @@ export default function TeamDetailScreen() {
       winPercentage: `${winPct}%`,
       source: "calculated",
     };
-  }, [team, recentMatches]);
+  }, [team, recentMatches, id]);
 
   // Check if team has any championship badges
   const hasAnyBadge = useMemo(() => {
@@ -306,9 +316,10 @@ export default function TeamDetailScreen() {
     return parts.join(" · ");
   };
 
+  // ✅ UPDATED: Use new column names from match_results
   const renderRecentMatch = ({ item }: { item: MatchData }) => {
-    const isHome = item.home_team === team?.team_name;
-    const opponent = isHome ? item.away_team : item.home_team;
+    const isHome = item.home_team_id === id;
+    const opponent = isHome ? item.away_team_name : item.home_team_name;
     const teamScore = isHome ? item.home_score : item.away_score;
     const oppScore = isHome ? item.away_score : item.home_score;
 
@@ -333,6 +344,14 @@ export default function TeamDetailScreen() {
         ? `${teamScore} - ${oppScore}`
         : "—";
 
+    // Show source badge (league vs tournament)
+    const sourceEmoji =
+      item.source_type === "league"
+        ? "🏆"
+        : item.source_type === "tournament"
+          ? "⚽"
+          : "";
+
     return (
       <TouchableOpacity
         style={styles.matchCard}
@@ -349,7 +368,14 @@ export default function TeamDetailScreen() {
           <Text style={styles.opponentText} numberOfLines={1}>
             {isHome ? "vs" : "@"} {opponent || "Unknown"}
           </Text>
-          <Text style={styles.matchDateText}>{dateStr}</Text>
+          <Text style={styles.matchDateText}>
+            {dateStr} {sourceEmoji}
+          </Text>
+          {item.event_name && item.event_name !== "GotSport" && (
+            <Text style={styles.matchLocationText} numberOfLines={1}>
+              {item.event_name}
+            </Text>
+          )}
         </View>
         <Text style={styles.matchScoreText}>{scoreStr}</Text>
         <Ionicons name="chevron-forward" size={16} color="#4b5563" />
@@ -357,9 +383,10 @@ export default function TeamDetailScreen() {
     );
   };
 
+  // ✅ UPDATED: Use new column names from match_results
   const renderUpcomingMatch = ({ item }: { item: MatchData }) => {
-    const isHome = item.home_team === team?.team_name;
-    const opponent = isHome ? item.away_team : item.home_team;
+    const isHome = item.home_team_id === id;
+    const opponent = isHome ? item.away_team_name : item.home_team_name;
     const dateStr = formatDate(item.match_date);
 
     return (
@@ -382,6 +409,11 @@ export default function TeamDetailScreen() {
           {item.location && (
             <Text style={styles.matchLocationText} numberOfLines={1}>
               {item.location}
+            </Text>
+          )}
+          {item.event_name && item.event_name !== "GotSport" && (
+            <Text style={styles.matchLocationText} numberOfLines={1}>
+              {item.event_name}
             </Text>
           )}
         </View>
@@ -602,12 +634,10 @@ export default function TeamDetailScreen() {
             <Text style={styles.predictEmoji}>⚔️</Text>
           </View>
           <View style={styles.predictTextContainer}>
-            <Text style={styles.predictTitle}>Predict Match</Text>
-            <Text style={styles.predictSubtitle}>
-              See how this team would fare vs any opponent
-            </Text>
+            <Text style={styles.predictTitle}>Predict a Match</Text>
+            <Text style={styles.predictSubtitle}>Compare against any team</Text>
           </View>
-          <Ionicons name="chevron-forward" size={24} color="#10b981" />
+          <Ionicons name="chevron-forward" size={20} color="#10b981" />
         </TouchableOpacity>
 
         {/* Season Stats */}
@@ -615,19 +645,12 @@ export default function TeamDetailScreen() {
         <View style={styles.statsGrid}>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>
-              {calculatedStats.wins}-{calculatedStats.losses}-
-              {calculatedStats.draws}
-            </Text>
-            <Text style={styles.statLabel}>Record (W-L-D)</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>
               {calculatedStats.matchesPlayed}
             </Text>
-            <Text style={styles.statLabel}>Games Played</Text>
+            <Text style={styles.statLabel}>Matches</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={[styles.statValue, { color: "#22c55e" }]}>
+            <Text style={[styles.statValue, { color: "#10b981" }]}>
               {calculatedStats.wins}
             </Text>
             <Text style={styles.statLabel}>Wins</Text>
@@ -648,28 +671,24 @@ export default function TeamDetailScreen() {
             <Text style={styles.statValue}>
               {calculatedStats.winPercentage}
             </Text>
-            <Text style={styles.statLabel}>Win Rate</Text>
+            <Text style={styles.statLabel}>Win %</Text>
           </View>
         </View>
         {calculatedStats.source === "calculated" &&
-          calculatedStats.matchesPlayed === 0 &&
-          recentMatches.length > 0 && (
+          calculatedStats.matchesPlayed > 0 && (
             <Text style={styles.statsNote}>
-              Scores pending for {recentMatches.length} match
-              {recentMatches.length > 1 ? "es" : ""}
+              Stats calculated from {calculatedStats.matchesPlayed} recorded
+              match{calculatedStats.matchesPlayed !== 1 ? "es" : ""}
             </Text>
           )}
 
-        {/* Matches Section */}
+        {/* Match History */}
         <View style={styles.tabsHeader}>
-          <Text style={styles.sectionTitle}>Matches</Text>
+          <Text style={styles.sectionTitle}>Match History</Text>
           <View style={styles.tabsContainer}>
             <TouchableOpacity
               style={[styles.tab, activeTab === "recent" && styles.activeTab]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setActiveTab("recent");
-              }}
+              onPress={() => setActiveTab("recent")}
             >
               <Text
                 style={[
@@ -682,10 +701,7 @@ export default function TeamDetailScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, activeTab === "upcoming" && styles.activeTab]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setActiveTab("upcoming");
-              }}
+              onPress={() => setActiveTab("upcoming")}
             >
               <Text
                 style={[
@@ -699,36 +715,35 @@ export default function TeamDetailScreen() {
           </View>
         </View>
 
-        {/* Matches List */}
         {matchesToShow.length > 0 ? (
-          <FlatList
-            data={matchesToShow}
-            renderItem={
-              activeTab === "recent" ? renderRecentMatch : renderUpcomingMatch
-            }
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-            contentContainerStyle={styles.matchesList}
-          />
+          <View style={styles.matchesList}>
+            {matchesToShow.map((match) => (
+              <React.Fragment key={match.id}>
+                {activeTab === "recent"
+                  ? renderRecentMatch({ item: match })
+                  : renderUpcomingMatch({ item: match })}
+              </React.Fragment>
+            ))}
+          </View>
         ) : (
           <View style={styles.emptyMatches}>
             <Ionicons
               name={
                 activeTab === "recent" ? "football-outline" : "calendar-outline"
               }
-              size={32}
-              color="#374151"
+              size={40}
+              color="#4b5563"
             />
             <Text style={styles.emptyText}>
               {activeTab === "recent"
                 ? "No recent matches found"
                 : "No upcoming matches scheduled"}
             </Text>
-            {activeTab === "upcoming" && (
-              <Text style={styles.emptySubtext}>
-                Check back later for schedule updates
-              </Text>
-            )}
+            <Text style={styles.emptySubtext}>
+              {activeTab === "recent"
+                ? "Match data is being collected"
+                : "Check back later for scheduled games"}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -748,7 +763,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
   backButton: {
     width: 40,
@@ -762,52 +777,49 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
-    flex: 1,
-    textAlign: "center",
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
   teamCard: {
     backgroundColor: "#111",
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
+    alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
-    alignItems: "center",
   },
   teamName: {
     color: "#fff",
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   teamMeta: {
     color: "#9ca3af",
     fontSize: 14,
-    textAlign: "center",
     marginBottom: 12,
   },
-  // 🏆 CHAMPIONSHIP BADGES STYLES - NEW!
+  // 🏆 CHAMPIONSHIP BADGE STYLES
   badgesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
+    marginBottom: 12,
     gap: 8,
-    marginBottom: 16,
   },
   badge: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 16,
     gap: 6,
   },
   nationalBadge: {
@@ -1037,6 +1049,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
+    marginBottom: 8,
   },
   resultBadge: {
     width: 32,

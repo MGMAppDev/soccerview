@@ -35,7 +35,7 @@ type TeamRankRow = {
   draws: number | null;
   gender: string | null;
   age_group: string | null;
-  // GotSport official rankings (will be populated by scraper)
+  // GotSport official rankings
   national_rank: number | null;
   regional_rank: number | null;
   state_rank: number | null;
@@ -50,8 +50,67 @@ type TeamRankRow = {
 
 type ViewMode = "leaderboard" | "national" | "state";
 
-// Valid age groups - U8 through U19 only
-const VALID_AGE_GROUPS = [
+// ============================================================
+// CONSTANTS
+// ============================================================
+
+// US STATES ONLY - Filter out Canadian provinces and invalid codes
+const US_STATES = new Set([
+  "AL",
+  "AK",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DE",
+  "FL",
+  "GA",
+  "HI",
+  "ID",
+  "IL",
+  "IN",
+  "IA",
+  "KS",
+  "KY",
+  "LA",
+  "ME",
+  "MD",
+  "MA",
+  "MI",
+  "MN",
+  "MS",
+  "MO",
+  "MT",
+  "NE",
+  "NV",
+  "NH",
+  "NJ",
+  "NM",
+  "NY",
+  "NC",
+  "ND",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UT",
+  "VT",
+  "VA",
+  "WA",
+  "WV",
+  "WI",
+  "WY",
+  "DC",
+]);
+
+// Valid age groups - ALWAYS show U8 through U19
+const ALL_AGE_GROUPS = [
   "U8",
   "U9",
   "U10",
@@ -66,50 +125,123 @@ const VALID_AGE_GROUPS = [
   "U19",
 ];
 
+const PAGE_SIZE = 50;
+
 // ============================================================
-// DATA FETCHING
+// DATA FETCHING - Optimized for 100k+ teams
 // ============================================================
 
-async function fetchAllTeams(): Promise<TeamRankRow[]> {
-  const allRows: TeamRankRow[] = [];
-  const pageSize = 1000;
-  let offset = 0;
-  let hasMore = true;
+type FetchParams = {
+  mode: ViewMode;
+  states: string[];
+  genders: string[];
+  ages: string[];
+  searchQuery: string;
+  offset: number;
+};
 
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from("team_elo")
-      .select(
-        "id, team_name, state, elo_rating, matches_played, wins, losses, draws, gender, age_group, national_rank, regional_rank, state_rank, gotsport_points, national_award, regional_award, state_cup_award",
-      )
-      .order("elo_rating", { ascending: false })
-      .range(offset, offset + pageSize - 1);
+async function fetchTeams(
+  params: FetchParams,
+): Promise<{ teams: TeamRankRow[]; hasMore: boolean }> {
+  const { mode, states, genders, ages, searchQuery, offset } = params;
 
-    if (error) {
-      console.error("Error fetching teams:", error);
-      break;
-    }
+  let query = supabase
+    .from("team_elo")
+    .select(
+      "id, team_name, state, elo_rating, matches_played, wins, losses, draws, gender, age_group, national_rank, regional_rank, state_rank, gotsport_points, national_award, regional_award, state_cup_award",
+    );
 
-    if (data && data.length > 0) {
-      allRows.push(...(data as TeamRankRow[]));
-      offset += pageSize;
-      hasMore = data.length === pageSize;
-    } else {
-      hasMore = false;
-    }
+  // LEADERBOARD MODE: Only teams with official rankings
+  if (mode === "leaderboard") {
+    query = query.not("national_rank", "is", null);
+    query = query.order("national_rank", { ascending: true });
+  } else if (mode === "national") {
+    query = query.order("elo_rating", { ascending: false });
+  } else if (mode === "state") {
+    query = query.order("state_rank", { ascending: true, nullsFirst: false });
   }
 
-  console.log(`Rankings: Fetched ${allRows.length} total teams`);
-  return allRows;
+  // Apply filters server-side
+  if (states.length > 0) {
+    query = query.in("state", states);
+  }
+  if (genders.length > 0) {
+    query = query.in("gender", genders);
+  }
+  if (ages.length > 0) {
+    // Handle age group normalization - search for both U9 and U09 formats
+    const agePatterns = ages.flatMap((age) => {
+      const num = age.replace(/\D/g, "");
+      return [`U${num}`, `U0${num}`];
+    });
+    query = query.in("age_group", [...new Set(agePatterns)]);
+  }
+  if (searchQuery.trim()) {
+    query = query.ilike("team_name", `%${searchQuery.trim()}%`);
+  }
+
+  // Paginate
+  query = query.range(offset, offset + PAGE_SIZE - 1);
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Error fetching teams:", error);
+    throw error;
+  }
+
+  return {
+    teams: (data || []) as TeamRankRow[],
+    hasMore: (data?.length || 0) === PAGE_SIZE,
+  };
+}
+
+// Fetch filter options (states, genders) - lightweight query
+async function fetchFilterOptions(): Promise<{
+  states: string[];
+  genders: string[];
+  totalWithRank: number;
+}> {
+  // Get distinct states - filter to US only
+  const { data: stateData } = await supabase
+    .from("team_elo")
+    .select("state")
+    .not("state", "is", null)
+    .limit(1000);
+
+  const statesRaw = (stateData || [])
+    .map((r) => r.state?.trim().toUpperCase())
+    .filter((s): s is string => !!s && US_STATES.has(s));
+  const states = [...new Set(statesRaw)].sort();
+
+  // Get distinct genders
+  const { data: genderData } = await supabase
+    .from("team_elo")
+    .select("gender")
+    .not("gender", "is", null)
+    .limit(100);
+
+  const gendersRaw = (genderData || [])
+    .map((r) => r.gender)
+    .filter(Boolean) as string[];
+  const genders = [...new Set(gendersRaw)].sort();
+
+  // Count teams with national rank
+  const { count } = await supabase
+    .from("team_elo")
+    .select("id", { count: "exact", head: true })
+    .not("national_rank", "is", null);
+
+  return {
+    states,
+    genders,
+    totalWithRank: count || 0,
+  };
 }
 
 // ============================================================
 // HELPER FUNCTIONS
 // ============================================================
-
-function isValidValue(v: string | null | undefined): v is string {
-  return !!v && v.trim().length > 0 && v.trim() !== "??";
-}
 
 function normalizeAgeGroup(age: string | null | undefined): string | null {
   if (!age) return null;
@@ -171,72 +303,97 @@ export default function RankingsTab() {
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
   const [selectedAges, setSelectedAges] = useState<string[]>([]);
 
-  const [allTeams, setAllTeams] = useState<TeamRankRow[]>([]);
+  const [teams, setTeams] = useState<TeamRankRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [infoModalVisible, setInfoModalVisible] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
 
+  // Filter options (loaded once)
+  const [allStates, setAllStates] = useState<string[]>([]);
+  const [allGenders, setAllGenders] = useState<string[]>([]);
+  const [teamsWithNationalRank, setTeamsWithNationalRank] = useState(0);
+
+  // Load filter options once on mount
   useEffect(() => {
-    loadTeams();
+    loadFilterOptions();
   }, []);
 
-  const loadTeams = async () => {
+  // Load teams when filters change
+  useEffect(() => {
+    loadTeams(true);
+  }, [mode, selectedStates, selectedGenders, selectedAges]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadTeams(true);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const loadFilterOptions = async () => {
+    try {
+      const options = await fetchFilterOptions();
+      setAllStates(options.states);
+      setAllGenders(options.genders);
+      setTeamsWithNationalRank(options.totalWithRank);
+    } catch (err) {
+      console.error("Error loading filter options:", err);
+    }
+  };
+
+  const loadTeams = async (reset: boolean = false) => {
     try {
       setError(null);
-      const data = await fetchAllTeams();
-      setAllTeams(data);
+      if (reset) {
+        setLoading(true);
+        setOffset(0);
+      } else {
+        setLoadingMore(true);
+      }
+
+      const newOffset = reset ? 0 : offset;
+      const result = await fetchTeams({
+        mode,
+        states: selectedStates,
+        genders: selectedGenders,
+        ages: selectedAges,
+        searchQuery,
+        offset: newOffset,
+      });
+
+      if (reset) {
+        setTeams(result.teams);
+      } else {
+        setTeams((prev) => [...prev, ...result.teams]);
+      }
+      setHasMore(result.hasMore);
+      setOffset(newOffset + PAGE_SIZE);
     } catch (err: any) {
       console.error("Error:", err);
       setError(err.message || "Failed to load rankings");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  const loadMoreTeams = () => {
+    if (!loadingMore && hasMore && !loading) {
+      loadTeams(false);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadTeams();
+    await loadTeams(true);
     setRefreshing(false);
   };
-
-  // ============================================================
-  // DERIVED DATA
-  // ============================================================
-
-  const allStates = useMemo(() => {
-    return [
-      ...new Set(allTeams.map((t) => t.state).filter(isValidValue)),
-    ].sort();
-  }, [allTeams]);
-
-  const allGenders = useMemo(() => {
-    return [
-      ...new Set(allTeams.map((t) => t.gender).filter(isValidValue)),
-    ].sort();
-  }, [allTeams]);
-
-  // Filter age groups to U9-U19 only
-  const allAgeGroups = useMemo(() => {
-    const normalizedValues = allTeams
-      .map((t) => normalizeAgeGroup(t.age_group))
-      .filter(isValidValue);
-    const uniqueAges = [...new Set(normalizedValues)];
-    // Only include valid age groups (U9-U19)
-    return uniqueAges
-      .filter((age) => VALID_AGE_GROUPS.includes(age))
-      .sort((a, b) => {
-        const numA = parseInt(a?.replace(/\D/g, "") || "0", 10);
-        const numB = parseInt(b?.replace(/\D/g, "") || "0", 10);
-        return numA - numB;
-      });
-  }, [allTeams]);
-
-  // Count teams with official national rank
-  const teamsWithNationalRank = useMemo(() => {
-    return allTeams.filter((t) => t.national_rank !== null).length;
-  }, [allTeams]);
 
   const toggleSelection = useCallback(
     (
@@ -252,80 +409,7 @@ export default function RankingsTab() {
     [],
   );
 
-  // ============================================================
-  // FILTERED RANKINGS - Different logic per mode
-  // ============================================================
-
-  const filteredRankings = useMemo(() => {
-    let filtered = allTeams;
-
-    // LEADERBOARD MODE: Only teams with official national_rank, sorted by rank
-    if (mode === "leaderboard") {
-      filtered = filtered.filter((t) => t.national_rank !== null);
-      // Sort by national_rank ascending (1 is best)
-      filtered = [...filtered].sort(
-        (a, b) => (a.national_rank || 9999) - (b.national_rank || 9999),
-      );
-    }
-
-    // STATE MODE: Filter by selected states
-    if (mode === "state" && selectedStates.length > 0) {
-      filtered = filtered.filter(
-        (t) => isValidValue(t.state) && selectedStates.includes(t.state),
-      );
-    }
-
-    // Apply gender filter (all modes)
-    if (selectedGenders.length > 0) {
-      filtered = filtered.filter(
-        (t) => isValidValue(t.gender) && selectedGenders.includes(t.gender),
-      );
-    }
-
-    // Apply age filter (all modes)
-    if (selectedAges.length > 0) {
-      filtered = filtered.filter((t) => {
-        const normalizedTeamAge = normalizeAgeGroup(t.age_group);
-        return normalizedTeamAge && selectedAges.includes(normalizedTeamAge);
-      });
-    }
-
-    // Apply search filter (all modes)
-    if (searchQuery) {
-      filtered = filtered.filter((t) =>
-        t.team_name?.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
-    }
-
-    // For non-leaderboard modes, add computed rank based on position
-    if (mode !== "leaderboard") {
-      return filtered.map((team, index) => ({ ...team, rank: index + 1 }));
-    }
-
-    // For leaderboard mode, use the official national_rank
-    return filtered;
-  }, [
-    allTeams,
-    mode,
-    selectedStates,
-    selectedGenders,
-    selectedAges,
-    searchQuery,
-  ]);
-
-  // ============================================================
-  // HANDLERS
-  // ============================================================
-
-  const handleModeChange = useCallback((newMode: ViewMode) => {
-    setMode(newMode);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (newMode === "national" || newMode === "leaderboard") {
-      setSelectedStates([]);
-    }
-  }, []);
-
-  const clearFilters = useCallback(() => {
+  const clearAllFilters = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedStates([]);
     setSelectedGenders([]);
@@ -333,378 +417,173 @@ export default function RankingsTab() {
     setSearchQuery("");
   }, []);
 
-  const hasFilters =
+  const hasActiveFilters =
     selectedStates.length > 0 ||
     selectedGenders.length > 0 ||
     selectedAges.length > 0 ||
-    searchQuery !== "";
+    searchQuery.length > 0;
 
-  const getTeamDetails = useCallback((item: TeamRankRow): string => {
-    const parts: string[] = [];
-    if (isValidValue(item.state)) parts.push(item.state);
-    if (isValidValue(item.gender)) parts.push(item.gender);
-    const normalizedAge = normalizeAgeGroup(item.age_group);
-    if (normalizedAge) parts.push(normalizedAge);
-    return parts.join(" · ");
-  }, []);
+  // Add rank numbers to teams for display
+  const rankedTeams: (TeamRankRow & { rank?: number })[] = useMemo(() => {
+    return teams.map((team, index) => ({
+      ...team,
+      rank:
+        mode === "leaderboard"
+          ? (team.national_rank ?? undefined)
+          : offset - PAGE_SIZE + index + 1,
+    }));
+  }, [teams, mode, offset]);
 
   // ============================================================
-  // RENDER ITEMS
+  // RENDER FUNCTIONS
   // ============================================================
 
-  // Premium leaderboard item with official ranking
-  const renderLeaderboardItem = useCallback(
-    ({ item }: { item: TeamRankRow }) => {
-      const details = getTeamDetails(item);
-      const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
-      const elo = Math.round(item.elo_rating ?? 1500);
-      const { grade, color: eloColor } = getEloGrade(elo);
-      const rank = item.national_rank || 0;
-      const isTopThree = rank <= 3;
-      const isTopTen = rank <= 10;
-      const medalEmoji = getMedalEmoji(rank);
-      const awards = getAwardBadges(item);
+  const renderChip = (
+    label: string,
+    selected: boolean,
+    onPress: () => void,
+    isLeaderboard?: boolean,
+  ) => (
+    <TouchableOpacity
+      key={label}
+      onPress={onPress}
+      style={[
+        styles.baseChip,
+        isLeaderboard && styles.leaderboardChip,
+        selected &&
+          (isLeaderboard
+            ? styles.leaderboardChipSelected
+            : styles.selectedChip),
+      ]}
+    >
+      <Text
+        style={[
+          styles.chipText,
+          selected && isLeaderboard && styles.leaderboardChipText,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
-      return (
-        <TouchableOpacity
+  const renderLeaderboardItem = ({
+    item,
+  }: {
+    item: TeamRankRow & { rank?: number };
+  }) => {
+    const rank = item.national_rank || item.rank || 0;
+    const medal = getMedalEmoji(rank);
+    const badgeColor = getMedalColor(rank);
+    const gradeInfo = getEloGrade(item.elo_rating || 1500);
+    const awards = getAwardBadges(item);
+    const isTopThree = rank <= 3;
+    const isTopTen = rank <= 10;
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.leaderboardItem,
+          isTopThree && styles.leaderboardItemTopThree,
+          !isTopThree && isTopTen && styles.leaderboardItemTopTen,
+        ]}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push({
+            pathname: "/team/[id]",
+            params: { id: item.id },
+          });
+        }}
+        activeOpacity={0.7}
+      >
+        {/* Rank Badge */}
+        <View
           style={[
-            styles.leaderboardItem,
-            isTopThree && styles.leaderboardItemTopThree,
-            isTopTen && !isTopThree && styles.leaderboardItemTopTen,
+            styles.leaderboardRankBadge,
+            { backgroundColor: `${badgeColor}20` },
           ]}
-          activeOpacity={0.7}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push(`/team/${item.id}`);
-          }}
         >
-          {/* Rank Badge */}
-          <View
-            style={[
-              styles.leaderboardRankBadge,
-              { backgroundColor: getMedalColor(rank) + "20" },
-            ]}
-          >
-            {isTopThree ? (
-              <Text style={styles.medalEmoji}>{medalEmoji}</Text>
-            ) : (
-              <Text
-                style={[styles.leaderboardRank, { color: getMedalColor(rank) }]}
-              >
-                {rank}
-              </Text>
-            )}
-          </View>
-
-          {/* Team Info */}
-          <View style={styles.leaderboardInfo}>
-            <View style={styles.leaderboardNameRow}>
-              <Text style={styles.leaderboardName} numberOfLines={1}>
-                {item.team_name ?? "Unknown"}
-              </Text>
-              {awards ? <Text style={styles.awardBadges}>{awards}</Text> : null}
-            </View>
-            <Text style={styles.leaderboardDetails}>{details}</Text>
-            <View style={styles.leaderboardStats}>
-              <Text style={styles.leaderboardRecord}>{record}</Text>
-              {item.gotsport_points ? (
-                <Text style={styles.leaderboardPoints}>
-                  {Math.round(item.gotsport_points)} pts
-                </Text>
-              ) : null}
-            </View>
-          </View>
-
-          {/* ELO Grade */}
-          <View style={styles.leaderboardRating}>
-            <Text style={[styles.leaderboardGrade, { color: eloColor }]}>
-              {grade}
+          {medal ? (
+            <Text style={styles.medalEmoji}>{medal}</Text>
+          ) : (
+            <Text style={[styles.leaderboardRank, { color: badgeColor }]}>
+              {rank}
             </Text>
-            <Text style={styles.leaderboardElo}>{elo}</Text>
-          </View>
-
-          <Ionicons name="chevron-forward" size={18} color="#4b5563" />
-        </TouchableOpacity>
-      );
-    },
-    [getTeamDetails],
-  );
-
-  // Standard team item (for national/state modes)
-  const renderTeamItem = useCallback(
-    ({ item }: { item: TeamRankRow }) => {
-      const details = getTeamDetails(item);
-      const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
-      const elo = Math.round(item.elo_rating ?? 1500);
-      const { grade, color } = getEloGrade(elo);
-
-      return (
-        <TouchableOpacity
-          style={styles.teamItem}
-          activeOpacity={0.7}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push(`/team/${item.id}`);
-          }}
-        >
-          <View style={styles.rankContainer}>
-            <Text style={[styles.rank, { color: getMedalColor(item.rank) }]}>
-              {item.rank ?? "-"}
-            </Text>
-          </View>
-          <View style={styles.teamInfo}>
-            <Text style={styles.teamName} numberOfLines={1}>
-              {item.team_name ?? "Unknown"}
-            </Text>
-            {details ? <Text style={styles.teamDetails}>{details}</Text> : null}
-            <Text style={styles.recordText}>
-              {record} ({item.matches_played ?? 0} games)
-            </Text>
-          </View>
-          <View style={styles.ratingContainer}>
-            <Text style={[styles.ratingGrade, { color }]}>{grade}</Text>
-            <Text style={styles.ratingElo}>{elo}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#4b5563" />
-        </TouchableOpacity>
-      );
-    },
-    [getTeamDetails],
-  );
-
-  // ============================================================
-  // LIST HEADER
-  // ============================================================
-
-  const ListHeader = useMemo(
-    () => (
-      <View style={styles.filtersContainer}>
-        {/* Search */}
-        <View style={styles.searchContainer}>
-          <Ionicons
-            name="search"
-            size={18}
-            color="#6b7280"
-            style={{ marginRight: 8 }}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search teams..."
-            placeholderTextColor="#6b7280"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={18} color="#6b7280" />
-            </TouchableOpacity>
           )}
         </View>
 
-        {/* View Mode */}
-        <Text style={styles.sectionHeader}>View</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.chipScroll}
-          keyboardShouldPersistTaps="always"
-        >
-          <TouchableOpacity
-            key="leaderboard"
-            style={[
-              styles.baseChip,
-              styles.leaderboardChip,
-              mode === "leaderboard" && styles.leaderboardChipSelected,
-            ]}
-            onPress={() => handleModeChange("leaderboard")}
-          >
-            <Text
-              style={[
-                styles.chipText,
-                mode === "leaderboard" && styles.leaderboardChipText,
-              ]}
-            >
-              🏆 Leaderboard
+        {/* Team Info */}
+        <View style={styles.leaderboardInfo}>
+          <View style={styles.leaderboardNameRow}>
+            <Text style={styles.leaderboardName} numberOfLines={1}>
+              {item.team_name || "Unknown"}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            key="national"
-            style={[
-              styles.baseChip,
-              mode === "national" && styles.selectedChip,
-            ]}
-            onPress={() => handleModeChange("national")}
-          >
-            <Text style={styles.chipText}>🌎 National</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            key="state"
-            style={[styles.baseChip, mode === "state" && styles.selectedChip]}
-            onPress={() => handleModeChange("state")}
-          >
-            <Text style={styles.chipText}>📍 By State</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* State filter (only in state mode) */}
-        {mode === "state" && (
-          <>
-            <Text style={styles.sectionHeader}>States</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipScroll}
-              keyboardShouldPersistTaps="always"
-            >
-              {allStates.map((state) => (
-                <TouchableOpacity
-                  key={state}
-                  style={[
-                    styles.baseChip,
-                    selectedStates.includes(state) && styles.selectedChip,
-                  ]}
-                  onPress={() =>
-                    toggleSelection(state, selectedStates, setSelectedStates)
-                  }
-                >
-                  <Text style={styles.chipText}>{state}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </>
-        )}
-
-        {/* Gender */}
-        <Text style={styles.sectionHeader}>Gender</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.chipScroll}
-          keyboardShouldPersistTaps="always"
-        >
-          {allGenders.map((gender) => (
-            <TouchableOpacity
-              key={gender}
-              style={[
-                styles.baseChip,
-                selectedGenders.includes(gender) && styles.selectedChip,
-              ]}
-              onPress={() =>
-                toggleSelection(gender, selectedGenders, setSelectedGenders)
-              }
-            >
-              <Text style={styles.chipText}>{gender}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Age - Filtered to U9-U19 only */}
-        <Text style={styles.sectionHeader}>Age Group</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.chipScroll}
-          keyboardShouldPersistTaps="always"
-        >
-          {allAgeGroups.map((age) => (
-            <TouchableOpacity
-              key={age}
-              style={[
-                styles.baseChip,
-                selectedAges.includes(age) && styles.selectedChip,
-              ]}
-              onPress={() =>
-                toggleSelection(age, selectedAges, setSelectedAges)
-              }
-            >
-              <Text style={styles.chipText}>{age}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Clear Filters */}
-        {hasFilters && (
-          <TouchableOpacity
-            style={styles.clearChip}
-            onPress={clearFilters}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name="close"
-              size={16}
-              color="#fff"
-              style={{ marginRight: 4 }}
-            />
-            <Text style={styles.chipText}>Clear Filters</Text>
-          </TouchableOpacity>
-        )}
-
-        <View style={styles.resultsHeader}>
-          <Text style={styles.resultsText}>
-            {filteredRankings.length.toLocaleString()}
-            {mode !== "leaderboard" &&
-              ` of ${allTeams.length.toLocaleString()}`}{" "}
-            teams
+            {awards ? <Text style={styles.awardBadges}>{awards}</Text> : null}
+          </View>
+          <Text style={styles.leaderboardDetails}>
+            {normalizeAgeGroup(item.age_group)} {item.gender} • {item.state}
           </Text>
-          <TouchableOpacity
-            style={styles.infoButton}
-            onPress={() => setInfoModalVisible(true)}
-          >
-            <Ionicons
-              name="information-circle-outline"
-              size={20}
-              color="#3B82F6"
-            />
-            <Text style={styles.infoButtonText}>How Rankings Work</Text>
-          </TouchableOpacity>
+          <View style={styles.leaderboardStats}>
+            <Text style={styles.leaderboardRecord}>
+              {item.wins || 0}W-{item.losses || 0}L-{item.draws || 0}D
+            </Text>
+            {item.gotsport_points && (
+              <Text style={styles.leaderboardPoints}>
+                {item.gotsport_points.toLocaleString()} pts
+              </Text>
+            )}
+          </View>
         </View>
-      </View>
-    ),
-    [
-      searchQuery,
-      mode,
-      allStates,
-      allGenders,
-      allAgeGroups,
-      selectedStates,
-      selectedGenders,
-      selectedAges,
-      hasFilters,
-      filteredRankings.length,
-      allTeams.length,
-      teamsWithNationalRank,
-      handleModeChange,
-      toggleSelection,
-      clearFilters,
-    ],
+
+        {/* ELO Grade */}
+        <View style={styles.leaderboardRating}>
+          <Text style={[styles.leaderboardGrade, { color: gradeInfo.color }]}>
+            {gradeInfo.grade}
+          </Text>
+          <Text style={styles.leaderboardElo}>
+            {Math.round(item.elo_rating || 1500)}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderTeamItem = useCallback(
+    ({ item }: { item: TeamRankRow & { rank?: number } }) => {
+      return renderLeaderboardItem({ item });
+    },
+    [mode],
   );
 
-  // ============================================================
-  // ERROR STATE
-  // ============================================================
-
-  if (error) {
+  const renderFooter = () => {
+    if (!loadingMore) return null;
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.centered}>
-          <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => {
-              setLoading(true);
-              loadTeams();
-            }}
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color="#3B82F6" />
+        <Text style={styles.footerText}>Loading more...</Text>
+      </View>
     );
-  }
+  };
+
+  const renderEmpty = () => {
+    if (loading) return null;
+    return (
+      <View style={styles.emptyContainer}>
+        <Ionicons name="trophy-outline" size={48} color="#374151" />
+        <Text style={styles.noDataText}>
+          {hasActiveFilters ? "No teams match filters" : "No ranked teams"}
+        </Text>
+        {hasActiveFilters && (
+          <TouchableOpacity
+            style={styles.clearFiltersButton}
+            onPress={clearAllFilters}
+          >
+            <Text style={styles.clearFiltersText}>Clear Filters</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
 
   // ============================================================
   // MAIN RENDER
@@ -712,48 +591,147 @@ export default function RankingsTab() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Rankings</Text>
+      </View>
+
+      {/* Filters */}
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Rankings</Text>
+        <View style={styles.filtersContainer}>
+          {/* Mode Selection */}
+          <Text style={styles.sectionHeader}>View</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScroll}
+          >
+            {renderChip(
+              `🏆 Leaderboard (${teamsWithNationalRank.toLocaleString()})`,
+              mode === "leaderboard",
+              () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setMode("leaderboard");
+              },
+              true,
+            )}
+            {renderChip("National (ELO)", mode === "national", () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setMode("national");
+            })}
+            {renderChip("By State", mode === "state", () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setMode("state");
+            })}
+          </ScrollView>
+
+          {/* Gender Filter */}
+          <Text style={styles.sectionHeader}>Gender</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScroll}
+          >
+            {allGenders.map((g) =>
+              renderChip(g, selectedGenders.includes(g), () =>
+                toggleSelection(g, selectedGenders, setSelectedGenders),
+              ),
+            )}
+          </ScrollView>
+
+          {/* Age Group Filter - ALWAYS show U8-U19 */}
+          <Text style={styles.sectionHeader}>Age Group</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScroll}
+          >
+            {ALL_AGE_GROUPS.map((age) =>
+              renderChip(age, selectedAges.includes(age), () =>
+                toggleSelection(age, selectedAges, setSelectedAges),
+              ),
+            )}
+          </ScrollView>
+
+          {/* Clear Filters */}
+          {hasActiveFilters && (
+            <TouchableOpacity
+              style={styles.clearChip}
+              onPress={clearAllFilters}
+            >
+              <Ionicons name="close-circle" size={16} color="#9ca3af" />
+              <Text
+                style={[styles.chipText, { marginLeft: 6, color: "#9ca3af" }]}
+              >
+                Clear filters
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Search */}
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#9ca3af" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search teams..."
+              placeholderTextColor="#6b7280"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery("")}>
+                <Ionicons name="close-circle" size={20} color="#6b7280" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Results Header - Show actual count */}
+          <View style={styles.resultsHeader}>
+            <Text style={styles.resultsText}>
+              {loading
+                ? "Loading..."
+                : `${teams.length.toLocaleString()}${hasMore ? "+" : ""} teams`}
+            </Text>
+            <TouchableOpacity
+              style={styles.infoButton}
+              onPress={() => setInfoModalVisible(true)}
+            >
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color="#3B82F6"
+              />
+              <Text style={styles.infoButtonText}>How rankings work</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </TouchableWithoutFeedback>
 
+      {/* Content */}
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
-          <Text style={styles.loadingText}>Loading all rankings...</Text>
+          <Text style={styles.loadingText}>Loading rankings...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centered}>
+          <Ionicons name="alert-circle" size={48} color="#EF4444" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => loadTeams(true)}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
-          data={filteredRankings}
-          renderItem={
-            mode === "leaderboard" ? renderLeaderboardItem : renderTeamItem
-          }
+          data={rankedTeams}
           keyExtractor={(item) => item.id}
-          ListHeaderComponent={ListHeader}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="trophy-outline" size={48} color="#374151" />
-              <Text style={styles.noDataText}>
-                {hasFilters
-                  ? "No teams match filters"
-                  : mode === "leaderboard"
-                    ? "No ranked teams yet"
-                    : "No rankings"}
-              </Text>
-              {hasFilters && (
-                <TouchableOpacity
-                  style={styles.clearFiltersButton}
-                  onPress={clearFilters}
-                >
-                  <Text style={styles.clearFiltersText}>Clear Filters</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          }
+          renderItem={renderTeamItem}
           contentContainerStyle={styles.listContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -761,23 +739,15 @@ export default function RankingsTab() {
               tintColor="#3B82F6"
             />
           }
+          onEndReached={loadMoreTeams}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={renderEmpty}
           showsVerticalScrollIndicator={false}
-          initialNumToRender={20}
-          maxToRenderPerBatch={30}
-          removeClippedSubviews={true}
-          getItemLayout={
-            mode !== "leaderboard"
-              ? (_, index) => ({
-                  length: 85,
-                  offset: 85 * index,
-                  index,
-                })
-              : undefined
-          }
         />
       )}
 
-      {/* Info Modal */}
+      {/* Info Modal - Updated text */}
       <Modal
         visible={infoModalVisible}
         transparent
@@ -791,46 +761,44 @@ export default function RankingsTab() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>How Rankings Work</Text>
+              <Text style={styles.modalTitle}>Ranking System</Text>
               <TouchableOpacity onPress={() => setInfoModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color="#9ca3af" />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.modalText}>
               <Text style={styles.modalBold}>🏆 Leaderboard</Text>
               {"\n"}
-              Official GotSport national rankings - the same rankings tournament
-              directors use for seeding.
+              Official GotSport Rankings. Teams are ranked based on tournament
+              performance, opponent strength, and match results across
+              sanctioned events.
             </Text>
 
             <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>ELO Rating System</Text>
+              <Text style={styles.modalBold}>National (ELO)</Text>
               {"\n"}
-              Teams start at 1500 ELO. Winning increases rating, losing
-              decreases it. Beating stronger teams earns more points.
+              Our computed ELO ratings across all teams. Higher ratings indicate
+              stronger competitive performance.
             </Text>
 
             <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>Letter Grades</Text>
+              <Text style={styles.modalBold}>ELO Grades</Text>
               {"\n"}
-              A+ (1650+) Elite | A/A- (1550-1649) Excellent{"\n"}
-              B+/B/B- (1475-1549) Above Average{"\n"}
-              C+/C/C- (1400-1474) Average{"\n"}
-              D+/D/D- (below 1400) Developing
+              A+ (1650+) Elite | A (1600+) Excellent | B (1500+) Strong | C
+              (1425+) Average | D (&lt;1400) Developing
             </Text>
 
             <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>Award Badges</Text>
+              <Text style={styles.modalBold}>Championship Badges</Text>
               {"\n"}
-              🏆 National Champion | 🥇 Regional Winner | 🏅 State Cup Winner
+              🏆 National Champion - Teams with national championship awards
             </Text>
 
             <Text style={styles.modalText}>
               <Text style={styles.modalBold}>Multi-Select</Text>
               {"\n"}
-              Select multiple states, genders, or ages to compare across
-              categories.
+              Select multiple genders or ages to compare across categories.
             </Text>
           </View>
         </TouchableOpacity>
@@ -931,28 +899,6 @@ const styles = StyleSheet.create({
   infoButtonText: { color: "#3B82F6", fontSize: 12, marginLeft: 4 },
   listContent: { paddingBottom: 24, flexGrow: 1 },
 
-  // Standard team item (national/state modes)
-  teamItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: "#111",
-    marginBottom: 10,
-    marginHorizontal: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-  },
-  rankContainer: { width: 40, alignItems: "center" },
-  rank: { fontSize: 20, fontWeight: "bold" },
-  teamInfo: { flex: 1, marginLeft: 12 },
-  teamName: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  teamDetails: { color: "#9ca3af", fontSize: 13, marginTop: 2 },
-  recordText: { color: "#6b7280", fontSize: 12, marginTop: 2 },
-  ratingContainer: { alignItems: "center", minWidth: 50 },
-  ratingGrade: { fontSize: 20, fontWeight: "bold" },
-  ratingElo: { color: "#6b7280", fontSize: 11, marginTop: 2 },
-
   // Leaderboard item (premium styling)
   leaderboardItem: {
     flexDirection: "row",
@@ -1037,6 +983,19 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 10,
     marginTop: 2,
+  },
+
+  // Footer loader
+  footerLoader: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 16,
+    gap: 8,
+  },
+  footerText: {
+    color: "#9ca3af",
+    fontSize: 14,
   },
 
   // States

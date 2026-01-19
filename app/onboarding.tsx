@@ -54,7 +54,7 @@ const slides: OnboardingSlide[] = [
     icon: "🔍",
     title: "Find Any Team",
     description:
-      "Search over 4,000 ranked teams. Filter by state, gender, and age group to find exactly what you're looking for.",
+      "Search over 100,000 ranked teams nationwide. Filter by state, gender, and age group to find exactly what you're looking for.",
     color: "#f59e0b",
   },
 ];
@@ -65,6 +65,7 @@ export default function OnboardingScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -101,15 +102,44 @@ export default function OnboardingScreen() {
   };
 
   const completeOnboarding = async () => {
-    console.log("Completing onboarding...");
+    // Prevent double-tap
+    if (isNavigating) return;
+    setIsNavigating(true);
+
+    console.log("[Onboarding] Completing onboarding...");
+
     try {
+      // Save onboarding complete status
       await AsyncStorage.setItem(ONBOARDING_KEY, "true");
-      console.log("Onboarding status saved, navigating to tabs...");
+      console.log("[Onboarding] Status saved to AsyncStorage");
     } catch (error) {
-      console.error("Error saving onboarding status:", error);
+      console.error("[Onboarding] Error saving status:", error);
     }
-    // Always navigate, even if save fails
-    router.replace("/(tabs)");
+
+    // Navigate to main app - use replace to prevent going back to onboarding
+    console.log("[Onboarding] Navigating to home...");
+
+    try {
+      // Small delay to ensure state is saved
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Use replace to prevent back navigation to onboarding
+      router.replace("/");
+    } catch (navError) {
+      console.error("[Onboarding] Navigation error:", navError);
+
+      // Fallback approaches
+      try {
+        router.push("/");
+      } catch (fallbackError) {
+        console.error("[Onboarding] Fallback push failed:", fallbackError);
+
+        // Last resort for web
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.location.href = "/";
+        }
+      }
+    }
   };
 
   const isLastSlide = currentIndex === slides.length - 1;
@@ -210,12 +240,14 @@ export default function OnboardingScreen() {
           style={[
             styles.actionButton,
             { backgroundColor: slides[currentIndex].color },
+            isNavigating && styles.actionButtonDisabled,
           ]}
           onPress={handleNext}
           activeOpacity={0.8}
+          disabled={isNavigating}
         >
           <Text style={styles.actionButtonText}>
-            {isLastSlide ? "Get Started" : "Next"}
+            {isNavigating ? "Loading..." : isLastSlide ? "Get Started" : "Next"}
           </Text>
         </TouchableOpacity>
 
@@ -311,6 +343,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+  },
+  actionButtonDisabled: {
+    opacity: 0.7,
   },
   actionButtonText: {
     color: "#fff",

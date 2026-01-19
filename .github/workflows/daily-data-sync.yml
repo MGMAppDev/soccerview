@@ -1,0 +1,51 @@
+name: Daily GotSport Data Sync
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      sync_type:
+        description: 'Type of sync to run'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - matches_only
+          - linking_only
+
+jobs:
+  sync-matches:
+    name: Sync Match Results
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - name: Sync Active Events
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/syncActiveEvents.js
+        timeout-minutes: 60
+
+  link-teams:
+    name: Link Teams to Matches
+    runs-on: ubuntu-latest
+    needs: sync-matches
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - name: Link Teams
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/linkTeams.js
+        timeout-minutes: 120
