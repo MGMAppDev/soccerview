@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+﻿import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -23,17 +23,19 @@ const PRIORITY_EVENTS = [
 ];
 
 async function fetchGroups(eventId) {
-  const res = await fetch(\https://system.gotsport.com/api/event_public_schedule/\/groups\);
+  const url = `https://system.gotsport.com/api/event_public_schedule/${eventId}/groups`;
+  const res = await fetch(url);
   return res.ok ? await res.json() : [];
 }
 
 async function fetchMatches(eventId, groupId) {
-  const res = await fetch(\https://system.gotsport.com/api/event_public_schedule/\/group/\/games\);
+  const url = `https://system.gotsport.com/api/event_public_schedule/${eventId}/group/${groupId}/games`;
+  const res = await fetch(url);
   return res.ok ? await res.json() : [];
 }
 
 async function processEvent(event) {
-  console.log(\Processing: \ (\)\);
+  console.log(`Processing: ${event.name} (${event.id})`);
   const groups = await fetchGroups(event.id);
   let total = 0;
   
@@ -41,7 +43,7 @@ async function processEvent(event) {
     const matches = await fetchMatches(event.id, g.group_id || g.id);
     if (matches.length > 0) {
       const rows = matches.map(m => ({
-        id: \gs-\-\\,
+        id: `gs-${event.id}-${m.game_id || m.id}`,
         event_id: event.id.toString(),
         event_name: event.name,
         match_date: m.game_date,
@@ -60,7 +62,7 @@ async function processEvent(event) {
     }
     await new Promise(r => setTimeout(r, 300));
   }
-  console.log(\  Synced \ matches\);
+  console.log(`  Synced ${total} matches`);
 }
 
 async function main() {

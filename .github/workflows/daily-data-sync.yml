@@ -2,13 +2,13 @@ name: Daily GotSport Data Sync
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       sync_type:
-        description: 'Type of sync to run'
+        description: "Type of sync to run"
         required: true
-        default: 'full'
+        default: "full"
         type: choice
         options:
           - full
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
       - run: npm install
       - name: Sync Active Events
         env:
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
       - run: npm install
       - name: Link Teams
         env:
