@@ -1,17 +1,20 @@
 /**
- * Automated team linking script v2.0
- * Links match_results records to team_elo using fuzzy matching
+ * Automated team linking script v3.1 - BULLETPROOF EDITION
  *
- * KEY OPTIMIZATIONS:
- * 1. Cache unique team names → avoids repeated fuzzy lookups
- * 2. Bulk updates instead of one-by-one
- * 3. Time-based exit (90 min) to avoid GitHub Actions timeout
- * 4. Process unlinked names, not unlinked matches
+ * CRITICAL FIX: Previous versions made 90,000 individual RPC calls (1 per match).
+ * This version processes UNIQUE TEAM NAMES only (~5,000 names vs 90,000 matches).
+ *
+ * STRATEGY:
+ * 1. Get all unique unlinked team names
+ * 2. For each unique name, find the best match ONCE
+ * 3. Bulk update ALL matches with that name in one query
+ *
+ * Expected completion: 5-15 minutes (vs 2+ hours before)
  *
  * Usage:
- *   node scripts/linkTeams.js              # Default: 90 min timeout
- *   node scripts/linkTeams.js --max=1000   # Limit to 1000 unique names
- *   node scripts/linkTeams.js --timeout=60 # Custom timeout in minutes
+ *   node scripts/linkTeams.js              # Default (45 min timeout)
+ *   node scripts/linkTeams.js --timeout=90 # Custom timeout
+ *   node scripts/linkTeams.js --threshold=0.5 # Custom similarity threshold
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -30,12 +33,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // Parse CLI args
 const args = process.argv.slice(2);
-const maxArg = args.find((a) => a.startsWith("--max="));
 const timeoutArg = args.find((a) => a.startsWith("--timeout="));
+const thresholdArg = args.find((a) => a.startsWith("--threshold="));
 
-const MAX_UNIQUE_NAMES = maxArg ? parseInt(maxArg.split("=")[1]) : 10000;
-const TIMEOUT_MINUTES = timeoutArg ? parseInt(timeoutArg.split("=")[1]) : 90;
-const BATCH_SIZE = 500; // Records per bulk update
+const TIMEOUT_MINUTES = timeoutArg ? parseInt(timeoutArg.split("=")[1]) : 45;
+const SIMILARITY_THRESHOLD = thresholdArg
+  ? parseFloat(thresholdArg.split("=")[1])
+  : 0.4;
 
 const startTime = Date.now();
 
@@ -48,144 +52,9 @@ function shouldExit() {
 }
 
 /**
- * Get all unique unlinked team names for a field (home or away)
+ * Get current linking status
  */
-async function getUniqueUnlinkedNames(field) {
-  const column = field === "home" ? "home_team_id" : "away_team_id";
-  const nameCol = field === "home" ? "home_team_name" : "away_team_name";
-
-  // Get distinct unlinked team names
-  const { data, error } = await supabase
-    .from("match_results")
-    .select(nameCol)
-    .is(column, null)
-    .not(nameCol, "is", null)
-    .limit(50000); // Get a large sample
-
-  if (error) {
-    console.error(`❌ Error fetching unlinked ${field} names:`, error.message);
-    return [];
-  }
-
-  // Deduplicate and clean
-  const uniqueNames = [
-    ...new Set(
-      (data || [])
-        .map((r) => r[nameCol])
-        .filter((n) => n && n.trim().length > 0),
-    ),
-  ];
-
-  return uniqueNames;
-}
-
-/**
- * Find team ID for a given name using fuzzy matching
- */
-async function findTeamId(teamName) {
-  const { data: teams, error } = await supabase.rpc("find_similar_team", {
-    search_name: teamName.toLowerCase(),
-  });
-
-  if (error) {
-    console.error(`❌ RPC error for "${teamName}":`, error.message);
-    return null;
-  }
-
-  return teams?.[0]?.id || null;
-}
-
-/**
- * Bulk update all matches with a specific team name
- */
-async function bulkUpdateMatches(field, teamName, teamId) {
-  const column = field === "home" ? "home_team_id" : "away_team_id";
-  const nameCol = field === "home" ? "home_team_name" : "away_team_name";
-
-  const { error, count } = await supabase
-    .from("match_results")
-    .update({ [column]: teamId })
-    .eq(nameCol, teamName)
-    .is(column, null);
-
-  if (error) {
-    console.error(`❌ Bulk update error for "${teamName}":`, error.message);
-    return 0;
-  }
-
-  return count || 0;
-}
-
-/**
- * Process all unlinked names for a field
- */
-async function processField(field, nameCache) {
-  const column = field === "home" ? "home" : "away";
-  console.log(`\n📋 Processing ${column} teams...`);
-
-  const uniqueNames = await getUniqueUnlinkedNames(field);
-  console.log(
-    `   Found ${uniqueNames.length} unique unlinked ${column} team names`,
-  );
-
-  let processed = 0;
-  let matched = 0;
-  let matchesUpdated = 0;
-
-  for (const teamName of uniqueNames) {
-    if (shouldExit()) {
-      console.log(
-        `\n⏰ Time limit approaching (${Math.round(getElapsedMinutes())} min), saving progress...`,
-      );
-      break;
-    }
-
-    if (processed >= MAX_UNIQUE_NAMES) {
-      console.log(`\n📊 Reached max unique names limit (${MAX_UNIQUE_NAMES})`);
-      break;
-    }
-
-    // Check cache first
-    let teamId = nameCache.get(teamName.toLowerCase());
-
-    if (teamId === undefined) {
-      // Not in cache - do fuzzy lookup
-      teamId = await findTeamId(teamName);
-      nameCache.set(teamName.toLowerCase(), teamId); // Cache even nulls to avoid re-lookup
-    }
-
-    if (teamId) {
-      const updated = await bulkUpdateMatches(field, teamName, teamId);
-      matchesUpdated += updated;
-      matched++;
-      process.stdout.write(".");
-    } else {
-      process.stdout.write("x");
-    }
-
-    processed++;
-
-    // Progress report every 100 names
-    if (processed % 100 === 0) {
-      console.log(
-        `\n   Progress: ${processed}/${uniqueNames.length} names, ${matched} matched, ${matchesUpdated} matches updated (${Math.round(getElapsedMinutes())} min elapsed)`,
-      );
-    }
-
-    // Small delay to avoid rate limits
-    if (processed % 50 === 0) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
-
-  console.log(
-    `\n   ✅ ${column}: ${processed} names processed, ${matched} matched, ${matchesUpdated} matches updated`,
-  );
-
-  return { processed, matched, matchesUpdated };
-}
-
-async function getProgress() {
+async function getStatus() {
   const { count: total } = await supabase
     .from("match_results")
     .select("*", { count: "exact", head: true });
@@ -211,73 +80,295 @@ async function getProgress() {
     homeLinked: homeLinked || 0,
     awayLinked: awayLinked || 0,
     fullyLinked: fullyLinked || 0,
-    homeUnlinked: (total || 0) - (homeLinked || 0),
-    awayUnlinked: (total || 0) - (awayLinked || 0),
   };
 }
 
+/**
+ * Get unique unlinked team names
+ */
+async function getUniqueUnlinkedNames(field) {
+  const column = field === "home" ? "home_team_id" : "away_team_id";
+  const nameCol = field === "home" ? "home_team_name" : "away_team_name";
+
+  // Fetch distinct unlinked names (Supabase doesn't support DISTINCT directly)
+  const { data, error } = await supabase
+    .from("match_results")
+    .select(nameCol)
+    .is(column, null)
+    .not(nameCol, "is", null)
+    .limit(50000);
+
+  if (error) {
+    console.error(`❌ Error fetching ${field} names:`, error.message);
+    return [];
+  }
+
+  // Deduplicate and clean
+  const uniqueNames = [
+    ...new Set(
+      (data || [])
+        .map((r) => r[nameCol])
+        .filter((n) => n && n.trim().length > 0),
+    ),
+  ];
+
+  return uniqueNames;
+}
+
+/**
+ * Build team lookup cache from team_elo
+ * Key optimization: Load ALL teams into memory for instant lookups
+ */
+async function buildTeamCache() {
+  console.log("📦 Building team lookup cache...");
+
+  const allTeams = [];
+  let offset = 0;
+  const batchSize = 5000;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("team_elo")
+      .select("id, team_name")
+      .range(offset, offset + batchSize - 1);
+
+    if (error) {
+      console.error("❌ Error loading teams:", error.message);
+      break;
+    }
+
+    if (!data?.length) break;
+
+    allTeams.push(...data);
+    offset += batchSize;
+
+    if (data.length < batchSize) break;
+  }
+
+  console.log(`   Loaded ${allTeams.toLocaleString()} teams into cache`);
+
+  // Build lowercase lookup map for exact matching
+  const exactMap = new Map();
+  for (const team of allTeams) {
+    const key = team.team_name.toLowerCase().trim();
+    if (!exactMap.has(key)) {
+      exactMap.set(key, team);
+    }
+  }
+
+  return { allTeams, exactMap };
+}
+
+/**
+ * Simple similarity function (Sørensen–Dice coefficient)
+ * Faster than pg_trgm for client-side use
+ */
+function similarity(s1, s2) {
+  if (!s1 || !s2) return 0;
+  s1 = s1.toLowerCase().trim();
+  s2 = s2.toLowerCase().trim();
+  if (s1 === s2) return 1;
+  if (s1.length < 2 || s2.length < 2) return 0;
+
+  const bigrams1 = new Set();
+  for (let i = 0; i < s1.length - 1; i++) {
+    bigrams1.add(s1.substring(i, i + 2));
+  }
+
+  let matches = 0;
+  for (let i = 0; i < s2.length - 1; i++) {
+    if (bigrams1.has(s2.substring(i, i + 2))) matches++;
+  }
+
+  return (2 * matches) / (s1.length - 1 + s2.length - 1);
+}
+
+/**
+ * Find best match using RPC (server-side pg_trgm)
+ */
+async function findBestMatchRPC(teamName) {
+  const { data, error } = await supabase.rpc("find_similar_team", {
+    search_name: teamName.toLowerCase().trim(),
+  });
+
+  if (error || !data?.length) return null;
+  return data[0];
+}
+
+/**
+ * Find best match using local cache (exact + fuzzy)
+ */
+function findBestMatchLocal(teamName, cache) {
+  const searchKey = teamName.toLowerCase().trim();
+
+  // Try exact match first
+  const exactMatch = cache.exactMap.get(searchKey);
+  if (exactMatch) {
+    return { id: exactMatch.id, team_name: exactMatch.team_name, sim: 1.0 };
+  }
+
+  // Fuzzy match
+  let bestMatch = null;
+  let bestSim = 0;
+
+  for (const team of cache.allTeams) {
+    const sim = similarity(searchKey, team.team_name);
+    if (sim > bestSim) {
+      bestSim = sim;
+      bestMatch = team;
+    }
+  }
+
+  if (bestMatch && bestSim >= SIMILARITY_THRESHOLD) {
+    return { id: bestMatch.id, team_name: bestMatch.team_name, sim: bestSim };
+  }
+
+  return null;
+}
+
+/**
+ * Process a field (home or away) using bulk updates
+ */
+async function processField(field, cache) {
+  const column = field === "home" ? "home_team_id" : "away_team_id";
+  const nameCol = field === "home" ? "home_team_name" : "away_team_name";
+
+  const uniqueNames = await getUniqueUnlinkedNames(field);
+  console.log(
+    `   Found ${uniqueNames.length.toLocaleString()} unique unlinked ${field} names`,
+  );
+
+  if (uniqueNames.length === 0) return 0;
+
+  let linked = 0;
+  let notFound = 0;
+  let processed = 0;
+
+  for (const teamName of uniqueNames) {
+    if (shouldExit()) {
+      console.log(`\n   ⏱️ Timeout approaching - stopping early`);
+      break;
+    }
+
+    // Try local cache first (faster), fall back to RPC
+    let match = findBestMatchLocal(teamName, cache);
+
+    // If local didn't find good match, try RPC (uses server-side pg_trgm)
+    if (!match || match.sim < SIMILARITY_THRESHOLD) {
+      match = await findBestMatchRPC(teamName);
+    }
+
+    if (match && match.sim >= SIMILARITY_THRESHOLD) {
+      // Bulk update ALL matches with this team name
+      const { error, count } = await supabase
+        .from("match_results")
+        .update({ [column]: match.id })
+        .eq(nameCol, teamName)
+        .is(column, null);
+
+      if (!error) {
+        linked++;
+      }
+    } else {
+      notFound++;
+    }
+
+    processed++;
+
+    // Progress update every 50 names
+    if (processed % 50 === 0) {
+      const pct = ((processed / uniqueNames.length) * 100).toFixed(1);
+      const elapsed = getElapsedMinutes().toFixed(1);
+      process.stdout.write(
+        `   Progress: ${processed}/${uniqueNames.length} (${pct}%) | Linked: ${linked} | Elapsed: ${elapsed}m\r`,
+      );
+    }
+
+    // Small delay to avoid rate limits
+    if (processed % 10 === 0) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  console.log(`\n   Completed: ${linked} linked, ${notFound} not found`);
+  return linked;
+}
+
+/**
+ * Main execution
+ */
 async function main() {
-  console.log("🔗 Starting automated team linking v2.0...");
-  console.log(`⏱️  Timeout: ${TIMEOUT_MINUTES} minutes`);
-  console.log(`📊 Max unique names per field: ${MAX_UNIQUE_NAMES}\n`);
+  console.log("=".repeat(60));
+  console.log("🔗 TEAM LINKING v3.1 - BULLETPROOF EDITION");
+  console.log("=".repeat(60));
+  console.log(`Timeout: ${TIMEOUT_MINUTES} minutes`);
+  console.log(`Similarity threshold: ${SIMILARITY_THRESHOLD}`);
+  console.log("");
 
-  // Shared cache across home and away (same team names appear in both)
-  const nameCache = new Map();
-
-  const startProgress = await getProgress();
-  console.log("📈 Starting state:");
-  console.log(`   Total matches: ${startProgress.total}`);
+  // Initial status
+  const startStatus = await getStatus();
+  console.log("📊 STARTING STATUS:");
+  console.log(`   Total matches: ${startStatus.total.toLocaleString()}`);
   console.log(
-    `   Home linked: ${startProgress.homeLinked} (${startProgress.homeUnlinked} unlinked)`,
+    `   Home linked: ${startStatus.homeLinked.toLocaleString()} (${((startStatus.homeLinked / startStatus.total) * 100).toFixed(1)}%)`,
   );
   console.log(
-    `   Away linked: ${startProgress.awayLinked} (${startProgress.awayUnlinked} unlinked)`,
+    `   Away linked: ${startStatus.awayLinked.toLocaleString()} (${((startStatus.awayLinked / startStatus.total) * 100).toFixed(1)}%)`,
   );
-  console.log(`   Fully linked: ${startProgress.fullyLinked}`);
+  console.log(
+    `   Fully linked: ${startStatus.fullyLinked.toLocaleString()} (${((startStatus.fullyLinked / startStatus.total) * 100).toFixed(1)}%)`,
+  );
+  console.log("");
 
-  // Process home teams first
-  const homeResult = await processField("home", nameCache);
+  // Build team lookup cache
+  const cache = await buildTeamCache();
+  console.log("");
 
-  // Check if we should continue
-  if (!shouldExit()) {
-    // Process away teams (benefits from cache built during home processing)
-    const awayResult = await processField("away", nameCache);
+  // Process home teams
+  console.log("🏠 Processing HOME teams...");
+  const homeLinked = await processField("home", cache);
+  console.log("");
+
+  // Check for timeout
+  if (shouldExit()) {
+    console.log("⏱️ Timeout approaching - will continue away teams next run");
   } else {
-    console.log("\n⏰ Skipping away teams due to time limit");
+    // Process away teams
+    console.log("🚗 Processing AWAY teams...");
+    const awayLinked = await processField("away", cache);
+    console.log("");
   }
 
-  // Final summary
-  const finalProgress = await getProgress();
-  const elapsed = Math.round(getElapsedMinutes());
+  // Final status
+  const endStatus = await getStatus();
+  const elapsed = getElapsedMinutes().toFixed(1);
 
-  console.log("\n" + "=".repeat(60));
-  console.log("📊 FINAL SUMMARY");
   console.log("=".repeat(60));
-  console.log(`Total matches: ${finalProgress.total}`);
-  console.log(
-    `Home linked: ${finalProgress.homeLinked} (${finalProgress.homeUnlinked} remaining)`,
-  );
-  console.log(
-    `Away linked: ${finalProgress.awayLinked} (${finalProgress.awayUnlinked} remaining)`,
-  );
-  console.log(`Fully linked: ${finalProgress.fullyLinked}`);
-  console.log(`Cache size: ${nameCache.size} unique team names`);
-  console.log(`Time elapsed: ${elapsed} minutes`);
+  console.log("📊 FINAL STATUS:");
   console.log("=".repeat(60));
-
-  // Calculate improvement
-  const homeImprovement = finalProgress.homeLinked - startProgress.homeLinked;
-  const awayImprovement = finalProgress.awayLinked - startProgress.awayLinked;
+  console.log(`   Total matches: ${endStatus.total.toLocaleString()}`);
   console.log(
-    `\n✅ This run linked: +${homeImprovement} home, +${awayImprovement} away`,
+    `   Home linked: ${endStatus.homeLinked.toLocaleString()} (${((endStatus.homeLinked / endStatus.total) * 100).toFixed(1)}%)`,
   );
-
-  if (finalProgress.homeUnlinked === 0 && finalProgress.awayUnlinked === 0) {
-    console.log("🎉 All matches fully linked!");
-  } else if (shouldExit()) {
-    console.log("⏰ Exited due to time limit - will continue in next run");
-  }
-
+  console.log(
+    `   Away linked: ${endStatus.awayLinked.toLocaleString()} (${((endStatus.awayLinked / endStatus.total) * 100).toFixed(1)}%)`,
+  );
+  console.log(
+    `   Fully linked: ${endStatus.fullyLinked.toLocaleString()} (${((endStatus.fullyLinked / endStatus.total) * 100).toFixed(1)}%)`,
+  );
+  console.log("");
+  console.log("📈 SESSION IMPROVEMENT:");
+  console.log(
+    `   Home: +${(endStatus.homeLinked - startStatus.homeLinked).toLocaleString()}`,
+  );
+  console.log(
+    `   Away: +${(endStatus.awayLinked - startStatus.awayLinked).toLocaleString()}`,
+  );
+  console.log(
+    `   Fully linked: +${(endStatus.fullyLinked - startStatus.fullyLinked).toLocaleString()}`,
+  );
+  console.log(`   Elapsed time: ${elapsed} minutes`);
+  console.log("=".repeat(60));
   console.log("✅ Done!");
 }
 

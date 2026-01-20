@@ -2,6 +2,7 @@ name: Daily GotSport Data Sync
 
 on:
   schedule:
+    # Run daily at 6 AM UTC (1 AM EST)
     - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
@@ -14,10 +15,10 @@ on:
           - full
           - matches_only
           - linking_only
-      link_max_records:
-        description: "Max records to link (default 2000)"
+      similarity_threshold:
+        description: "Similarity threshold for fuzzy matching (0.3-0.8)"
         required: false
-        default: "2000"
+        default: "0.4"
         type: string
 
 jobs:
@@ -25,6 +26,7 @@ jobs:
     name: Sync Match Results
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.sync_type != 'linking_only' }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,13 +38,14 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/syncActiveEvents.js
-        timeout-minutes: 60
+        timeout-minutes: 45
 
   link-teams:
     name: Link Teams to Matches
     runs-on: ubuntu-latest
     needs: sync-matches
-    if: ${{ always() && github.event.inputs.sync_type != 'matches_only' }}
+    if: ${{ always() && github.event.inputs.sync_type != 'matches_only' && (needs.sync-matches.result == 'success' || needs.sync-matches.result == 'skipped') }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,5 +56,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/linkTeams.js --max=${{ github.event.inputs.link_max_records || '2000' }}
-        timeout-minutes: 45
+        run: |
+          node scripts/linkTeams.js \
+            --timeout=40 \
+            --threshold=${{ github.event.inputs.similarity_threshold || '0.4' }}
