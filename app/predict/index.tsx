@@ -6,8 +6,8 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Dimensions,
   FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -70,6 +70,24 @@ const STATES = [
   "MN",
   "KS",
 ];
+
+// ============================================================
+// FACTOR HELP TEXT - Explains what each analytical factor means
+// ============================================================
+const FACTOR_HELP: Record<string, string> = {
+  "ELO Rating":
+    "Team's overall strength rating. Higher = stronger team historically.",
+  "Goal Diff":
+    "Average goal differential per match. Positive means team scores more than they concede.",
+  "Win Rate":
+    "Percentage of matches won. Higher win rate = more consistent winner.",
+  "Head-to-Head":
+    "Historical performance when these two teams have played each other.",
+  Strength: "Combined measure of offensive and defensive capabilities.",
+  Form: "Recent performance trend over last 5-10 matches.",
+  "Home Advantage":
+    "Boost for playing at home venue (typically 3-5% advantage).",
+};
 
 type TeamSelectorModalProps = {
   visible: boolean;
@@ -320,45 +338,39 @@ function TeamSelectorModal({
                 ))}
               </ScrollView>
             </View>
-            {(selectedAgeGroup !== "All" ||
-              selectedGender !== "All" ||
-              selectedState !== "All") && (
-              <TouchableOpacity
-                style={styles.clearFiltersButton}
-                onPress={clearFilters}
-              >
-                <Text style={styles.clearFiltersText}>Clear Filters</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.clearFiltersButton}
+              onPress={clearFilters}
+            >
+              <Text style={styles.clearFiltersText}>Clear Filters</Text>
+            </TouchableOpacity>
           </View>
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#3B82F6" />
             </View>
-          ) : (
+          ) : results.length > 0 ? (
             <FlatList
               data={results}
               renderItem={renderTeamItem}
               keyExtractor={(item) => item.id}
               style={styles.resultsList}
-              keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
-              onScrollBeginDrag={() => Keyboard.dismiss()}
-              ListEmptyComponent={
-                searchQuery.length >= 2 ? (
-                  <View style={styles.emptyResults}>
-                    <Text style={styles.emptyResultsText}>No teams found</Text>
-                  </View>
-                ) : (
-                  <View style={styles.emptyResults}>
-                    <Ionicons name="search" size={48} color="#374151" />
-                    <Text style={styles.emptyResultsText}>
-                      Type at least 2 characters
-                    </Text>
-                  </View>
-                )
-              }
             />
+          ) : searchQuery.length >= 2 ? (
+            <View style={styles.emptyResults}>
+              <Ionicons name="search-outline" size={48} color="#374151" />
+              <Text style={styles.emptyResultsText}>
+                No teams found matching "{searchQuery}"
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.emptyResults}>
+              <Ionicons name="search-outline" size={48} color="#374151" />
+              <Text style={styles.emptyResultsText}>
+                Type at least 2 characters
+              </Text>
+            </View>
           )}
         </View>
       </KeyboardAvoidingView>
@@ -366,8 +378,14 @@ function TeamSelectorModal({
   );
 }
 
+// ============================================================
+// MAIN PREDICT SCREEN
+// ============================================================
+
 export default function PredictScreen() {
-  const params = useLocalSearchParams<{ teamId?: string }>();
+  const params = useLocalSearchParams();
+  const scoreAnim = useRef(new Animated.Value(0)).current;
+
   const [homeTeam, setHomeTeam] = useState<TeamData | null>(null);
   const [awayTeam, setAwayTeam] = useState<TeamData | null>(null);
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
@@ -380,24 +398,31 @@ export default function PredictScreen() {
   const [whatIfAwayBoost, setWhatIfAwayBoost] = useState(0);
   const [showUserPrediction, setShowUserPrediction] = useState(false);
   const [userPredictionSubmitted, setUserPredictionSubmitted] = useState(false);
-  const scoreAnim = useRef(new Animated.Value(0)).current;
 
+  // Help modals
+  const [showFactorsHelp, setShowFactorsHelp] = useState(false);
+  const [showWhatIfHelp, setShowWhatIfHelp] = useState(false);
+
+  // Load team from params if provided
   useEffect(() => {
-    if (params.teamId) loadTeamById(params.teamId);
+    const loadTeamFromParams = async () => {
+      if (params.teamId && typeof params.teamId === "string") {
+        try {
+          const { data, error } = await supabase
+            .from("team_elo")
+            .select("*")
+            .eq("id", params.teamId)
+            .single();
+          if (!error && data) {
+            setHomeTeam(data as TeamData);
+          }
+        } catch (err) {
+          console.error("Error loading team:", err);
+        }
+      }
+    };
+    loadTeamFromParams();
   }, [params.teamId]);
-
-  const loadTeamById = async (teamId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("team_elo")
-        .select("*")
-        .eq("id", teamId)
-        .single();
-      if (data && !error) setHomeTeam(data as TeamData);
-    } catch (err) {
-      console.error("Error loading team:", err);
-    }
-  };
 
   useEffect(() => {
     if (homeTeam && awayTeam) runPrediction();
@@ -408,7 +433,6 @@ export default function PredictScreen() {
     if (!homeTeam || !awayTeam) return;
     setLoading(true);
     scoreAnim.setValue(0);
-    // Reset user prediction state when new teams are selected
     setUserPredictionSubmitted(false);
     try {
       const result = await generatePrediction(homeTeam, awayTeam);
@@ -485,8 +509,10 @@ export default function PredictScreen() {
     setUserPredictionSubmitted(true);
   };
 
-  const getShortTeamName = (name: string, maxLen = 16) =>
+  // Longer team name for display (20 chars)
+  const getDisplayTeamName = (name: string, maxLen = 20) =>
     name.length <= maxLen ? name : name.substring(0, maxLen - 1) + "…";
+
   const getConfidenceColor = (c: string) => {
     switch (c) {
       case "Very High":
@@ -500,6 +526,16 @@ export default function PredictScreen() {
       default:
         return "#6b7280";
     }
+  };
+
+  // Filter out "Awards" factor if impact is 0 (not useful)
+  const getDisplayFactors = () => {
+    if (!prediction) return [];
+    return prediction.factors.filter((f) => {
+      // Remove Awards if it's 0 or very small
+      if (f.name === "Awards" && Math.abs(f.impact) < 0.01) return false;
+      return true;
+    });
   };
 
   return (
@@ -528,10 +564,12 @@ export default function PredictScreen() {
           />
         </TouchableOpacity>
       </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Team Selection Cards */}
         <View style={styles.teamsContainer}>
           <TouchableOpacity
             style={[styles.teamCard, homeTeam && styles.teamCardSelected]}
@@ -583,12 +621,16 @@ export default function PredictScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Loading State */}
         {loading && (
           <View style={styles.loadingPrediction}>
             <ActivityIndicator size="large" color="#3B82F6" />
             <Text style={styles.loadingText}>Calculating prediction...</Text>
           </View>
         )}
+
+        {/* Prediction Results */}
         {prediction && !loading && (
           <Animated.View
             style={[
@@ -606,21 +648,24 @@ export default function PredictScreen() {
               },
             ]}
           >
+            {/* Predicted Score */}
             <View style={styles.scoreContainer}>
               <Text style={styles.scoreLabel}>Predicted Score</Text>
               <View style={styles.scoreRow}>
-                <Text style={styles.scoreTeam}>
-                  {getShortTeamName(homeTeam?.team_name || "", 12)}
+                <Text style={styles.scoreTeam} numberOfLines={1}>
+                  {getDisplayTeamName(homeTeam?.team_name || "", 12)}
                 </Text>
                 <Text style={styles.scoreValue}>
                   {prediction.predictedHomeScore} -{" "}
                   {prediction.predictedAwayScore}
                 </Text>
-                <Text style={styles.scoreTeam}>
-                  {getShortTeamName(awayTeam?.team_name || "", 12)}
+                <Text style={styles.scoreTeam} numberOfLines={1}>
+                  {getDisplayTeamName(awayTeam?.team_name || "", 12)}
                 </Text>
               </View>
             </View>
+
+            {/* Win Probability - DYNAMIC ALIGNMENT */}
             <View style={styles.probabilityContainer}>
               <Text style={styles.probabilityLabel}>Win Probability</Text>
               <View style={styles.probabilityBar}>
@@ -652,23 +697,31 @@ export default function PredictScreen() {
                   ]}
                 />
               </View>
-              <View style={styles.probabilityLabels}>
-                <Text style={[styles.probLabel, { color: "#22c55e" }]}>
-                  {Math.round(prediction.homeWinProbability * 100)}%
-                </Text>
-                <Text style={[styles.probLabel, { color: "#f59e0b" }]}>
-                  {Math.round(prediction.drawProbability * 100)}%
-                </Text>
-                <Text style={[styles.probLabel, { color: "#3B82F6" }]}>
-                  {Math.round(prediction.awayWinProbability * 100)}%
-                </Text>
-              </View>
-              <View style={styles.probabilityLabels}>
-                <Text style={styles.probTeamLabel}>Win</Text>
-                <Text style={styles.probTeamLabel}>Draw</Text>
-                <Text style={styles.probTeamLabel}>Win</Text>
+
+              {/* FIXED: Percentage labels with proper spacing */}
+              <View style={styles.probabilityLabelsRow}>
+                <View style={styles.probLabelWrapper}>
+                  <Text style={[styles.probPercent, { color: "#22c55e" }]}>
+                    {Math.round(prediction.homeWinProbability * 100)}%
+                  </Text>
+                  <Text style={styles.probTeamLabel}>Win</Text>
+                </View>
+                <View style={styles.probLabelWrapper}>
+                  <Text style={[styles.probPercent, { color: "#f59e0b" }]}>
+                    {Math.round(prediction.drawProbability * 100)}%
+                  </Text>
+                  <Text style={styles.probTeamLabel}>Draw</Text>
+                </View>
+                <View style={styles.probLabelWrapper}>
+                  <Text style={[styles.probPercent, { color: "#3B82F6" }]}>
+                    {Math.round(prediction.awayWinProbability * 100)}%
+                  </Text>
+                  <Text style={styles.probTeamLabel}>Win</Text>
+                </View>
               </View>
             </View>
+
+            {/* Confidence */}
             <View style={styles.confidenceContainer}>
               <Text style={styles.confidenceLabel}>Confidence</Text>
               <Text
@@ -680,22 +733,38 @@ export default function PredictScreen() {
                 {prediction.confidence}
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.toggleButton}
-              onPress={() => setShowFactors(!showFactors)}
-            >
-              <Text style={styles.toggleButtonText}>
-                {showFactors ? "Hide" : "Show"} Analytical Factors
-              </Text>
-              <Ionicons
-                name={showFactors ? "chevron-up" : "chevron-down"}
-                size={20}
-                color="#3B82F6"
-              />
-            </TouchableOpacity>
+
+            {/* Analytical Factors Toggle */}
+            <View style={styles.toggleRow}>
+              <TouchableOpacity
+                style={styles.toggleButton}
+                onPress={() => setShowFactors(!showFactors)}
+              >
+                <Text style={styles.toggleButtonText}>
+                  {showFactors ? "Hide" : "Show"} Analytical Factors
+                </Text>
+                <Ionicons
+                  name={showFactors ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color="#3B82F6"
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.helpButton}
+                onPress={() => setShowFactorsHelp(true)}
+              >
+                <Ionicons
+                  name="help-circle-outline"
+                  size={22}
+                  color="#6b7280"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* FIXED: Analytical Factors with wider percentage column */}
             {showFactors && (
               <View style={styles.factorsContainer}>
-                {prediction.factors.map((f, i) => (
+                {getDisplayFactors().map((f, i) => (
                   <View key={i} style={styles.factorRow}>
                     <Text style={styles.factorName}>{f.name}</Text>
                     <View style={styles.factorBarContainer}>
@@ -703,14 +772,14 @@ export default function PredictScreen() {
                         style={[
                           styles.factorBar,
                           {
-                            width: `${Math.abs(f.impact) * 100}%`,
+                            width: `${Math.min(Math.abs(f.impact) * 100, 100)}%`,
                             backgroundColor:
                               f.impact > 0 ? "#22c55e" : "#ef4444",
                           },
                         ]}
                       />
                     </View>
-                    <Text style={styles.factorValue}>
+                    <Text style={styles.factorValue} numberOfLines={1}>
                       {f.impact > 0 ? "+" : ""}
                       {(f.impact * 100).toFixed(0)}%
                     </Text>
@@ -718,60 +787,121 @@ export default function PredictScreen() {
                 ))}
               </View>
             )}
-            <TouchableOpacity
-              style={styles.toggleButton}
-              onPress={() => setShowWhatIf(!showWhatIf)}
-            >
-              <Text style={styles.toggleButtonText}>🎲 What If Scenarios</Text>
-              <Ionicons
-                name={showWhatIf ? "chevron-up" : "chevron-down"}
-                size={20}
-                color="#f59e0b"
-              />
-            </TouchableOpacity>
+
+            {/* What If Scenarios Toggle */}
+            <View style={styles.toggleRow}>
+              <TouchableOpacity
+                style={styles.toggleButton}
+                onPress={() => setShowWhatIf(!showWhatIf)}
+              >
+                <Text style={[styles.toggleButtonText, { color: "#f59e0b" }]}>
+                  🎲 What If Scenarios
+                </Text>
+                <Ionicons
+                  name={showWhatIf ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color="#f59e0b"
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.helpButton}
+                onPress={() => setShowWhatIfHelp(true)}
+              >
+                <Ionicons
+                  name="help-circle-outline"
+                  size={22}
+                  color="#6b7280"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* FIXED: What If Sliders with inline percentage */}
             {showWhatIf && (
               <View style={styles.whatIfContainer}>
                 <Text style={styles.whatIfDescription}>
                   Adjust team performance to see how the prediction changes
                 </Text>
+
+                {/* Home Team Slider */}
                 <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    {getShortTeamName(homeTeam?.team_name || "", 15)} Boost
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={-20}
-                    maximumValue={20}
-                    value={whatIfHomeBoost}
-                    onValueChange={setWhatIfHomeBoost}
-                    minimumTrackTintColor="#22c55e"
-                    maximumTrackTintColor="#374151"
-                    thumbTintColor="#22c55e"
-                  />
-                  <Text style={styles.sliderValue}>
-                    {whatIfHomeBoost > 0 ? "+" : ""}
-                    {Math.round(whatIfHomeBoost)}%
-                  </Text>
+                  <View style={styles.sliderLabelRow}>
+                    <View
+                      style={[
+                        styles.sliderTeamDot,
+                        { backgroundColor: "#22c55e" },
+                      ]}
+                    />
+                    <Text style={styles.sliderTeamName} numberOfLines={1}>
+                      {homeTeam?.team_name || "Team A"}
+                    </Text>
+                  </View>
+                  {/* FIXED: Clean slider with just percentage at end */}
+                  <View style={styles.sliderRow}>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={-20}
+                      maximumValue={20}
+                      value={whatIfHomeBoost}
+                      onValueChange={setWhatIfHomeBoost}
+                      minimumTrackTintColor="#22c55e"
+                      maximumTrackTintColor="#374151"
+                      thumbTintColor="#22c55e"
+                    />
+                    <Text
+                      style={[
+                        styles.sliderValueInline,
+                        whatIfHomeBoost !== 0 && {
+                          color: whatIfHomeBoost > 0 ? "#22c55e" : "#ef4444",
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {whatIfHomeBoost > 0 ? "+" : ""}
+                      {Math.round(whatIfHomeBoost)}%
+                    </Text>
+                  </View>
                 </View>
+
+                {/* Away Team Slider */}
                 <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    {getShortTeamName(awayTeam?.team_name || "", 15)} Boost
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={-20}
-                    maximumValue={20}
-                    value={whatIfAwayBoost}
-                    onValueChange={setWhatIfAwayBoost}
-                    minimumTrackTintColor="#3B82F6"
-                    maximumTrackTintColor="#374151"
-                    thumbTintColor="#3B82F6"
-                  />
-                  <Text style={styles.sliderValue}>
-                    {whatIfAwayBoost > 0 ? "+" : ""}
-                    {Math.round(whatIfAwayBoost)}%
-                  </Text>
+                  <View style={styles.sliderLabelRow}>
+                    <View
+                      style={[
+                        styles.sliderTeamDot,
+                        { backgroundColor: "#3B82F6" },
+                      ]}
+                    />
+                    <Text style={styles.sliderTeamName} numberOfLines={1}>
+                      {awayTeam?.team_name || "Team B"}
+                    </Text>
+                  </View>
+                  {/* FIXED: Clean slider with just percentage at end */}
+                  <View style={styles.sliderRow}>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={-20}
+                      maximumValue={20}
+                      value={whatIfAwayBoost}
+                      onValueChange={setWhatIfAwayBoost}
+                      minimumTrackTintColor="#3B82F6"
+                      maximumTrackTintColor="#374151"
+                      thumbTintColor="#3B82F6"
+                    />
+                    <Text
+                      style={[
+                        styles.sliderValueInline,
+                        whatIfAwayBoost !== 0 && {
+                          color: whatIfAwayBoost > 0 ? "#22c55e" : "#ef4444",
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {whatIfAwayBoost > 0 ? "+" : ""}
+                      {Math.round(whatIfAwayBoost)}%
+                    </Text>
+                  </View>
                 </View>
+
                 <TouchableOpacity
                   style={styles.resetWhatIfButton}
                   onPress={() => {
@@ -784,7 +914,7 @@ export default function PredictScreen() {
               </View>
             )}
 
-            {/* USER PREDICTION SECTION */}
+            {/* User Prediction Section */}
             <View style={styles.userPredictionSection}>
               <View style={styles.userPredictionDivider} />
               {userPredictionSubmitted ? (
@@ -840,6 +970,8 @@ export default function PredictScreen() {
             </TouchableOpacity>
           </Animated.View>
         )}
+
+        {/* Empty State */}
         {!prediction && !loading && (
           <View style={styles.emptyState}>
             <Ionicons name="analytics-outline" size={64} color="#374151" />
@@ -854,15 +986,17 @@ export default function PredictScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Team Selector Modals */}
       <TeamSelectorModal
         visible={showHomeSelector}
         onClose={() => setShowHomeSelector(false)}
         onSelect={setHomeTeam}
         excludeTeamId={awayTeam?.id}
         title="Select Team A"
-        suggestedAgeGroup={awayTeam?.age_group || undefined}
-        suggestedGender={awayTeam?.gender || undefined}
-        suggestedState={awayTeam?.state || undefined}
+        suggestedAgeGroup={awayTeam?.age_group ?? undefined}
+        suggestedGender={awayTeam?.gender ?? undefined}
+        suggestedState={awayTeam?.state ?? undefined}
       />
       <TeamSelectorModal
         visible={showAwaySelector}
@@ -870,9 +1004,9 @@ export default function PredictScreen() {
         onSelect={setAwayTeam}
         excludeTeamId={homeTeam?.id}
         title="Select Opponent"
-        suggestedAgeGroup={homeTeam?.age_group || undefined}
-        suggestedGender={homeTeam?.gender || undefined}
-        suggestedState={homeTeam?.state || undefined}
+        suggestedAgeGroup={homeTeam?.age_group ?? undefined}
+        suggestedGender={homeTeam?.gender ?? undefined}
+        suggestedState={homeTeam?.state ?? undefined}
       />
 
       {/* User Prediction Modal */}
@@ -881,13 +1015,13 @@ export default function PredictScreen() {
           visible={showUserPrediction}
           onClose={() => setShowUserPrediction(false)}
           teamA={{
-            name: homeTeam.team_name,
+            name: homeTeam.team_name || "",
             state: homeTeam.state ?? undefined,
             ageGroup: homeTeam.age_group ?? undefined,
             gender: homeTeam.gender ?? undefined,
           }}
           teamB={{
-            name: awayTeam.team_name,
+            name: awayTeam.team_name || "",
             state: awayTeam.state ?? undefined,
             ageGroup: awayTeam.age_group ?? undefined,
             gender: awayTeam.gender ?? undefined,
@@ -895,9 +1029,140 @@ export default function PredictScreen() {
           onPredictionSubmitted={handleUserPredictionSubmitted}
         />
       )}
+
+      {/* FIXED: Analytical Factors Help Modal - Restructured for proper scrolling */}
+      <Modal
+        visible={showFactorsHelp}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFactorsHelp(false)}
+      >
+        <View style={styles.helpModalOverlay}>
+          {/* Tap outside to close - positioned behind content */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowFactorsHelp(false)}
+          />
+          {/* Modal content - sits on top, doesn't block scroll */}
+          <View
+            style={[
+              styles.helpModalContent,
+              { height: Dimensions.get("window").height * 0.7 },
+            ]}
+          >
+            <View style={styles.helpModalHeader}>
+              <Text style={styles.helpModalTitle}>📊 Analytical Factors</Text>
+              <TouchableOpacity onPress={() => setShowFactorsHelp(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 32,
+              }}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+            >
+              <Text style={styles.helpModalDescription}>
+                These factors show how each metric influences the prediction.
+                Green bars favor Team A, red bars favor Team B.
+              </Text>
+              {Object.entries(FACTOR_HELP).map(([name, desc]) => (
+                <View key={name} style={styles.helpFactorItem}>
+                  <Text style={styles.helpFactorName}>{name}</Text>
+                  <Text style={styles.helpFactorDesc}>{desc}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FIXED: What If Help Modal - Restructured for proper scrolling */}
+      <Modal
+        visible={showWhatIfHelp}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowWhatIfHelp(false)}
+      >
+        <View style={styles.helpModalOverlay}>
+          {/* Tap outside to close - positioned behind content */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowWhatIfHelp(false)}
+          />
+          {/* Modal content - sits on top, doesn't block scroll */}
+          <View
+            style={[
+              styles.helpModalContent,
+              { height: Dimensions.get("window").height * 0.7 },
+            ]}
+          >
+            <View style={styles.helpModalHeader}>
+              <Text style={styles.helpModalTitle}>🎲 What If Scenarios</Text>
+              <TouchableOpacity onPress={() => setShowWhatIfHelp(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 32,
+              }}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+            >
+              <Text style={styles.helpModalDescription}>
+                Explore hypothetical scenarios by boosting or reducing each
+                team's performance:
+              </Text>
+              <View style={styles.helpBulletItem}>
+                <Text style={styles.helpBullet}>•</Text>
+                <Text style={styles.helpBulletText}>
+                  <Text style={{ color: "#22c55e", fontWeight: "600" }}>
+                    +20%
+                  </Text>{" "}
+                  = Team playing at peak performance (hot streak, key players
+                  healthy)
+                </Text>
+              </View>
+              <View style={styles.helpBulletItem}>
+                <Text style={styles.helpBullet}>•</Text>
+                <Text style={styles.helpBulletText}>
+                  <Text style={{ color: "#ef4444", fontWeight: "600" }}>
+                    -20%
+                  </Text>{" "}
+                  = Team underperforming (injuries, fatigue, off day)
+                </Text>
+              </View>
+              <View style={styles.helpBulletItem}>
+                <Text style={styles.helpBullet}>•</Text>
+                <Text style={styles.helpBulletText}>
+                  <Text style={{ fontWeight: "600" }}>0%</Text> = Team plays at
+                  their expected level
+                </Text>
+              </View>
+              <Text style={[styles.helpModalDescription, { marginTop: 16 }]}>
+                The prediction updates in real-time as you adjust the sliders!
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+// ============================================================
+// STYLES
+// ============================================================
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
@@ -918,12 +1183,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
   shareButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(16,185,129,0.15)",
+    backgroundColor: "#1F2937",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -936,14 +1201,14 @@ const styles = StyleSheet.create({
   },
   teamCard: {
     flex: 1,
-    backgroundColor: "#111",
+    backgroundColor: "#1F2937",
     borderRadius: 16,
     padding: 16,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 140,
+    minHeight: 120,
     borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "transparent",
   },
   teamCardSelected: { borderColor: "#3B82F6" },
   teamCardName: {
@@ -953,16 +1218,16 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 4,
   },
-  teamCardMeta: { color: "#9ca3af", fontSize: 12, marginBottom: 8 },
-  teamCardElo: { color: "#3B82F6", fontSize: 16, fontWeight: "700" },
+  teamCardMeta: { color: "#9ca3af", fontSize: 12, marginBottom: 4 },
+  teamCardElo: { color: "#3B82F6", fontSize: 16, fontWeight: "bold" },
   teamCardPlaceholder: { color: "#6b7280", fontSize: 14, marginTop: 8 },
-  vsContainer: { width: 50, alignItems: "center" },
-  vsText: { color: "#f59e0b", fontSize: 18, fontWeight: "bold" },
+  vsContainer: { paddingHorizontal: 12 },
+  vsText: { color: "#6b7280", fontSize: 16, fontWeight: "600" },
   loadingPrediction: { alignItems: "center", paddingVertical: 40 },
   loadingText: { color: "#9ca3af", fontSize: 14, marginTop: 12 },
   predictionContainer: {
     backgroundColor: "#111",
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
@@ -992,14 +1257,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   probabilitySegment: { height: "100%" },
-  probabilityLabels: { flexDirection: "row", justifyContent: "space-between" },
-  probLabel: { fontSize: 14, fontWeight: "600", flex: 1, textAlign: "center" },
+
+  // FIXED PROBABILITY LABELS - proper spacing
+  probabilityLabelsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+  },
+  probLabelWrapper: {
+    alignItems: "center",
+    minWidth: 60,
+  },
+  probPercent: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
   probTeamLabel: {
     color: "#6b7280",
     fontSize: 11,
-    flex: 1,
-    textAlign: "center",
+    marginTop: 2,
   },
+
   confidenceContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1011,14 +1289,26 @@ const styles = StyleSheet.create({
   },
   confidenceLabel: { color: "#9ca3af", fontSize: 14 },
   confidenceValue: { fontSize: 16, fontWeight: "600" },
+
+  // Toggle with help button
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   toggleButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
     gap: 8,
+    flex: 1,
   },
   toggleButtonText: { color: "#3B82F6", fontSize: 14, fontWeight: "600" },
+  helpButton: {
+    padding: 8,
+  },
+
   factorsContainer: {
     marginTop: 12,
     paddingTop: 12,
@@ -1026,7 +1316,7 @@ const styles = StyleSheet.create({
     borderTopColor: "rgba(255,255,255,0.1)",
   },
   factorRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  factorName: { color: "#9ca3af", fontSize: 12, width: 100 },
+  factorName: { color: "#9ca3af", fontSize: 12, width: 90 },
   factorBarContainer: {
     flex: 1,
     height: 8,
@@ -1035,7 +1325,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   factorBar: { height: "100%", borderRadius: 4 },
-  factorValue: { color: "#fff", fontSize: 12, width: 45, textAlign: "right" },
+  // FIXED: Wider width for percentage to prevent wrapping
+  factorValue: { color: "#fff", fontSize: 12, width: 50, textAlign: "right" },
+
   whatIfContainer: {
     marginTop: 12,
     paddingTop: 12,
@@ -1048,10 +1340,38 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 16,
   },
-  sliderContainer: { marginBottom: 16 },
-  sliderLabel: { color: "#fff", fontSize: 13, marginBottom: 8 },
-  slider: { width: "100%", height: 40 },
-  sliderValue: { color: "#9ca3af", fontSize: 12, textAlign: "center" },
+  sliderContainer: { marginBottom: 20 },
+  sliderLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 8,
+  },
+  sliderTeamDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  sliderTeamName: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+  },
+  sliderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  slider: { flex: 1, height: 40 },
+  // FIXED: Inline percentage - wider width, no wrap
+  sliderValueInline: {
+    color: "#9ca3af",
+    fontSize: 14,
+    fontWeight: "600",
+    minWidth: 50,
+    textAlign: "right",
+    marginLeft: 8,
+  },
   resetWhatIfButton: { alignItems: "center", paddingVertical: 8 },
   resetWhatIfText: { color: "#6b7280", fontSize: 13 },
 
@@ -1149,6 +1469,72 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyStateSubtitle: { color: "#6b7280", fontSize: 14, textAlign: "center" },
+
+  // FIXED: Help Modal Styles - proper scrolling structure
+  helpModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  helpModalContent: {
+    backgroundColor: "#1F2937",
+    borderRadius: 20,
+    width: "100%",
+    overflow: "hidden",
+  },
+  helpModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  helpModalTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  helpModalDescription: {
+    color: "#9ca3af",
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  helpFactorItem: {
+    marginBottom: 16,
+  },
+  helpFactorName: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  helpFactorDesc: {
+    color: "#9ca3af",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  helpBulletItem: {
+    flexDirection: "row",
+    marginBottom: 12,
+  },
+  helpBullet: {
+    color: "#f59e0b",
+    fontSize: 16,
+    marginRight: 8,
+    lineHeight: 20,
+  },
+  helpBulletText: {
+    color: "#d1d5db",
+    fontSize: 14,
+    lineHeight: 20,
+    flex: 1,
+  },
+
+  // Modal Styles (Team Selector)
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.9)" },
   modalContent: {
     flex: 1,

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -95,11 +96,24 @@ export default function PredictionModal({
     }
   };
 
+  // FIXED: Use shorter display name for outcome text
+  const getShortName = (fullName: string): string => {
+    // Try to get first 2-3 meaningful words
+    const words = fullName.split(" ").filter((w) => w.length > 0);
+    if (words.length <= 2) return fullName;
+    // Take first 2 words, skip common suffixes like "FC", "SC", "Soccer Club"
+    const skipWords = ["fc", "sc", "soccer", "club", "academy", "united"];
+    const meaningful = words.filter(
+      (w) => !skipWords.includes(w.toLowerCase()),
+    );
+    return meaningful.slice(0, 2).join(" ");
+  };
+
   const getOutcomeText = () => {
     if (scoreA > scoreB) {
-      return `${teamA.name.split(" ").slice(0, 2).join(" ")} wins`;
+      return `${getShortName(teamA.name)} wins`;
     } else if (scoreB > scoreA) {
-      return `${teamB.name.split(" ").slice(0, 2).join(" ")} wins`;
+      return `${getShortName(teamB.name)} wins`;
     } else {
       return "Draw";
     }
@@ -123,6 +137,7 @@ export default function PredictionModal({
     >
       <View style={styles.overlay}>
         <View style={styles.container}>
+          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerEmoji}>🎯</Text>
             <Text style={styles.headerTitle}>Your Prediction</Text>
@@ -135,123 +150,158 @@ export default function PredictionModal({
             What do YOU think the final score will be?
           </Text>
 
-          <View style={styles.scoreContainer}>
-            <View style={styles.teamColumn}>
-              <Text style={styles.teamName} numberOfLines={2}>
-                {teamA.name}
-              </Text>
-              {teamA.state && (
-                <Text style={styles.teamState}>{teamA.state}</Text>
-              )}
-              <View style={styles.scoreSelector}>
-                <TouchableOpacity
-                  style={styles.scoreButton}
-                  onPress={() => adjustScore("A", -1)}
-                  disabled={scoreA === 0}
-                >
-                  <Ionicons
-                    name="remove"
-                    size={24}
-                    color={scoreA === 0 ? "#4b5563" : "#fff"}
-                  />
-                </TouchableOpacity>
-                <View style={styles.scoreDisplay}>
-                  <Text style={styles.scoreText}>{scoreA}</Text>
+          {/* Scrollable content for long team names */}
+          <ScrollView
+            style={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            {/* Score Selection */}
+            <View style={styles.scoreContainer}>
+              {/* Team A */}
+              <View style={styles.teamColumn}>
+                {/* FIXED: Show full team name with scroll capability */}
+                <View style={styles.teamNameContainer}>
+                  <Text style={styles.teamName} numberOfLines={3}>
+                    {teamA.name}
+                  </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.scoreButton}
-                  onPress={() => adjustScore("A", 1)}
-                  disabled={scoreA === 15}
-                >
-                  <Ionicons
-                    name="add"
-                    size={24}
-                    color={scoreA === 15 ? "#4b5563" : "#fff"}
-                  />
-                </TouchableOpacity>
+                {/* FIXED: Show correct state for THIS team */}
+                {teamA.state && (
+                  <Text style={styles.teamState}>{teamA.state}</Text>
+                )}
+                <View style={styles.scoreSelector}>
+                  <TouchableOpacity
+                    style={[
+                      styles.scoreButton,
+                      scoreA === 0 && styles.scoreButtonDisabled,
+                    ]}
+                    onPress={() => adjustScore("A", -1)}
+                    disabled={scoreA === 0}
+                  >
+                    <Ionicons
+                      name="remove"
+                      size={24}
+                      color={scoreA === 0 ? "#4b5563" : "#fff"}
+                    />
+                  </TouchableOpacity>
+                  <View style={styles.scoreDisplay}>
+                    <Text style={styles.scoreText}>{scoreA}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.scoreButton,
+                      scoreA === 15 && styles.scoreButtonDisabled,
+                    ]}
+                    onPress={() => adjustScore("A", 1)}
+                    disabled={scoreA === 15}
+                  >
+                    <Ionicons
+                      name="add"
+                      size={24}
+                      color={scoreA === 15 ? "#4b5563" : "#fff"}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* VS */}
+              <View style={styles.vsContainer}>
+                <Text style={styles.vsText}>vs</Text>
+              </View>
+
+              {/* Team B */}
+              <View style={styles.teamColumn}>
+                {/* FIXED: Show full team name with scroll capability */}
+                <View style={styles.teamNameContainer}>
+                  <Text style={styles.teamName} numberOfLines={3}>
+                    {teamB.name}
+                  </Text>
+                </View>
+                {/* FIXED: Show correct state for THIS team (not teamA.state!) */}
+                {teamB.state && (
+                  <Text style={styles.teamState}>{teamB.state}</Text>
+                )}
+                <View style={styles.scoreSelector}>
+                  <TouchableOpacity
+                    style={[
+                      styles.scoreButton,
+                      scoreB === 0 && styles.scoreButtonDisabled,
+                    ]}
+                    onPress={() => adjustScore("B", -1)}
+                    disabled={scoreB === 0}
+                  >
+                    <Ionicons
+                      name="remove"
+                      size={24}
+                      color={scoreB === 0 ? "#4b5563" : "#fff"}
+                    />
+                  </TouchableOpacity>
+                  <View style={styles.scoreDisplay}>
+                    <Text style={styles.scoreText}>{scoreB}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.scoreButton,
+                      scoreB === 15 && styles.scoreButtonDisabled,
+                    ]}
+                    onPress={() => adjustScore("B", 1)}
+                    disabled={scoreB === 15}
+                  >
+                    <Ionicons
+                      name="add"
+                      size={24}
+                      color={scoreB === 15 ? "#4b5563" : "#fff"}
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
-            <View style={styles.vsContainer}>
-              <Text style={styles.vsText}>vs</Text>
-            </View>
-
-            <View style={styles.teamColumn}>
-              <Text style={styles.teamName} numberOfLines={2}>
-                {teamB.name}
-              </Text>
-              {teamB.state && (
-                <Text style={styles.teamState}>{teamB.state}</Text>
-              )}
-              <View style={styles.scoreSelector}>
-                <TouchableOpacity
-                  style={styles.scoreButton}
-                  onPress={() => adjustScore("B", -1)}
-                  disabled={scoreB === 0}
-                >
-                  <Ionicons
-                    name="remove"
-                    size={24}
-                    color={scoreB === 0 ? "#4b5563" : "#fff"}
-                  />
-                </TouchableOpacity>
-                <View style={styles.scoreDisplay}>
-                  <Text style={styles.scoreText}>{scoreB}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.scoreButton}
-                  onPress={() => adjustScore("B", 1)}
-                  disabled={scoreB === 15}
-                >
-                  <Ionicons
-                    name="add"
-                    size={24}
-                    color={scoreB === 15 ? "#4b5563" : "#fff"}
-                  />
-                </TouchableOpacity>
+            {/* Summary Card */}
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Your Prediction:</Text>
+                <Text style={styles.summaryValue}>
+                  {scoreA} - {scoreB}
+                </Text>
               </View>
-            </View>
-          </View>
-
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Your Prediction:</Text>
-              <Text style={styles.summaryValue}>
-                {scoreA} - {scoreB}
-              </Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Outcome:</Text>
-              <Text style={styles.summaryOutcome}>{getOutcomeText()}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.pointsPreview}>
-              <Text style={styles.pointsPreviewTitle}>Potential Points:</Text>
-              <View style={styles.pointsBreakdown}>
-                <View style={styles.pointsItem}>
-                  <Text style={styles.pointsItemLabel}>
-                    {scoreA === scoreB ? "Draw correct" : "Winner correct"}
-                  </Text>
-                  <Text style={styles.pointsItemValue}>
-                    +{potentialPoints.winner} pts
-                  </Text>
-                </View>
-                <View style={styles.pointsItem}>
-                  <Text style={styles.pointsItemLabel}>Exact score bonus</Text>
-                  <Text style={[styles.pointsItemValue, styles.bonusPoints]}>
-                    +{potentialPoints.exact} pts
-                  </Text>
-                </View>
-                <View style={[styles.pointsItem, styles.totalRow]}>
-                  <Text style={styles.totalLabel}>Max possible:</Text>
-                  <Text style={styles.totalValue}>
-                    {potentialPoints.total} pts
-                  </Text>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Outcome:</Text>
+                <Text style={styles.summaryOutcome}>{getOutcomeText()}</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.pointsPreview}>
+                <Text style={styles.pointsPreviewTitle}>Potential Points:</Text>
+                <View style={styles.pointsBreakdown}>
+                  <View style={styles.pointsItem}>
+                    <Text style={styles.pointsItemLabel}>
+                      {scoreA === scoreB ? "Draw correct" : "Winner correct"}
+                    </Text>
+                    <Text style={styles.pointsItemValue}>
+                      +{potentialPoints.winner} pts
+                    </Text>
+                  </View>
+                  <View style={styles.pointsItem}>
+                    <Text style={styles.pointsItemLabel}>
+                      Exact score bonus
+                    </Text>
+                    <Text style={[styles.pointsItemValue, styles.bonusPoints]}>
+                      +{potentialPoints.exact} pts
+                    </Text>
+                  </View>
+                  <View style={[styles.pointsItem, styles.totalRow]}>
+                    <Text style={styles.totalLabel}>Max possible:</Text>
+                    <Text style={styles.totalValue}>
+                      {potentialPoints.total} pts
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
-          </View>
+          </ScrollView>
 
+          {/* Error */}
           {error && (
             <View style={styles.errorContainer}>
               <Ionicons name="alert-circle" size={16} color="#ef4444" />
@@ -259,6 +309,7 @@ export default function PredictionModal({
             </View>
           )}
 
+          {/* Success / Submit */}
           {submitted ? (
             <View style={styles.successContainer}>
               <Ionicons name="checkmark-circle" size={48} color="#10b981" />
@@ -305,12 +356,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.9)",
     justifyContent: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
   },
   container: {
     backgroundColor: "#1F2937",
     borderRadius: 20,
-    padding: 24,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    maxHeight: "90%",
   },
   header: {
     flexDirection: "row",
@@ -333,47 +386,59 @@ const styles = StyleSheet.create({
   subtitle: {
     color: "#9ca3af",
     fontSize: 14,
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  scrollContent: {
+    flexGrow: 0,
   },
   scoreContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   teamColumn: {
     flex: 1,
     alignItems: "center",
   },
+  // FIXED: Container for team name allows proper height
+  teamNameContainer: {
+    minHeight: 48,
+    maxHeight: 72,
+    justifyContent: "center",
+    marginBottom: 4,
+  },
   teamName: {
     color: "#fff",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     textAlign: "center",
-    marginBottom: 4,
-    height: 36,
+    lineHeight: 18,
   },
   teamState: {
     color: "#6b7280",
-    fontSize: 12,
+    fontSize: 11,
     marginBottom: 12,
   },
   scoreSelector: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
   scoreButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "#374151",
     justifyContent: "center",
     alignItems: "center",
   },
+  scoreButtonDisabled: {
+    opacity: 0.5,
+  },
   scoreDisplay: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+    width: 50,
+    height: 50,
+    borderRadius: 10,
     backgroundColor: "#111",
     justifyContent: "center",
     alignItems: "center",
@@ -382,12 +447,12 @@ const styles = StyleSheet.create({
   },
   scoreText: {
     color: "#fff",
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "bold",
   },
   vsContainer: {
-    paddingHorizontal: 12,
-    paddingTop: 60,
+    paddingHorizontal: 8,
+    paddingTop: 30,
   },
   vsText: {
     color: "#6b7280",

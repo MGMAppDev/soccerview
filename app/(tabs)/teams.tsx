@@ -43,7 +43,7 @@ type TeamEloRow = {
 // CONSTANTS
 // ============================================================
 
-// US STATES ONLY - Filter out Canadian provinces and invalid codes
+// US STATES ONLY - Alphabetically sorted for filter display
 const US_STATES = [
   "AK",
   "AL",
@@ -514,31 +514,9 @@ export default function TeamsTab() {
         </Text>
       </View>
 
-      {/* Filters */}
+      {/* Filters - CONSISTENT ORDER: Gender → Age Group → State */}
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.filtersContainer}>
-          {/* State Filter - US states only */}
-          <Text style={styles.sectionHeader}>State</Text>
-          {loadingFilters ? (
-            <View style={styles.chipScroll}>
-              <ActivityIndicator size="small" color="#3B82F6" />
-              <Text style={styles.loadingChipsText}>Loading states...</Text>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipScroll}
-              contentContainerStyle={styles.chipScrollContent}
-            >
-              {allStates.map((st) =>
-                renderChip(st, selectedStates.includes(st), () =>
-                  toggleChip(st, selectedStates, setSelectedStates),
-                ),
-              )}
-            </ScrollView>
-          )}
-
           {/* Gender Filter */}
           <Text style={styles.sectionHeader}>Gender</Text>
           <ScrollView
@@ -569,10 +547,37 @@ export default function TeamsTab() {
             )}
           </ScrollView>
 
+          {/* State Filter - MOVED: Now after Age Group for consistency */}
+          <Text style={styles.sectionHeader}>State</Text>
+          {loadingFilters ? (
+            <View style={styles.chipScroll}>
+              <ActivityIndicator size="small" color="#3B82F6" />
+              <Text style={styles.loadingChipsText}>Loading states...</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipScroll}
+              contentContainerStyle={styles.chipScrollContent}
+            >
+              {/* "All" chip - selected when no states are filtered */}
+              {renderChip("All", selectedStates.length === 0, () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setSelectedStates([]);
+              })}
+              {allStates.map((st) =>
+                renderChip(st, selectedStates.includes(st), () =>
+                  toggleChip(st, selectedStates, setSelectedStates),
+                ),
+              )}
+            </ScrollView>
+          )}
+
           {/* Clear Filters */}
           {hasFilters && (
             <TouchableOpacity style={styles.clearChip} onPress={clearFilters}>
-              <Ionicons name="close-circle" size={16} color="#a1a1aa" />
+              <Ionicons name="close-circle" size={16} color="#9ca3af" />
               <Text style={styles.clearChipText}> Clear filters</Text>
             </TouchableOpacity>
           )}
@@ -741,18 +746,18 @@ const styles = StyleSheet.create({
   clearChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#27272a",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#374151",
     alignSelf: "flex-start",
     marginTop: 4,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#3f3f46",
+    borderColor: "#4b5563",
   },
   clearChipText: {
-    color: "#a1a1aa",
+    color: "#9ca3af",
     fontWeight: "600",
     fontSize: 14,
   },
@@ -851,13 +856,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: "#27272a",
+    backgroundColor: "#374151",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#3f3f46",
+    borderColor: "#4b5563",
   },
   clearFiltersButtonText: {
-    color: "#a1a1aa",
+    color: "#9ca3af",
     fontSize: 14,
     fontWeight: "600",
   },

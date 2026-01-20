@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -19,52 +19,41 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
+// ============================================================
+// TYPES - Updated for match_results table
+// ============================================================
+
 type MatchRow = {
   id: string;
-  home_team: string | null;
-  away_team: string | null;
-  home_score: number | null;
-  away_score: number | null;
+  event_id: string | null;
+  event_name: string | null;
   match_date: string | null;
+  match_time: string | null;
+  home_team_name: string | null;
+  home_team_id: string | null;
+  home_score: number | null;
+  away_team_name: string | null;
+  away_team_id: string | null;
+  away_score: number | null;
+  status: string | null;
   location: string | null;
-  state: string | null;
+  source_type: string | null;
+  source_platform: string | null;
+  age_group: string | null;
+  gender: string | null;
 };
 
 type TimeFilter = "all" | "today" | "week" | "month";
 
-// Pagination helper - fetches ALL rows bypassing Supabase's 1000 limit
-async function fetchAllMatches(): Promise<MatchRow[]> {
-  const allRows: MatchRow[] = [];
-  const pageSize = 1000;
-  let offset = 0;
-  let hasMore = true;
+// ============================================================
+// CONSTANTS
+// ============================================================
 
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from("matches")
-      .select(
-        "id, home_team, away_team, home_score, away_score, match_date, location, state",
-      )
-      .order("match_date", { ascending: false })
-      .range(offset, offset + pageSize - 1);
+const PAGE_SIZE = 50;
 
-    if (error) {
-      console.error("Error fetching matches:", error);
-      throw error;
-    }
-
-    if (data && data.length > 0) {
-      allRows.push(...(data as MatchRow[]));
-      offset += pageSize;
-      hasMore = data.length === pageSize;
-    } else {
-      hasMore = false;
-    }
-  }
-
-  console.log(`Matches: Fetched ${allRows.length} total matches`);
-  return allRows;
-}
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
 
 function formatDate(isoDate: string | null): string {
   if (!isoDate) return "";
@@ -80,73 +69,123 @@ function formatDate(isoDate: string | null): string {
   }
 }
 
-function isWithinDays(dateStr: string | null, days: number): boolean {
-  if (!dateStr) return false;
-  const matchDate = new Date(dateStr);
-  const now = new Date();
-  const diff = Math.abs(now.getTime() - matchDate.getTime());
-  return diff <= days * 24 * 60 * 60 * 1000;
-}
+// Note: Removed source badges to avoid platform branding
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 
 export default function MatchesTab() {
-  const [allMatches, setAllMatches] = useState<MatchRow[]>([]);
+  const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [dropdownVisible, setDropdownVisible] = useState(false);
 
+  // Debounce search input
   useEffect(() => {
-    loadMatches();
-  }, []);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  const loadMatches = async () => {
+  // Fetch matches with pagination
+  const fetchMatches = async (reset: boolean = false) => {
     try {
       setError(null);
-      const data = await fetchAllMatches();
-      setAllMatches(data);
+      const currentOffset = reset ? 0 : offset;
+
+      // Build query for match_results table
+      let query = supabase
+        .from("match_results")
+        .select(
+          "id, event_id, event_name, match_date, match_time, home_team_name, home_team_id, home_score, away_team_name, away_team_id, away_score, status, location, source_type, source_platform, age_group, gender",
+          { count: "exact" },
+        )
+        .order("match_date", { ascending: false })
+        .range(currentOffset, currentOffset + PAGE_SIZE - 1);
+
+      // Apply time filter server-side for better performance
+      if (timeFilter === "today") {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        query = query.gte("match_date", today.toISOString().split("T")[0]);
+        query = query.lt("match_date", tomorrow.toISOString().split("T")[0]);
+      } else if (timeFilter === "week") {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        query = query.gte("match_date", weekAgo.toISOString().split("T")[0]);
+      } else if (timeFilter === "month") {
+        const monthAgo = new Date();
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        query = query.gte("match_date", monthAgo.toISOString().split("T")[0]);
+      }
+
+      // Apply search filter
+      if (debouncedSearch.trim()) {
+        const searchTerm = `%${debouncedSearch.trim()}%`;
+        query = query.or(
+          `home_team_name.ilike.${searchTerm},away_team_name.ilike.${searchTerm},location.ilike.${searchTerm},event_name.ilike.${searchTerm}`,
+        );
+      }
+
+      const { data, error: queryError, count } = await query;
+
+      if (queryError) throw queryError;
+
+      const newMatches = (data || []) as MatchRow[];
+
+      if (reset) {
+        setMatches(newMatches);
+        setOffset(PAGE_SIZE);
+      } else {
+        setMatches((prev) => [...prev, ...newMatches]);
+        setOffset(currentOffset + PAGE_SIZE);
+      }
+
+      setTotalCount(count || 0);
+      setHasMore(newMatches.length === PAGE_SIZE);
     } catch (err: any) {
-      console.error("Error:", err);
+      console.error("Error fetching matches:", err);
       setError(err.message || "Failed to load matches");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
+  // Initial load & reload when filters change
+  useEffect(() => {
+    setLoading(true);
+    setOffset(0);
+    fetchMatches(true);
+  }, [timeFilter, debouncedSearch]);
+
+  // Refresh
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadMatches();
+    setOffset(0);
+    await fetchMatches(true);
     setRefreshing(false);
   };
 
-  // Filter matches client-side
-  const filteredMatches = useMemo(() => {
-    let filtered = allMatches;
-
-    // Time filter
-    if (timeFilter === "today") {
-      filtered = filtered.filter((m) => isWithinDays(m.match_date, 1));
-    } else if (timeFilter === "week") {
-      filtered = filtered.filter((m) => isWithinDays(m.match_date, 7));
-    } else if (timeFilter === "month") {
-      filtered = filtered.filter((m) => isWithinDays(m.match_date, 30));
-    }
-
-    // Search filter
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (m) =>
-          m.home_team?.toLowerCase().includes(q) ||
-          m.away_team?.toLowerCase().includes(q) ||
-          m.location?.toLowerCase().includes(q) ||
-          m.state?.toLowerCase().includes(q),
-      );
-    }
-
-    return filtered;
-  }, [allMatches, timeFilter, searchQuery]);
+  // Load more
+  const loadMoreMatches = () => {
+    if (loadingMore || !hasMore || loading) return;
+    setLoadingMore(true);
+    fetchMatches(false);
+  };
 
   const getTimeFilterLabel = (): string => {
     switch (timeFilter) {
@@ -161,12 +200,15 @@ export default function MatchesTab() {
     }
   };
 
+  // Render match card
   const renderMatch = useCallback(({ item }: { item: MatchRow }) => {
     const dateStr = formatDate(item.match_date);
     const hasScore = item.home_score !== null && item.away_score !== null;
+    const isScheduled = item.status === "scheduled";
+
+    // Build location string
     const locationParts: string[] = [];
     if (dateStr) locationParts.push(dateStr);
-    if (item.state) locationParts.push(item.state);
     if (item.location) locationParts.push(item.location);
     const locationStr = locationParts.join(" · ");
 
@@ -179,22 +221,31 @@ export default function MatchesTab() {
           router.push(`/match/${item.id}`);
         }}
       >
-        {/* Top row: Date/Location */}
-        {locationStr ? (
-          <Text style={styles.locationText} numberOfLines={1}>
-            {locationStr}
+        {/* Top row: Date/Location + Source Badge */}
+        <View style={styles.matchTopRow}>
+          {locationStr ? (
+            <Text style={styles.locationText} numberOfLines={1}>
+              {locationStr}
+            </Text>
+          ) : null}
+        </View>
+
+        {/* Event name if available - filter out "GotSport" branding */}
+        {item.event_name && item.event_name !== "GotSport" && (
+          <Text style={styles.eventName} numberOfLines={1}>
+            {item.event_name}
           </Text>
-        ) : null}
+        )}
 
         {/* Main content row: Teams + Score */}
         <View style={styles.matchContent}>
           {/* Teams column */}
           <View style={styles.teamsContainer}>
             <Text style={styles.homeTeam} numberOfLines={1}>
-              {item.home_team ?? "Home Team"}
+              {item.home_team_name ?? "Home Team"}
             </Text>
             <Text style={styles.awayTeam} numberOfLines={1}>
-              vs {item.away_team ?? "Away Team"}
+              vs {item.away_team_name ?? "Away Team"}
             </Text>
           </View>
 
@@ -204,6 +255,8 @@ export default function MatchesTab() {
               <Text style={styles.scoreText}>
                 {item.home_score} - {item.away_score}
               </Text>
+            ) : isScheduled ? (
+              <Text style={styles.scheduledText}>TBD</Text>
             ) : (
               <Text style={styles.pendingText}>—</Text>
             )}
@@ -216,8 +269,70 @@ export default function MatchesTab() {
     );
   }, []);
 
-  const ListHeader = useMemo(
-    () => (
+  // Render footer (loading more indicator)
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color="#3B82F6" />
+        <Text style={styles.footerText}>Loading more...</Text>
+      </View>
+    );
+  };
+
+  // Render empty state
+  const renderEmpty = () => {
+    if (loading) return null;
+    return (
+      <View style={styles.emptyContainer}>
+        <Ionicons name="football-outline" size={48} color="#374151" />
+        <Text style={styles.emptyText}>No matches found</Text>
+        {(searchQuery || timeFilter !== "all") && (
+          <TouchableOpacity
+            style={styles.clearFiltersButton}
+            onPress={() => {
+              setSearchQuery("");
+              setTimeFilter("all");
+            }}
+          >
+            <Text style={styles.clearFiltersText}>Clear Filters</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  // Error state
+  if (error && matches.length === 0) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => {
+              setLoading(true);
+              fetchMatches(true);
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Matches</Text>
+          <Text style={styles.subtitle}>Browse game results and schedules</Text>
+        </View>
+      </TouchableWithoutFeedback>
+
+      {/* Filters Section */}
       <View style={styles.filtersContainer}>
         {/* Time Filter Dropdown */}
         <TouchableOpacity
@@ -255,60 +370,22 @@ export default function MatchesTab() {
         </View>
 
         <Text style={styles.resultsText}>
-          {filteredMatches.length.toLocaleString()} of{" "}
-          {allMatches.length.toLocaleString()} matches found
+          {matches.length.toLocaleString()} of {totalCount.toLocaleString()}{" "}
+          matches
         </Text>
       </View>
-    ),
-    [searchQuery, timeFilter, filteredMatches.length, allMatches.length],
-  );
 
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.centered}>
-          <Ionicons name="cloud-offline-outline" size={48} color="#374151" />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => {
-              setLoading(true);
-              loadMatches();
-            }}
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Matches</Text>
-          <Text style={styles.subtitle}>Browse game results and schedules</Text>
-        </View>
-      </TouchableWithoutFeedback>
-
-      {loading ? (
+      {/* Main Content */}
+      {loading && matches.length === 0 ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
-          <Text style={styles.loadingText}>Loading all matches...</Text>
+          <Text style={styles.loadingText}>Loading matches...</Text>
         </View>
       ) : (
         <FlatList
-          data={filteredMatches}
+          data={matches}
           renderItem={renderMatch}
           keyExtractor={(item) => item.id}
-          ListHeaderComponent={ListHeader}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="football-outline" size={48} color="#374151" />
-              <Text style={styles.emptyText}>No matches found</Text>
-            </View>
-          }
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -319,15 +396,14 @@ export default function MatchesTab() {
               tintColor="#3B82F6"
             />
           }
+          onEndReached={loadMoreMatches}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={renderEmpty}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
-          maxToRenderPerBatch={30}
-          removeClippedSubviews={true}
-          getItemLayout={(_, index) => ({
-            length: 100,
-            offset: 100 * index,
-            index,
-          })}
+          maxToRenderPerBatch={20}
+          removeClippedSubviews={Platform.OS === "android"}
         />
       )}
 
@@ -387,6 +463,10 @@ export default function MatchesTab() {
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
@@ -422,20 +502,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   resultsText: { color: "#9ca3af", fontSize: 14, marginBottom: 12 },
-  listContent: { paddingBottom: 24, flexGrow: 1 },
+  listContent: { paddingBottom: 24, paddingHorizontal: 16, flexGrow: 1 },
+
+  // Match Card
   matchCard: {
     padding: 14,
     borderRadius: 12,
     backgroundColor: "#111",
     marginBottom: 10,
-    marginHorizontal: 16,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
+  },
+  matchTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
   },
   locationText: {
     color: "#6b7280",
     fontSize: 12,
+    flex: 1,
+  },
+  eventName: {
+    color: "#9ca3af",
+    fontSize: 11,
     marginBottom: 8,
+    fontStyle: "italic",
   },
   matchContent: {
     flexDirection: "row",
@@ -465,11 +558,31 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
+  scheduledText: {
+    color: "#f59e0b",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   pendingText: {
     color: "#6b7280",
     fontSize: 18,
     fontWeight: "bold",
   },
+
+  // Footer
+  footerLoader: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 16,
+    gap: 8,
+  },
+  footerText: {
+    color: "#9ca3af",
+    fontSize: 14,
+  },
+
+  // States
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { color: "#9ca3af", fontSize: 14, marginTop: 12 },
   errorText: {
@@ -492,6 +605,16 @@ const styles = StyleSheet.create({
     paddingTop: 60,
   },
   emptyText: { color: "#6b7280", fontSize: 16, marginTop: 16 },
+  clearFiltersButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+  },
+  clearFiltersText: { color: "#3B82F6", fontSize: 14, fontWeight: "600" },
+
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.8)",

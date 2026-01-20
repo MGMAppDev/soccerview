@@ -16,70 +16,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
 // ============================================================
-// US STATES ONLY - Filter out Canadian provinces and invalid codes
+// TYPES - Updated for match_results table
 // ============================================================
-const US_STATES = new Set([
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "ID",
-  "IL",
-  "IN",
-  "IA",
-  "KS",
-  "KY",
-  "LA",
-  "ME",
-  "MD",
-  "MA",
-  "MI",
-  "MN",
-  "MS",
-  "MO",
-  "MT",
-  "NE",
-  "NV",
-  "NH",
-  "NJ",
-  "NM",
-  "NY",
-  "NC",
-  "ND",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VT",
-  "VA",
-  "WA",
-  "WV",
-  "WI",
-  "WY",
-  "DC",
-]);
 
 type MatchRow = {
   id: string;
-  home_team: string | null;
-  away_team: string | null;
+  match_date: string | null;
+  home_team_name: string | null;
+  away_team_name: string | null;
   home_score: number | null;
   away_score: number | null;
-  match_date: string | null;
   location: string | null;
+  age_group: string | null;
+  gender: string | null;
 };
 
 type TeamEloRow = {
@@ -93,6 +42,7 @@ type TeamEloRow = {
   state: string | null;
   gender: string | null;
   age_group: string | null;
+  national_rank: number | null;
 };
 
 type StatsData = {
@@ -108,38 +58,9 @@ type TopPredictor = {
   rank: number;
 };
 
-// Pagination helper to fetch ALL rows (Supabase limits to 1000 per query)
-async function fetchAllRows<T>(
-  table: string,
-  selectColumns: string = "*",
-): Promise<T[]> {
-  const allRows: T[] = [];
-  const pageSize = 1000;
-  let offset = 0;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(selectColumns)
-      .range(offset, offset + pageSize - 1);
-
-    if (error) {
-      console.error(`Error fetching ${table}:`, error);
-      break;
-    }
-
-    if (data && data.length > 0) {
-      allRows.push(...(data as T[]));
-      offset += pageSize;
-      hasMore = data.length === pageSize;
-    } else {
-      hasMore = false;
-    }
-  }
-
-  return allRows;
-}
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
 
 function getEloGrade(elo: number): { grade: string; color: string } {
   if (elo >= 1650) return { grade: "A+", color: "#22c55e" };
@@ -156,11 +77,15 @@ function getEloGrade(elo: number): { grade: string; color: string } {
   return { grade: "D-", color: "#dc2626" };
 }
 
-function formatDate(isoDate: string | null): string {
+// Format date for badge display (e.g., "Jan 19")
+function formatDateBadge(isoDate: string | null): string {
   if (!isoDate) return "";
   try {
     const d = new Date(isoDate);
-    return d.toLocaleDateString();
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
   } catch {
     return "";
   }
@@ -169,6 +94,10 @@ function formatDate(isoDate: string | null): string {
 function isValidValue(v: string | null | undefined): boolean {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
 }
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -192,40 +121,47 @@ export default function HomeScreen() {
       // Get EXACT counts using head:true (bypasses 1000 limit)
       const [teamsCountResult, matchesCountResult] = await Promise.all([
         supabase.from("team_elo").select("*", { count: "exact", head: true }),
-        supabase.from("matches").select("*", { count: "exact", head: true }),
+        supabase
+          .from("match_results")
+          .select("*", { count: "exact", head: true }),
       ]);
 
       const teamCount = teamsCountResult.count ?? 0;
       const matchCount = matchesCountResult.count ?? 0;
 
       // Use fixed 50 states (we know we cover all US states)
-      // This avoids fetching 115k+ rows just to count unique states
       setStats({
         totalTeams: teamCount,
         totalMatches: matchCount,
         totalStates: 50,
       });
 
-      // Fetch recent matches (just top 10)
+      // Fetch recent matches from match_results (with scores)
+      // FIXED: Order by match_date DESC for newest first (chronological)
       const { data: matchesData } = await supabase
-        .from("matches")
-        .select("*")
+        .from("match_results")
+        .select(
+          "id, match_date, home_team_name, away_team_name, home_score, away_score, location, age_group, gender",
+        )
         .not("home_score", "is", null)
+        .not("match_date", "is", null)
         .order("match_date", { ascending: false })
         .limit(10);
 
       setRecentMatches((matchesData as MatchRow[]) ?? []);
 
-      // Fetch top 10 teams by ELO
+      // Fetch top 10 teams by ELO (with national rank for display)
       const { data: teamsData } = await supabase
         .from("team_elo")
-        .select("*")
+        .select(
+          "id, team_name, elo_rating, matches_played, wins, losses, draws, state, gender, age_group, national_rank",
+        )
         .order("elo_rating", { ascending: false })
         .limit(10);
 
       setFeaturedTeams((teamsData as TeamEloRow[]) ?? []);
 
-      // Fetch top 3 predictors for the mini leaderboard (optional - don't crash if view missing)
+      // Fetch top 3 predictors for the mini leaderboard
       const { data: predictorsData, error: predictorsError } = await supabase
         .from("leaderboard_all_time")
         .select("display_name, avatar_emoji, total_points, rank")
@@ -234,7 +170,6 @@ export default function HomeScreen() {
       if (!predictorsError && predictorsData) {
         setTopPredictors(predictorsData as TopPredictor[]);
       } else {
-        // View might not exist yet - that's OK, show empty state
         setTopPredictors([]);
       }
     } catch (err) {
@@ -255,14 +190,6 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const getMatchLocation = (item: MatchRow): string => {
-    const parts: string[] = [];
-    const date = formatDate(item.match_date);
-    if (date) parts.push(date);
-    if (item.location) parts.push(item.location);
-    return parts.join(" · ");
-  };
-
   const getTeamMeta = (item: TeamEloRow): string => {
     const parts: string[] = [];
     if (isValidValue(item.state)) parts.push(item.state!);
@@ -281,9 +208,16 @@ export default function HomeScreen() {
     router.push("/predict");
   };
 
+  // FIXED: Render match card with DATE BADGE prominently displayed
   const renderMatch = ({ item }: { item: MatchRow }) => {
-    const locationStr = getMatchLocation(item);
+    const dateBadge = formatDateBadge(item.match_date);
     const hasScore = item.home_score !== null && item.away_score !== null;
+
+    // Build division info (age group + gender)
+    const divisionParts: string[] = [];
+    if (item.age_group) divisionParts.push(item.age_group);
+    if (item.gender) divisionParts.push(item.gender);
+    const divisionStr = divisionParts.join(" · ");
 
     return (
       <TouchableOpacity
@@ -294,26 +228,47 @@ export default function HomeScreen() {
           router.push(`/match/${item.id}`);
         }}
       >
-        {locationStr ? (
-          <Text style={styles.locationText}>{locationStr}</Text>
-        ) : null}
-        <Text style={styles.teamName}>{item.home_team ?? "Home Team"}</Text>
-        <Text style={styles.vsText}>vs</Text>
-        <Text style={styles.teamName}>{item.away_team ?? "Away Team"}</Text>
-        {hasScore && (
-          <Text style={styles.scoreText}>
-            {item.home_score} - {item.away_score}
-          </Text>
-        )}
+        {/* Top row: Date badge + Division */}
+        <View style={styles.matchHeaderRow}>
+          {dateBadge ? (
+            <View style={styles.dateBadge}>
+              <Text style={styles.dateBadgeText}>{dateBadge}</Text>
+            </View>
+          ) : null}
+          {divisionStr ? (
+            <Text style={styles.divisionText}>{divisionStr}</Text>
+          ) : null}
+        </View>
+
+        {/* Teams and score */}
+        <View style={styles.matchTeamsRow}>
+          <View style={styles.matchTeamsContainer}>
+            <Text style={styles.teamName} numberOfLines={1}>
+              {item.home_team_name ?? "Home Team"}
+            </Text>
+            <Text style={styles.vsText}>vs</Text>
+            <Text style={styles.teamName} numberOfLines={1}>
+              {item.away_team_name ?? "Away Team"}
+            </Text>
+          </View>
+          {hasScore && (
+            <Text style={styles.scoreText}>
+              {item.home_score} - {item.away_score}
+            </Text>
+          )}
+        </View>
       </TouchableOpacity>
     );
   };
 
   const renderFeaturedTeam = ({ item }: { item: TeamEloRow }) => {
-    const meta = getTeamMeta(item);
-    const record = `${item.wins ?? 0}-${item.losses ?? 0}-${item.draws ?? 0}`;
-    const elo = Math.round(item.elo_rating ?? 1500);
+    const elo = item.elo_rating ?? 1500;
     const { grade, color } = getEloGrade(elo);
+    const meta = getTeamMeta(item);
+    const record =
+      item.wins !== null
+        ? `${item.wins}W-${item.losses ?? 0}L-${item.draws ?? 0}D`
+        : null;
 
     return (
       <TouchableOpacity
@@ -321,43 +276,42 @@ export default function HomeScreen() {
         activeOpacity={0.7}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push({ pathname: "/team/[id]", params: { id: item.id } });
+          router.push(`/team/${item.id}`);
         }}
       >
         <Text style={styles.featuredTeamName} numberOfLines={2}>
-          {item.team_name || "Unknown Team"}
+          {item.team_name ?? "Team"}
         </Text>
         {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
-        <Text style={styles.recordText}>Record: {record}</Text>
+        {record && <Text style={styles.recordText}>{record}</Text>}
+        {item.national_rank && (
+          <Text style={styles.rankBadge}>🏆 #{item.national_rank}</Text>
+        )}
         <View style={styles.eloRow}>
           <Text style={[styles.gradeText, { color }]}>{grade}</Text>
-          <Text style={styles.ratingText}>{elo}</Text>
+          <Text style={styles.ratingText}>{Math.round(elo)} ELO</Text>
         </View>
       </TouchableOpacity>
     );
   };
 
+  // Loading state
   if (loading) {
     return (
-      <View style={[styles.centered, { paddingTop: insets.top }]}>
+      <View style={styles.centered}>
         <ActivityIndicator size="large" color="#3B82F6" />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <Ionicons name="alert-circle" size={48} color="#EF4444" />
+      <View style={styles.centered}>
+        <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={() => {
-            setLoading(true);
-            void fetchData();
-          }}
-        >
+        <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -367,7 +321,10 @@ export default function HomeScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[
+        styles.contentContainer,
+        { paddingTop: insets.top + 8 },
+      ]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -375,15 +332,14 @@ export default function HomeScreen() {
           tintColor="#3B82F6"
         />
       }
+      showsVerticalScrollIndicator={false}
     >
-      <View style={{ paddingTop: insets.top }}>
-        <Text style={styles.title}>SoccerView</Text>
-        <Text style={styles.subtitle}>
-          National & State Youth Club Soccer Rankings
-        </Text>
-      </View>
+      <Text style={styles.title}>SoccerView</Text>
+      <Text style={styles.subtitle}>
+        National & State Youth Club Soccer Rankings
+      </Text>
 
-      {/* ⚔️ PREDICT MATCH - Hero Button */}
+      {/* FIXED: Predict Match CTA - Matched height with Top Predictors */}
       <TouchableOpacity
         style={styles.predictButton}
         activeOpacity={0.8}
@@ -401,7 +357,7 @@ export default function HomeScreen() {
         <Ionicons name="chevron-forward" size={24} color="#10b981" />
       </TouchableOpacity>
 
-      {/* 🏆 TOP PREDICTORS - Mini Leaderboard */}
+      {/* FIXED: Top Predictors Section - Matched height with Predict Match */}
       <TouchableOpacity
         style={styles.leaderboardButton}
         activeOpacity={0.8}
@@ -414,7 +370,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.seeAllBadge}>
             <Text style={styles.seeAllBadgeText}>See All</Text>
-            <Ionicons name="chevron-forward" size={14} color="#f59e0b" />
+            <Ionicons name="chevron-forward" size={16} color="#f59e0b" />
           </View>
         </View>
 
@@ -448,6 +404,7 @@ export default function HomeScreen() {
         )}
       </TouchableOpacity>
 
+      {/* Stats Cards */}
       <View style={styles.statsContainer}>
         <TouchableOpacity
           style={styles.statCard}
@@ -552,6 +509,10 @@ export default function HomeScreen() {
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   contentContainer: { padding: 16, paddingBottom: 32 },
@@ -567,7 +528,7 @@ const styles = StyleSheet.create({
   sectionHeader: { color: "#fff", fontSize: 20, fontWeight: "700" },
   seeAllText: { color: "#3B82F6", fontSize: 14, fontWeight: "600" },
 
-  // ⚔️ Predict Match Button Styles
+  // FIXED: Predict Match Button Styles - Consistent height
   predictButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -577,6 +538,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 2,
     borderColor: "#10b981",
+    minHeight: 80,
   },
   predictIconContainer: {
     width: 48,
@@ -605,7 +567,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // 🏆 Top Predictors Button Styles
+  // FIXED: Top Predictors Button Styles - Consistent height with empty state
   leaderboardButton: {
     backgroundColor: "rgba(245, 158, 11, 0.1)",
     borderRadius: 16,
@@ -613,12 +575,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: "rgba(245, 158, 11, 0.3)",
+    minHeight: 80,
   },
   leaderboardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
   },
   leaderboardTitleRow: {
     flexDirection: "row",
@@ -644,37 +606,39 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   miniLeaderboard: {
-    gap: 8,
+    marginTop: 12,
+    gap: 6,
   },
   miniLeaderboardItem: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.3)",
     borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 8,
   },
   miniRank: {
-    fontSize: 18,
-    width: 28,
+    fontSize: 16,
+    width: 24,
   },
   miniAvatar: {
-    fontSize: 20,
+    fontSize: 18,
   },
   miniName: {
     color: "#fff",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     flex: 1,
   },
   miniPoints: {
     color: "#f59e0b",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
   },
   emptyLeaderboard: {
-    paddingVertical: 12,
+    marginTop: 8,
+    paddingVertical: 4,
   },
   emptyLeaderboardText: {
     color: "#9ca3af",
@@ -695,6 +659,8 @@ const styles = StyleSheet.create({
   },
   statText: { color: "#fff", fontSize: 15, fontWeight: "600", flex: 1 },
   horizontalListContent: { paddingRight: 16, gap: 12 },
+
+  // FIXED: Match Card with Date Badge
   matchCard: {
     padding: 14,
     borderRadius: 12,
@@ -703,15 +669,45 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.05)",
     marginBottom: 12,
   },
-  locationText: { color: "#6b7280", fontSize: 12, marginBottom: 8 },
-  teamName: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  vsText: { color: "#9ca3af", fontSize: 14, marginTop: 4 },
+  matchHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 10,
+  },
+  dateBadge: {
+    backgroundColor: "rgba(59, 130, 246, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  dateBadgeText: {
+    color: "#3B82F6",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  divisionText: {
+    color: "#9ca3af",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  matchTeamsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  matchTeamsContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  teamName: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  vsText: { color: "#6b7280", fontSize: 12, marginVertical: 2 },
   scoreText: {
     color: "#3B82F6",
     fontSize: 20,
     fontWeight: "bold",
-    marginTop: 8,
   },
+
   featuredCard: {
     width: 180,
     padding: 14,
@@ -728,6 +724,12 @@ const styles = StyleSheet.create({
   },
   teamMeta: { color: "#9ca3af", fontSize: 12, marginTop: 4 },
   recordText: { color: "#6b7280", fontSize: 12, marginTop: 6 },
+  rankBadge: {
+    color: "#f59e0b",
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: "600",
+  },
   eloRow: {
     flexDirection: "row",
     alignItems: "baseline",

@@ -14,11 +14,17 @@ on:
           - full
           - matches_only
           - linking_only
+      link_max_records:
+        description: "Max records to link (default 2000)"
+        required: false
+        default: "2000"
+        type: string
 
 jobs:
   sync-matches:
     name: Sync Match Results
     runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.sync_type != 'linking_only' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,7 +42,7 @@ jobs:
     name: Link Teams to Matches
     runs-on: ubuntu-latest
     needs: sync-matches
-    if: always()
+    if: ${{ always() && github.event.inputs.sync_type != 'matches_only' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,5 +53,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/linkTeams.js
-        timeout-minutes: 120
+        run: node scripts/linkTeams.js --max=${{ github.event.inputs.link_max_records || '2000' }}
+        timeout-minutes: 45

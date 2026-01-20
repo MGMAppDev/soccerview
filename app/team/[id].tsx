@@ -4,6 +4,8 @@ import { router, Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,10 +13,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { LineChart } from "react-native-chart-kit";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
-// UPDATED: Added GotSport fields for championship badges
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
 type TeamData = {
   id: string;
   team_name: string | null;
@@ -26,7 +34,6 @@ type TeamData = {
   state: string | null;
   gender: string | null;
   age_group: string | null;
-  // GotSport fields (v7)
   national_rank: number | null;
   regional_rank: number | null;
   state_rank: number | null;
@@ -40,7 +47,6 @@ type TeamData = {
   club_name: string | null;
 };
 
-// UPDATED: MatchData type now matches match_results table schema
 type MatchData = {
   id: string;
   event_id: string | null;
@@ -62,7 +68,15 @@ type MatchData = {
   source_platform: string | null;
 };
 
-// Calculated stats from actual match data
+// NEW: Rank history data point
+type RankHistoryPoint = {
+  snapshot_date: string;
+  national_rank: number | null;
+  regional_rank: number | null;
+  state_rank: number | null;
+  gotsport_points: number | null;
+};
+
 type CalculatedStats = {
   matchesPlayed: number;
   wins: number;
@@ -71,6 +85,10 @@ type CalculatedStats = {
   winPercentage: string;
   source: "team_elo" | "calculated";
 };
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
 function isValidValue(v: string | null | undefined): boolean {
   return !!v && v.trim().length > 0 && v.trim() !== "??";
@@ -90,7 +108,15 @@ function formatDate(isoDate: string | null): string {
   }
 }
 
-// Convert ELO to letter grade
+function formatChartDate(isoDate: string): string {
+  try {
+    const d = new Date(isoDate);
+    return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
 function getEloGrade(elo: number): { grade: string; color: string } {
   if (elo >= 1650) return { grade: "A+", color: "#22c55e" };
   if (elo >= 1600) return { grade: "A", color: "#22c55e" };
@@ -106,7 +132,6 @@ function getEloGrade(elo: number): { grade: string; color: string } {
   return { grade: "D-", color: "#dc2626" };
 }
 
-// Normalize age group display
 function normalizeAgeGroup(age: string | null | undefined): string | null {
   if (!age) return null;
   const trimmed = age.trim();
@@ -117,21 +142,389 @@ function normalizeAgeGroup(age: string | null | undefined): string | null {
   return trimmed;
 }
 
-// Format large numbers with commas
 function formatNumber(num: number | null): string {
   if (num === null || num === undefined) return "—";
   return num.toLocaleString();
 }
+
+function getRankFontSize(rank: number | null): number {
+  if (rank === null) return 20;
+  if (rank >= 10000) return 14;
+  if (rank >= 1000) return 16;
+  if (rank >= 100) return 18;
+  return 20;
+}
+
+// ============================================================================
+// RANK TIMELINE COMPONENT
+// ============================================================================
+
+type RankTimelineProps = {
+  rankHistory: RankHistoryPoint[];
+  currentRank: number | null;
+  teamName: string;
+};
+
+function RankTimeline({
+  rankHistory,
+  currentRank,
+  teamName,
+}: RankTimelineProps) {
+  const [showJourneyHelp, setShowJourneyHelp] = useState(false);
+
+  // Process data for chart - need at least 2 points
+  const chartData = useMemo(() => {
+    // Filter to only points with national_rank
+    const validPoints = rankHistory.filter((p) => p.national_rank !== null);
+
+    // If we have no history but have current rank, show just current
+    if (validPoints.length === 0 && currentRank) {
+      const today = new Date().toISOString().split("T")[0];
+      return {
+        labels: [formatChartDate(today)],
+        datasets: [{ data: [currentRank] }],
+        hasData: false,
+      };
+    }
+
+    if (validPoints.length < 2) {
+      // Need at least 2 points for a line chart
+      return {
+        labels: validPoints.map((p) => formatChartDate(p.snapshot_date)),
+        datasets: [{ data: validPoints.map((p) => p.national_rank as number) }],
+        hasData: false,
+      };
+    }
+
+    // Sort by date ascending
+    const sorted = [...validPoints].sort(
+      (a, b) =>
+        new Date(a.snapshot_date).getTime() -
+        new Date(b.snapshot_date).getTime(),
+    );
+
+    // Take up to 12 data points for readability
+    const sampled =
+      sorted.length > 12
+        ? sorted.filter(
+            (_, i) =>
+              i % Math.ceil(sorted.length / 12) === 0 ||
+              i === sorted.length - 1,
+          )
+        : sorted;
+
+    return {
+      labels: sampled.map((p) => formatChartDate(p.snapshot_date)),
+      datasets: [{ data: sampled.map((p) => p.national_rank as number) }],
+      hasData: true,
+    };
+  }, [rankHistory, currentRank]);
+
+  // Calculate journey stats
+  const journeyStats = useMemo(() => {
+    const validPoints = rankHistory.filter((p) => p.national_rank !== null);
+    if (validPoints.length === 0) {
+      return {
+        highestRank: currentRank,
+        lowestRank: currentRank,
+        startRank: currentRank,
+        change: 0,
+      };
+    }
+
+    const ranks = validPoints.map((p) => p.national_rank as number);
+    const highestRank = Math.min(...ranks); // Lower number = better rank
+    const lowestRank = Math.max(...ranks);
+    const startRank = ranks[0];
+    const endRank = currentRank || ranks[ranks.length - 1];
+    const change = startRank - endRank; // Positive = improved
+
+    return { highestRank, lowestRank, startRank, change };
+  }, [rankHistory, currentRank]);
+
+  // If no ranking data at all
+  if (!currentRank && rankHistory.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={journeyStyles.container}>
+      <View style={journeyStyles.header}>
+        <View style={journeyStyles.titleRow}>
+          <Text style={journeyStyles.emoji}>📈</Text>
+          <Text style={journeyStyles.title}>My Team's Journey</Text>
+        </View>
+        <TouchableOpacity
+          style={journeyStyles.helpButton}
+          onPress={() => setShowJourneyHelp(true)}
+        >
+          <Ionicons name="help-circle-outline" size={20} color="#6b7280" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Stats Row */}
+      <View style={journeyStyles.statsRow}>
+        <View style={journeyStyles.statItem}>
+          <Text style={[journeyStyles.statValue, { color: "#22c55e" }]}>
+            #{journeyStats.highestRank ?? "—"}
+          </Text>
+          <Text style={journeyStyles.statLabel}>Season High</Text>
+        </View>
+        <View style={journeyStyles.statItem}>
+          <Text style={[journeyStyles.statValue, { color: "#ef4444" }]}>
+            #{journeyStats.lowestRank ?? "—"}
+          </Text>
+          <Text style={journeyStyles.statLabel}>Season Low</Text>
+        </View>
+        <View style={journeyStyles.statItem}>
+          <Text
+            style={[
+              journeyStyles.statValue,
+              journeyStats.change > 0 && { color: "#22c55e" },
+              journeyStats.change < 0 && { color: "#ef4444" },
+            ]}
+          >
+            {journeyStats.change > 0
+              ? `↑${journeyStats.change}`
+              : journeyStats.change < 0
+                ? `↓${Math.abs(journeyStats.change)}`
+                : "—"}
+          </Text>
+          <Text style={journeyStyles.statLabel}>Change</Text>
+        </View>
+      </View>
+
+      {/* Chart */}
+      {chartData.hasData ? (
+        <View style={journeyStyles.chartContainer}>
+          <LineChart
+            data={{
+              labels: chartData.labels,
+              datasets: chartData.datasets,
+            }}
+            width={SCREEN_WIDTH - 64}
+            height={180}
+            chartConfig={{
+              backgroundColor: "#111",
+              backgroundGradientFrom: "#111",
+              backgroundGradientTo: "#111",
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(156, 163, 175, ${opacity})`,
+              style: { borderRadius: 12 },
+              propsForDots: {
+                r: "5",
+                strokeWidth: "2",
+                stroke: "#3B82F6",
+              },
+              propsForBackgroundLines: {
+                strokeDasharray: "",
+                stroke: "rgba(255,255,255,0.1)",
+              },
+            }}
+            bezier
+            style={journeyStyles.chart}
+            withInnerLines={true}
+            withOuterLines={false}
+            withVerticalLines={false}
+            withHorizontalLines={true}
+            withVerticalLabels={true}
+            withHorizontalLabels={true}
+            fromZero={false}
+            yAxisSuffix=""
+            yLabelsOffset={8}
+            xLabelsOffset={-4}
+            segments={4}
+          />
+          <Text style={journeyStyles.chartNote}>
+            Lower rank = better position (Rank #1 is best)
+          </Text>
+        </View>
+      ) : (
+        <View style={journeyStyles.noDataContainer}>
+          <Ionicons name="time-outline" size={32} color="#4b5563" />
+          <Text style={journeyStyles.noDataText}>Rank history coming soon</Text>
+          <Text style={journeyStyles.noDataSubtext}>
+            Check back in a few days to see your ranking journey
+          </Text>
+        </View>
+      )}
+
+      {/* Help Modal */}
+      <Modal
+        visible={showJourneyHelp}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowJourneyHelp(false)}
+      >
+        <View style={journeyStyles.modalOverlay}>
+          {/* Tap backdrop to close */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowJourneyHelp(false)}
+          />
+          {/* Modal content - NOT wrapped in TouchableOpacity */}
+          <View style={journeyStyles.modalContent}>
+            <View style={journeyStyles.modalHeader}>
+              <Text style={journeyStyles.modalTitle}>📈 My Team's Journey</Text>
+              <TouchableOpacity onPress={() => setShowJourneyHelp(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={journeyStyles.modalScroll}
+              contentContainerStyle={journeyStyles.modalScrollContent}
+              showsVerticalScrollIndicator={true}
+            >
+              <Text style={journeyStyles.modalText}>
+                This chart shows how your team's Official National Rank has
+                changed over time.
+              </Text>
+              <Text style={journeyStyles.modalText}>
+                • <Text style={{ color: "#22c55e" }}>Season High</Text> - Best
+                rank achieved this season
+              </Text>
+              <Text style={journeyStyles.modalText}>
+                • <Text style={{ color: "#ef4444" }}>Season Low</Text> - Lowest
+                rank this season
+              </Text>
+              <Text style={journeyStyles.modalText}>
+                • <Text style={{ color: "#3B82F6" }}>Change</Text> - Movement
+                since season start
+              </Text>
+              <Text style={journeyStyles.modalSubtitle}>
+                How Rankings Update
+              </Text>
+              <Text style={journeyStyles.modalText}>
+                Official rankings update after each tournament. We capture daily
+                snapshots to track your team's progress throughout the season.
+              </Text>
+              <Text style={journeyStyles.modalSubtitle}>
+                Understanding the Chart
+              </Text>
+              <Text style={journeyStyles.modalText}>
+                Lower numbers are better - Rank #1 means you're the top team
+                nationally. An upward trend on the chart means your rank number
+                is going down (improving!).
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+// Journey-specific styles
+const journeyStyles = StyleSheet.create({
+  container: {
+    backgroundColor: "#111",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(59, 130, 246, 0.3)",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  emoji: { fontSize: 20 },
+  title: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  helpButton: { padding: 4 },
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  statItem: { alignItems: "center" },
+  statValue: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  statLabel: { color: "#6b7280", fontSize: 11, marginTop: 4 },
+  chartContainer: { marginTop: 8 },
+  chart: { borderRadius: 12, marginLeft: -16 },
+  chartNote: {
+    color: "#6b7280",
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  noDataContainer: {
+    alignItems: "center",
+    paddingVertical: 32,
+    gap: 8,
+  },
+  noDataText: { color: "#9ca3af", fontSize: 14, fontWeight: "500" },
+  noDataSubtext: { color: "#6b7280", fontSize: 12, textAlign: "center" },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#1F2937",
+    borderRadius: 20,
+    width: "100%",
+    maxHeight: "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  modalTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  modalScroll: {
+    flexGrow: 0,
+  },
+  modalScrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  modalText: {
+    color: "#d1d5db",
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  modalSubtitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 8,
+    marginBottom: 8,
+  },
+});
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [team, setTeam] = useState<TeamData | null>(null);
   const [allMatches, setAllMatches] = useState<MatchData[]>([]);
+  const [rankHistory, setRankHistory] = useState<RankHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"recent" | "upcoming">("recent");
+  const [showRatingsHelp, setShowRatingsHelp] = useState(false);
 
   const fetchTeamData = async () => {
     if (!id) {
@@ -143,7 +536,7 @@ export default function TeamDetailScreen() {
     try {
       setError(null);
 
-      // Fetch team info from team_elo (including all GotSport fields)
+      // Fetch team info
       const { data: teamData, error: teamError } = await supabase
         .from("team_elo")
         .select("*")
@@ -153,8 +546,7 @@ export default function TeamDetailScreen() {
       if (teamError) throw teamError;
       setTeam(teamData as TeamData);
 
-      // ✅ UPDATED: Fetch matches from match_results using team_id foreign keys
-      // This is much faster and more accurate than name matching!
+      // Fetch matches
       const { data: homeMatches, error: homeError } = await supabase
         .from("match_results")
         .select("*")
@@ -170,18 +562,30 @@ export default function TeamDetailScreen() {
         .limit(50);
 
       if (!homeError && !awayError) {
-        // Combine and deduplicate matches
         const allMatchData = [...(homeMatches || []), ...(awayMatches || [])];
         const uniqueMatches = Array.from(
           new Map(allMatchData.map((m) => [m.id, m])).values(),
         );
-        // Sort by date descending
         uniqueMatches.sort((a, b) => {
           const dateA = new Date(a.match_date || 0).getTime();
           const dateB = new Date(b.match_date || 0).getTime();
           return dateB - dateA;
         });
         setAllMatches(uniqueMatches as MatchData[]);
+      }
+
+      // NEW: Fetch rank history for My Team's Journey
+      const { data: historyData, error: historyError } = await supabase
+        .from("rank_history")
+        .select(
+          "snapshot_date, national_rank, regional_rank, state_rank, gotsport_points",
+        )
+        .eq("team_id", id)
+        .order("snapshot_date", { ascending: true })
+        .limit(365); // Up to 1 year of history
+
+      if (!historyError && historyData) {
+        setRankHistory(historyData as RankHistoryPoint[]);
       }
     } catch (err: any) {
       console.error("Error fetching team:", err);
@@ -201,7 +605,7 @@ export default function TeamDetailScreen() {
     setRefreshing(false);
   };
 
-  // Split matches into recent (past) and upcoming (future)
+  // Split matches
   const { recentMatches, upcomingMatches } = useMemo(() => {
     const now = new Date();
     const recent: MatchData[] = [];
@@ -210,7 +614,6 @@ export default function TeamDetailScreen() {
     allMatches.forEach((match) => {
       if (match.match_date) {
         const matchDate = new Date(match.match_date);
-        // Also check status - 'completed' goes to recent, 'scheduled' goes to upcoming
         if (match.status === "completed" || matchDate <= now) {
           recent.push(match);
         } else if (match.status === "scheduled" || matchDate > now) {
@@ -219,12 +622,10 @@ export default function TeamDetailScreen() {
           recent.push(match);
         }
       } else {
-        // No date - put in recent
         recent.push(match);
       }
     });
 
-    // Sort upcoming by date ascending (soonest first)
     upcoming.sort((a, b) => {
       const dateA = new Date(a.match_date || 0);
       const dateB = new Date(b.match_date || 0);
@@ -234,14 +635,12 @@ export default function TeamDetailScreen() {
     return { recentMatches: recent, upcomingMatches: upcoming };
   }, [allMatches]);
 
-  // FIXED: Calculate stats from actual match data when team_elo stats are missing/zero
+  // Calculate stats
   const calculatedStats = useMemo((): CalculatedStats => {
-    // Check if team_elo has valid stats (matches_played > 0)
     const hasTeamEloStats =
       team && team.matches_played !== null && team.matches_played > 0;
 
     if (hasTeamEloStats) {
-      // Use team_elo stats - these are the authoritative stats
       const mp = team.matches_played || 0;
       const w = team.wins || 0;
       const winPct = mp > 0 ? ((w / mp) * 100).toFixed(0) : "0";
@@ -255,14 +654,12 @@ export default function TeamDetailScreen() {
       };
     }
 
-    // Calculate from actual matches with scores
     let wins = 0;
     let losses = 0;
     let draws = 0;
     let matchesWithScores = 0;
 
     recentMatches.forEach((match) => {
-      // Only count matches that have BOTH scores recorded
       if (match.home_score !== null && match.away_score !== null) {
         matchesWithScores++;
         const isHome = match.home_team_id === id;
@@ -294,14 +691,12 @@ export default function TeamDetailScreen() {
     };
   }, [team, recentMatches, id]);
 
-  // Check if team has any championship badges
   const hasAnyBadge = useMemo(() => {
     return (
       team?.national_award || team?.regional_award || team?.state_cup_award
     );
   }, [team]);
 
-  // Check if team has GotSport ranking data
   const hasRankingData = useMemo(() => {
     return team?.national_rank !== null && team?.national_rank !== undefined;
   }, [team]);
@@ -316,7 +711,7 @@ export default function TeamDetailScreen() {
     return parts.join(" · ");
   };
 
-  // ✅ UPDATED: Use new column names from match_results
+  // Render recent match
   const renderRecentMatch = ({ item }: { item: MatchData }) => {
     const isHome = item.home_team_id === id;
     const opponent = isHome ? item.away_team_name : item.home_team_name;
@@ -344,7 +739,6 @@ export default function TeamDetailScreen() {
         ? `${teamScore} - ${oppScore}`
         : "—";
 
-    // Show source badge (league vs tournament)
     const sourceEmoji =
       item.source_type === "league"
         ? "🏆"
@@ -371,11 +765,6 @@ export default function TeamDetailScreen() {
           <Text style={styles.matchDateText}>
             {dateStr} {sourceEmoji}
           </Text>
-          {item.event_name && item.event_name !== "GotSport" && (
-            <Text style={styles.matchLocationText} numberOfLines={1}>
-              {item.event_name}
-            </Text>
-          )}
         </View>
         <Text style={styles.matchScoreText}>{scoreStr}</Text>
         <Ionicons name="chevron-forward" size={16} color="#4b5563" />
@@ -383,7 +772,7 @@ export default function TeamDetailScreen() {
     );
   };
 
-  // ✅ UPDATED: Use new column names from match_results
+  // Render upcoming match
   const renderUpcomingMatch = ({ item }: { item: MatchData }) => {
     const isHome = item.home_team_id === id;
     const opponent = isHome ? item.away_team_name : item.home_team_name;
@@ -409,11 +798,6 @@ export default function TeamDetailScreen() {
           {item.location && (
             <Text style={styles.matchLocationText} numberOfLines={1}>
               {item.location}
-            </Text>
-          )}
-          {item.event_name && item.event_name !== "GotSport" && (
-            <Text style={styles.matchLocationText} numberOfLines={1}>
-              {item.event_name}
             </Text>
           )}
         </View>
@@ -483,7 +867,6 @@ export default function TeamDetailScreen() {
   const { grade, color } = getEloGrade(elo);
   const meta = getTeamMeta();
 
-  // Goal differential
   const goalDiff =
     team.goals_for !== null && team.goals_against !== null
       ? team.goals_for - team.goals_against
@@ -520,7 +903,7 @@ export default function TeamDetailScreen() {
           <Text style={styles.teamName}>{team.team_name ?? "Unknown"}</Text>
           {meta ? <Text style={styles.teamMeta}>{meta}</Text> : null}
 
-          {/* 🏆 CHAMPIONSHIP BADGES - NEW! */}
+          {/* Championship Badges */}
           {hasAnyBadge && (
             <View style={styles.badgesContainer}>
               {team.national_award && (
@@ -543,51 +926,108 @@ export default function TeamDetailScreen() {
               )}
             </View>
           )}
-
-          <View style={styles.eloSection}>
-            <View style={styles.eloGradeContainer}>
-              <Text style={[styles.eloGrade, { color }]}>{grade}</Text>
-              <Text style={styles.eloValue}>{elo}</Text>
-            </View>
-            <Text style={styles.eloLabel}>Team Rating</Text>
-          </View>
         </View>
 
-        {/* 📊 NATIONAL RANKING CARD - NEW! (Only shows if team has ranking data) */}
+        {/* Power Rating Card */}
+        <View style={styles.powerRatingCard}>
+          <View style={styles.powerRatingHeader}>
+            <Text style={styles.powerRatingCardTitle}>⚡ Power Rating</Text>
+            <TouchableOpacity
+              style={styles.helpButton}
+              onPress={() => setShowRatingsHelp(true)}
+            >
+              <Ionicons name="help-circle-outline" size={20} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.powerRatingContent}>
+            <Text style={[styles.powerRatingLetter, { color }]}>{grade}</Text>
+            <Text style={styles.powerRatingValue}>{elo}</Text>
+          </View>
+          <Text style={styles.powerRatingDesc}>
+            Computed strength based on match results
+          </Text>
+        </View>
+
+        {/* Official Rank Card */}
         {hasRankingData && (
-          <View style={styles.rankingCard}>
-            <View style={styles.rankingHeader}>
-              <Text style={styles.rankingTitle}>🏆 Official Rankings</Text>
+          <View style={styles.officialRankCard}>
+            <View style={styles.officialRankHeader}>
+              <Text style={styles.officialRankTitle}>🏆 Official Rank</Text>
+              <TouchableOpacity
+                style={styles.helpButton}
+                onPress={() => setShowRatingsHelp(true)}
+              >
+                <Ionicons
+                  name="help-circle-outline"
+                  size={20}
+                  color="#6b7280"
+                />
+              </TouchableOpacity>
             </View>
-            <View style={styles.rankingGrid}>
+
+            <View style={styles.ranksRow}>
               {team.national_rank && (
                 <View style={styles.rankItem}>
-                  <Text style={styles.rankValue}>#{team.national_rank}</Text>
+                  <Text
+                    style={[
+                      styles.rankValue,
+                      { fontSize: getRankFontSize(team.national_rank) },
+                    ]}
+                  >
+                    #{formatNumber(team.national_rank)}
+                  </Text>
                   <Text style={styles.rankLabel}>National</Text>
                 </View>
               )}
               {team.regional_rank && (
                 <View style={styles.rankItem}>
-                  <Text style={styles.rankValue}>#{team.regional_rank}</Text>
+                  <Text
+                    style={[
+                      styles.rankValue,
+                      { fontSize: getRankFontSize(team.regional_rank) },
+                    ]}
+                  >
+                    #{formatNumber(team.regional_rank)}
+                  </Text>
                   <Text style={styles.rankLabel}>Regional</Text>
                 </View>
               )}
               {team.state_rank && (
                 <View style={styles.rankItem}>
-                  <Text style={styles.rankValue}>#{team.state_rank}</Text>
+                  <Text
+                    style={[
+                      styles.rankValue,
+                      { fontSize: getRankFontSize(team.state_rank) },
+                    ]}
+                  >
+                    #{formatNumber(team.state_rank)}
+                  </Text>
                   <Text style={styles.rankLabel}>State</Text>
                 </View>
               )}
-              {team.gotsport_points && (
-                <View style={styles.rankItem}>
-                  <Text style={styles.rankValuePoints}>
-                    {formatNumber(team.gotsport_points)}
-                  </Text>
-                  <Text style={styles.rankLabel}>Points</Text>
-                </View>
-              )}
+              {team.gotsport_points !== null &&
+                team.gotsport_points !== undefined && (
+                  <View style={styles.rankItem}>
+                    <Text
+                      style={[
+                        styles.rankValuePoints,
+                        {
+                          fontSize:
+                            team.gotsport_points >= 10000
+                              ? 14
+                              : team.gotsport_points >= 1000
+                                ? 16
+                                : 18,
+                        },
+                      ]}
+                    >
+                      {formatNumber(team.gotsport_points)}
+                    </Text>
+                    <Text style={styles.rankLabel}>Rank Pts</Text>
+                  </View>
+                )}
             </View>
-            {/* Goals For/Against row */}
+
             {(team.goals_for !== null || team.goals_against !== null) && (
               <View style={styles.goalsRow}>
                 <View style={styles.goalItem}>
@@ -621,7 +1061,16 @@ export default function TeamDetailScreen() {
           </View>
         )}
 
-        {/* ⚔️ PREDICT MATCH BUTTON */}
+        {/* 📈 MY TEAM'S JOURNEY - NEW SECTION */}
+        {hasRankingData && (
+          <RankTimeline
+            rankHistory={rankHistory}
+            currentRank={team.national_rank}
+            teamName={team.team_name || "Unknown"}
+          />
+        )}
+
+        {/* Predict Match Button */}
         <TouchableOpacity
           style={styles.predictButton}
           activeOpacity={0.8}
@@ -661,101 +1110,177 @@ export default function TeamDetailScreen() {
             </Text>
             <Text style={styles.statLabel}>Losses</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={[styles.statValue, { color: "#f59e0b" }]}>
-              {calculatedStats.draws}
-            </Text>
-            <Text style={styles.statLabel}>Draws</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>
-              {calculatedStats.winPercentage}
-            </Text>
-            <Text style={styles.statLabel}>Win %</Text>
-          </View>
         </View>
-        {calculatedStats.source === "calculated" &&
-          calculatedStats.matchesPlayed > 0 && (
-            <Text style={styles.statsNote}>
-              Stats calculated from {calculatedStats.matchesPlayed} recorded
-              match{calculatedStats.matchesPlayed !== 1 ? "es" : ""}
-            </Text>
-          )}
 
         {/* Match History */}
-        <View style={styles.tabsHeader}>
-          <Text style={styles.sectionTitle}>Match History</Text>
-          <View style={styles.tabsContainer}>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "recent" && styles.activeTab]}
-              onPress={() => setActiveTab("recent")}
+        <Text style={styles.sectionTitle}>Match History</Text>
+        <View style={styles.tabsRow}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "recent" && styles.activeTab]}
+            onPress={() => setActiveTab("recent")}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "recent" && styles.activeTabText,
+              ]}
             >
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "recent" && styles.activeTabText,
-                ]}
-              >
-                Recent ({recentMatches.length})
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "upcoming" && styles.activeTab]}
-              onPress={() => setActiveTab("upcoming")}
+              Recent ({recentMatches.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "upcoming" && styles.activeTab]}
+            onPress={() => setActiveTab("upcoming")}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "upcoming" && styles.activeTabText,
+              ]}
             >
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "upcoming" && styles.activeTabText,
-                ]}
-              >
-                Upcoming ({upcomingMatches.length})
-              </Text>
-            </TouchableOpacity>
-          </View>
+              Upcoming ({upcomingMatches.length})
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {matchesToShow.length > 0 ? (
-          <View style={styles.matchesList}>
-            {matchesToShow.map((match) => (
-              <React.Fragment key={match.id}>
+        <View style={styles.matchesList}>
+          {matchesToShow.length === 0 ? (
+            <View style={styles.emptyMatches}>
+              <Ionicons name="calendar-outline" size={32} color="#4b5563" />
+              <Text style={styles.emptyText}>
                 {activeTab === "recent"
-                  ? renderRecentMatch({ item: match })
-                  : renderUpcomingMatch({ item: match })}
-              </React.Fragment>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.emptyMatches}>
-            <Ionicons
-              name={
-                activeTab === "recent" ? "football-outline" : "calendar-outline"
-              }
-              size={40}
-              color="#4b5563"
-            />
-            <Text style={styles.emptyText}>
-              {activeTab === "recent"
-                ? "No recent matches found"
-                : "No upcoming matches scheduled"}
-            </Text>
-            <Text style={styles.emptySubtext}>
-              {activeTab === "recent"
-                ? "Match data is being collected"
-                : "Check back later for scheduled games"}
-            </Text>
-          </View>
-        )}
+                  ? "No recent matches found"
+                  : "No upcoming matches scheduled"}
+              </Text>
+              <Text style={styles.emptySubtext}>
+                {activeTab === "recent"
+                  ? "Match history will appear here"
+                  : "Future games will show here when scheduled"}
+              </Text>
+            </View>
+          ) : (
+            matchesToShow.map((match, index) =>
+              activeTab === "recent"
+                ? renderRecentMatch({ item: match })
+                : renderUpcomingMatch({ item: match }),
+            )
+          )}
+        </View>
+
+        {/* Bottom padding */}
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Ratings Help Modal */}
+      <Modal
+        visible={showRatingsHelp}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRatingsHelp(false)}
+      >
+        <TouchableOpacity
+          style={styles.helpModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowRatingsHelp(false)}
+        >
+          <View style={styles.helpModalContent}>
+            <View style={styles.helpModalHeader}>
+              <Text style={styles.helpModalTitle}>Understanding Ratings</Text>
+              <TouchableOpacity onPress={() => setShowRatingsHelp(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 20 }}>
+              <View style={styles.helpSection}>
+                <Text style={styles.helpSectionTitle}>🏆 Official Rank</Text>
+                <Text style={styles.helpSectionDesc}>
+                  The official national ranking used by tournament directors for
+                  seeding. Based on results from sanctioned events.
+                </Text>
+                <View style={styles.helpBulletList}>
+                  <Text style={styles.helpBullet}>
+                    • Used for tournament bracket seeding
+                  </Text>
+                  <Text style={styles.helpBullet}>
+                    • Updated after each tournament
+                  </Text>
+                  <Text style={styles.helpBullet}>
+                    • National, Regional, and State rankings
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.helpSection}>
+                <Text style={styles.helpSectionTitle}>⚡ Power Rating</Text>
+                <Text style={styles.helpSectionDesc}>
+                  Our real-time strength calculation using ELO algorithm.
+                  Updates after every match result.
+                </Text>
+                <View style={styles.helpBulletList}>
+                  <Text style={styles.helpBullet}>
+                    • Real-time strength indicator
+                  </Text>
+                  <Text style={styles.helpBullet}>
+                    • Accounts for opponent strength
+                  </Text>
+                  <Text style={styles.helpBullet}>
+                    • 1500 is average, higher is better
+                  </Text>
+                </View>
+                <View style={styles.gradeGuide}>
+                  <Text style={styles.gradeGuideTitle}>Grade Scale</Text>
+                  <Text style={[styles.gradeItem, { color: "#22c55e" }]}>
+                    A+ (1650+) - Elite
+                  </Text>
+                  <Text style={[styles.gradeItem, { color: "#3B82F6" }]}>
+                    B (1475-1524) - Above Average
+                  </Text>
+                  <Text style={[styles.gradeItem, { color: "#f59e0b" }]}>
+                    C (1400-1474) - Average
+                  </Text>
+                  <Text style={[styles.gradeItem, { color: "#ef4444" }]}>
+                    D (Below 1400) - Developing
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
 
+// ============================================================================
+// STYLES
+// ============================================================================
+
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: "#000" },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 8 },
+  centered: {
     flex: 1,
-    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
   },
+  loadingText: { color: "#9ca3af", fontSize: 14, marginTop: 8 },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+
+  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -765,26 +1290,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#1F2937",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
+  backButton: { padding: 8 },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
+
+  // Team Card
   teamCard: {
     backgroundColor: "#111",
     borderRadius: 16,
@@ -799,19 +1308,16 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  teamMeta: {
-    color: "#9ca3af",
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  // 🏆 CHAMPIONSHIP BADGE STYLES
+  teamMeta: { color: "#9ca3af", fontSize: 14, textAlign: "center" },
+
+  // Badges
   badgesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
-    marginBottom: 12,
+    marginTop: 12,
     gap: 8,
   },
   badge: {
@@ -837,16 +1343,43 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(205, 127, 50, 0.4)",
   },
-  badgeEmoji: {
-    fontSize: 14,
+  badgeEmoji: { fontSize: 14 },
+  badgeText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+
+  // Power Rating Card
+  powerRatingCard: {
+    backgroundColor: "#111",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
   },
-  badgeText: {
-    color: "#fff",
+  powerRatingHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  powerRatingCardTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  powerRatingContent: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "center",
+    gap: 12,
+  },
+  powerRatingLetter: { fontSize: 48, fontWeight: "bold" },
+  powerRatingValue: { color: "#6b7280", fontSize: 24, fontWeight: "600" },
+  powerRatingDesc: {
+    color: "#6b7280",
     fontSize: 12,
-    fontWeight: "600",
+    textAlign: "center",
+    marginTop: 8,
   },
-  // 📊 RANKING CARD STYLES - NEW!
-  rankingCard: {
+  helpButton: { padding: 4 },
+
+  // Official Rank Card
+  officialRankCard: {
     backgroundColor: "#111",
     borderRadius: 16,
     padding: 16,
@@ -854,37 +1387,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(59, 130, 246, 0.3)",
   },
-  rankingHeader: {
+  officialRankHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
-  rankingTitle: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  rankingGrid: {
+  officialRankTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  ranksRow: {
     flexDirection: "row",
     justifyContent: "space-around",
     paddingVertical: 8,
   },
   rankItem: {
+    flex: 1,
     alignItems: "center",
+    minHeight: 50,
+    justifyContent: "flex-end",
+    paddingBottom: 4,
   },
   rankValue: {
     color: "#3B82F6",
-    fontSize: 24,
     fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 4,
   },
   rankValuePoints: {
     color: "#22c55e",
-    fontSize: 20,
     fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 4,
   },
-  rankLabel: {
-    color: "#6b7280",
-    fontSize: 11,
-    marginTop: 4,
-  },
+  rankLabel: { color: "#6b7280", fontSize: 11 },
   goalsRow: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -893,47 +1427,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.1)",
   },
-  goalItem: {
-    alignItems: "center",
-  },
-  goalValue: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  goalLabel: {
-    color: "#6b7280",
-    fontSize: 10,
-    marginTop: 2,
-  },
-  eloSection: {
-    alignItems: "center",
-    marginTop: 8,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.1)",
-    width: "100%",
-  },
-  eloGradeContainer: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 12,
-  },
-  eloGrade: {
-    fontSize: 48,
-    fontWeight: "bold",
-  },
-  eloValue: {
-    color: "#6b7280",
-    fontSize: 24,
-    fontWeight: "600",
-  },
-  eloLabel: {
-    color: "#6b7280",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  // ⚔️ Predict Match Button Styles
+  goalItem: { alignItems: "center", flex: 1 },
+  goalValue: { color: "#fff", fontSize: 18, fontWeight: "600" },
+  goalLabel: { color: "#6b7280", fontSize: 10, marginTop: 2 },
+
+  // Predict Button
   predictButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -953,38 +1451,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  predictEmoji: {
-    fontSize: 22,
-  },
-  predictTextContainer: {
-    flex: 1,
-  },
+  predictEmoji: { fontSize: 22 },
+  predictTextContainer: { flex: 1 },
   predictTitle: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
     marginBottom: 2,
   },
-  predictSubtitle: {
-    color: "#10b981",
-    fontSize: 12,
-    fontWeight: "500",
-  },
+  predictSubtitle: { color: "#10b981", fontSize: 12, fontWeight: "500" },
+
+  // Section Title
   sectionTitle: {
     color: "#fff",
     fontSize: 20,
     fontWeight: "700",
     marginBottom: 12,
   },
+
+  // Stats Grid
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 24,
   },
   statBox: {
-    width: "30%",
-    flexGrow: 1,
+    flex: 1,
+    minWidth: "28%",
     backgroundColor: "#111",
     borderRadius: 12,
     padding: 16,
@@ -992,55 +1486,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  statValue: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
+  statValue: { color: "#fff", fontSize: 20, fontWeight: "bold" },
   statLabel: {
     color: "#6b7280",
     fontSize: 11,
     marginTop: 4,
     textAlign: "center",
   },
-  statsNote: {
-    color: "#4b5563",
-    fontSize: 11,
-    fontStyle: "italic",
-    textAlign: "center",
-    marginBottom: 24,
-  },
-  tabsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  tabsContainer: {
+
+  // Tabs
+  tabsRow: {
     flexDirection: "row",
     backgroundColor: "#1F2937",
-    borderRadius: 8,
-    padding: 2,
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 16,
   },
   tab: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
   },
-  activeTab: {
-    backgroundColor: "#3B82F6",
-  },
-  tabText: {
-    color: "#9ca3af",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  activeTabText: {
-    color: "#fff",
-  },
-  matchesList: {
-    gap: 10,
-  },
+  activeTab: { backgroundColor: "#3B82F6" },
+  tabText: { color: "#9ca3af", fontSize: 14, fontWeight: "600" },
+  activeTabText: { color: "#fff" },
+
+  // Match Cards
+  matchesList: { gap: 10 },
   matchCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -1059,29 +1533,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  resultText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  matchInfo: {
-    flex: 1,
-  },
-  opponentText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  matchDateText: {
-    color: "#6b7280",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  matchLocationText: {
-    color: "#9ca3af",
-    fontSize: 11,
-    marginTop: 2,
-  },
+  resultText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  matchInfo: { flex: 1 },
+  opponentText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  matchDateText: { color: "#6b7280", fontSize: 12, marginTop: 2 },
+  matchLocationText: { color: "#9ca3af", fontSize: 11, marginTop: 2 },
   matchScoreText: {
     color: "#9ca3af",
     fontSize: 16,
@@ -1091,45 +1547,60 @@ const styles = StyleSheet.create({
     minWidth: 50,
     textAlign: "center",
   },
-  emptyMatches: {
-    alignItems: "center",
-    paddingVertical: 32,
-    gap: 8,
-  },
-  emptyText: {
-    color: "#6b7280",
-    fontSize: 14,
-  },
-  emptySubtext: {
-    color: "#4b5563",
-    fontSize: 12,
-  },
-  centered: {
+  emptyMatches: { alignItems: "center", paddingVertical: 32, gap: 8 },
+  emptyText: { color: "#6b7280", fontSize: 14 },
+  emptySubtext: { color: "#4b5563", fontSize: 12 },
+
+  // Help Modal
+  helpModalOverlay: {
     flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 20,
   },
-  loadingText: {
+  helpModalContent: {
+    backgroundColor: "#1F2937",
+    borderRadius: 20,
+    width: "100%",
+    maxHeight: "80%",
+    overflow: "hidden",
+  },
+  helpModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  helpModalTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  helpSection: { marginBottom: 24 },
+  helpSectionTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  helpSectionDesc: {
     color: "#9ca3af",
     fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  helpBulletList: { gap: 6 },
+  helpBullet: { color: "#d1d5db", fontSize: 13 },
+  gradeGuide: {
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 12,
+    padding: 12,
     marginTop: 12,
   },
-  errorText: {
-    color: "#EF4444",
-    fontSize: 16,
-    marginTop: 12,
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  retryButton: {
-    backgroundColor: "#3B82F6",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
+  gradeGuideTitle: {
     color: "#fff",
+    fontSize: 13,
     fontWeight: "600",
-    fontSize: 16,
+    marginBottom: 8,
   },
+  gradeItem: { fontSize: 12, marginBottom: 4 },
 });

@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Keyboard,
   Modal,
@@ -48,48 +49,50 @@ type TeamRankRow = {
   rank?: number;
 };
 
-type ViewMode = "leaderboard" | "national" | "state";
+// Simplified: Only two ranking views (removed "state" mode)
+type ViewMode = "leaderboard" | "national";
 
 // ============================================================
 // CONSTANTS
 // ============================================================
 
-// US STATES ONLY - Filter out Canadian provinces and invalid codes
-const US_STATES = new Set([
-  "AL",
+// US STATES ONLY - Alphabetically sorted for filter display
+const US_STATES = [
   "AK",
-  "AZ",
+  "AL",
   "AR",
+  "AZ",
   "CA",
   "CO",
   "CT",
+  "DC",
   "DE",
   "FL",
   "GA",
   "HI",
+  "IA",
   "ID",
   "IL",
   "IN",
-  "IA",
   "KS",
   "KY",
   "LA",
-  "ME",
-  "MD",
   "MA",
+  "MD",
+  "ME",
   "MI",
   "MN",
-  "MS",
   "MO",
+  "MS",
   "MT",
+  "NC",
+  "ND",
   "NE",
-  "NV",
   "NH",
   "NJ",
   "NM",
+  "NV",
   "NY",
-  "NC",
-  "ND",
   "OH",
   "OK",
   "OR",
@@ -100,14 +103,15 @@ const US_STATES = new Set([
   "TN",
   "TX",
   "UT",
-  "VT",
   "VA",
+  "VT",
   "WA",
-  "WV",
   "WI",
+  "WV",
   "WY",
-  "DC",
-]);
+];
+
+const US_STATES_SET = new Set(US_STATES);
 
 // Valid age groups - ALWAYS show U8 through U19
 const ALL_AGE_GROUPS = [
@@ -151,14 +155,13 @@ async function fetchTeams(
       "id, team_name, state, elo_rating, matches_played, wins, losses, draws, gender, age_group, national_rank, regional_rank, state_rank, gotsport_points, national_award, regional_award, state_cup_award",
     );
 
-  // LEADERBOARD MODE: Only teams with official rankings
+  // LEADERBOARD MODE: Only teams with official rankings, sorted by national_rank
   if (mode === "leaderboard") {
     query = query.not("national_rank", "is", null);
     query = query.order("national_rank", { ascending: true });
-  } else if (mode === "national") {
+  } else {
+    // NATIONAL MODE: All teams sorted by ELO (Power Rating)
     query = query.order("elo_rating", { ascending: false });
-  } else if (mode === "state") {
-    query = query.order("state_rank", { ascending: true, nullsFirst: false });
   }
 
   // Apply filters server-side
@@ -196,25 +199,32 @@ async function fetchTeams(
   };
 }
 
-// Fetch filter options (states, genders) - lightweight query
+// Fetch filter options (states, genders) - reliable per-state check
 async function fetchFilterOptions(): Promise<{
   states: string[];
   genders: string[];
   totalWithRank: number;
 }> {
-  // Get distinct states - filter to US only
-  const { data: stateData } = await supabase
-    .from("team_elo")
-    .select("state")
-    .not("state", "is", null)
-    .limit(1000);
+  // Check each US state to see if it has teams
+  // This is more reliable than trying to get distinct from 115k rows
+  const stateChecks = await Promise.all(
+    US_STATES.map(async (state) => {
+      const { count } = await supabase
+        .from("team_elo")
+        .select("id", { count: "exact", head: true })
+        .eq("state", state);
+      return { state, hasTeams: (count || 0) > 0 };
+    }),
+  );
 
-  const statesRaw = (stateData || [])
-    .map((r) => r.state?.trim().toUpperCase())
-    .filter((s): s is string => !!s && US_STATES.has(s));
-  const states = [...new Set(statesRaw)].sort();
+  const statesWithTeams: string[] = [];
+  for (const check of stateChecks) {
+    if (check.hasTeams) {
+      statesWithTeams.push(check.state);
+    }
+  }
 
-  // Get distinct genders
+  // Get distinct genders (only 2 values, so simple query works)
   const { data: genderData } = await supabase
     .from("team_elo")
     .select("gender")
@@ -233,7 +243,7 @@ async function fetchFilterOptions(): Promise<{
     .not("national_rank", "is", null);
 
   return {
-    states,
+    states: statesWithTeams.sort(),
     genders,
     totalWithRank: count || 0,
   };
@@ -317,6 +327,7 @@ export default function RankingsTab() {
   const [allStates, setAllStates] = useState<string[]>([]);
   const [allGenders, setAllGenders] = useState<string[]>([]);
   const [teamsWithNationalRank, setTeamsWithNationalRank] = useState(0);
+  const [loadingFilters, setLoadingFilters] = useState(true);
 
   // Load filter options once on mount
   useEffect(() => {
@@ -338,12 +349,17 @@ export default function RankingsTab() {
 
   const loadFilterOptions = async () => {
     try {
+      setLoadingFilters(true);
       const options = await fetchFilterOptions();
       setAllStates(options.states);
       setAllGenders(options.genders);
       setTeamsWithNationalRank(options.totalWithRank);
     } catch (err) {
       console.error("Error loading filter options:", err);
+      // Fallback to full state list
+      setAllStates(US_STATES);
+    } finally {
+      setLoadingFilters(false);
     }
   };
 
@@ -515,7 +531,7 @@ export default function RankingsTab() {
         {/* Team Info */}
         <View style={styles.leaderboardInfo}>
           <View style={styles.leaderboardNameRow}>
-            <Text style={styles.leaderboardName} numberOfLines={1}>
+            <Text style={styles.leaderboardName} numberOfLines={2}>
               {item.team_name || "Unknown"}
             </Text>
             {awards ? <Text style={styles.awardBadges}>{awards}</Text> : null}
@@ -599,15 +615,16 @@ export default function RankingsTab() {
       {/* Filters */}
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.filtersContainer}>
-          {/* Mode Selection */}
+          {/* View Mode Selection - Only Official Rank and Power Rating */}
           <Text style={styles.sectionHeader}>View</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.chipScroll}
+            contentContainerStyle={styles.chipScrollContent}
           >
             {renderChip(
-              `🏆 Leaderboard (${teamsWithNationalRank.toLocaleString()})`,
+              "🏆 Official Rank",
               mode === "leaderboard",
               () => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -615,13 +632,9 @@ export default function RankingsTab() {
               },
               true,
             )}
-            {renderChip("National (ELO)", mode === "national", () => {
+            {renderChip("⚡ Power Rating", mode === "national", () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setMode("national");
-            })}
-            {renderChip("By State", mode === "state", () => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setMode("state");
             })}
           </ScrollView>
 
@@ -631,6 +644,7 @@ export default function RankingsTab() {
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.chipScroll}
+            contentContainerStyle={styles.chipScrollContent}
           >
             {allGenders.map((g) =>
               renderChip(g, selectedGenders.includes(g), () =>
@@ -645,6 +659,7 @@ export default function RankingsTab() {
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.chipScroll}
+            contentContainerStyle={styles.chipScrollContent}
           >
             {ALL_AGE_GROUPS.map((age) =>
               renderChip(age, selectedAges.includes(age), () =>
@@ -652,6 +667,33 @@ export default function RankingsTab() {
               ),
             )}
           </ScrollView>
+
+          {/* State Filter - NEW: Consistent with Teams tab */}
+          <Text style={styles.sectionHeader}>State</Text>
+          {loadingFilters ? (
+            <View style={styles.chipScroll}>
+              <ActivityIndicator size="small" color="#3B82F6" />
+              <Text style={styles.loadingChipsText}>Loading states...</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipScroll}
+              contentContainerStyle={styles.chipScrollContent}
+            >
+              {/* "All" chip - selected when no states are filtered */}
+              {renderChip("All", selectedStates.length === 0, () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setSelectedStates([]);
+              })}
+              {allStates.map((st) =>
+                renderChip(st, selectedStates.includes(st), () =>
+                  toggleSelection(st, selectedStates, setSelectedStates),
+                ),
+              )}
+            </ScrollView>
+          )}
 
           {/* Clear Filters */}
           {hasActiveFilters && (
@@ -747,61 +789,115 @@ export default function RankingsTab() {
         />
       )}
 
-      {/* Info Modal - Updated text */}
+      {/* Info Modal - Session 10 scrollable pattern */}
       <Modal
         visible={infoModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setInfoModalVisible(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setInfoModalVisible(false)}
-        >
-          <View style={styles.modalContent}>
+        <View style={styles.modalOverlay}>
+          {/* Tap-to-dismiss background */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            onPress={() => setInfoModalVisible(false)}
+            activeOpacity={1}
+          />
+          {/* Modal content */}
+          <View
+            style={[
+              styles.modalContent,
+              { height: Dimensions.get("window").height * 0.7 },
+            ]}
+          >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Ranking System</Text>
+              <Text style={styles.modalTitle}>How Rankings Work</Text>
               <TouchableOpacity onPress={() => setInfoModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#9ca3af" />
+                <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
+            <ScrollView style={{ flex: 1 }} bounces={true}>
+              <View style={{ padding: 20, paddingTop: 0 }}>
+                {/* Official Rank Section */}
+                <View style={styles.helpSection}>
+                  <Text style={styles.helpSectionTitle}>
+                    🏆 Official Rank (GotSport)
+                  </Text>
+                  <Text style={styles.helpSectionDesc}>
+                    Official national rankings from GotSport based on tournament
+                    performance. These rankings are used by tournament directors
+                    for seeding decisions.
+                  </Text>
+                  <View style={styles.helpBulletList}>
+                    <Text style={styles.helpBullet}>
+                      • Points earned from sanctioned tournaments
+                    </Text>
+                    <Text style={styles.helpBullet}>
+                      • Updated after each event
+                    </Text>
+                    <Text style={styles.helpBullet}>
+                      • Gold/silver/bronze medals for top 3
+                    </Text>
+                  </View>
+                </View>
 
-            <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>🏆 Leaderboard</Text>
-              {"\n"}
-              Official GotSport Rankings. Teams are ranked based on tournament
-              performance, opponent strength, and match results across
-              sanctioned events.
-            </Text>
+                {/* Power Rating Section */}
+                <View style={styles.helpSection}>
+                  <Text style={styles.helpSectionTitle}>
+                    ⚡ Power Rating (ELO)
+                  </Text>
+                  <Text style={styles.helpSectionDesc}>
+                    SoccerView's computed strength rating based on match
+                    results. Teams start at 1500 ELO and gain/lose points based
+                    on wins and losses.
+                  </Text>
+                  <View style={styles.gradeGuide}>
+                    <Text style={styles.gradeGuideTitle}>Letter Grades:</Text>
+                    <Text style={[styles.gradeItem, { color: "#22c55e" }]}>
+                      A+ (1650+) Elite
+                    </Text>
+                    <Text style={[styles.gradeItem, { color: "#4ade80" }]}>
+                      A/A- (1550-1649) Excellent
+                    </Text>
+                    <Text style={[styles.gradeItem, { color: "#3B82F6" }]}>
+                      B+/B/B- (1475-1549) Above Average
+                    </Text>
+                    <Text style={[styles.gradeItem, { color: "#f59e0b" }]}>
+                      C+/C/C- (1400-1474) Average
+                    </Text>
+                    <Text style={[styles.gradeItem, { color: "#ef4444" }]}>
+                      D+/D/D- (below 1400) Developing
+                    </Text>
+                  </View>
+                </View>
 
-            <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>National (ELO)</Text>
-              {"\n"}
-              Our computed ELO ratings across all teams. Higher ratings indicate
-              stronger competitive performance.
-            </Text>
+                {/* Championship Badges */}
+                <View style={styles.helpSection}>
+                  <Text style={styles.helpSectionTitle}>
+                    🏆 Championship Badges
+                  </Text>
+                  <Text style={styles.helpSectionDesc}>
+                    Teams with championship awards display badges:
+                  </Text>
+                  <View style={styles.helpBulletList}>
+                    <Text style={styles.helpBullet}>🏆 National Champion</Text>
+                    <Text style={styles.helpBullet}>🥇 Regional Winner</Text>
+                    <Text style={styles.helpBullet}>🏅 State Cup Winner</Text>
+                  </View>
+                </View>
 
-            <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>ELO Grades</Text>
-              {"\n"}
-              A+ (1650+) Elite | A (1600+) Excellent | B (1500+) Strong | C
-              (1425+) Average | D (&lt;1400) Developing
-            </Text>
-
-            <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>Championship Badges</Text>
-              {"\n"}
-              🏆 National Champion - Teams with national championship awards
-            </Text>
-
-            <Text style={styles.modalText}>
-              <Text style={styles.modalBold}>Multi-Select</Text>
-              {"\n"}
-              Select multiple genders or ages to compare across categories.
-            </Text>
+                {/* Multi-Select */}
+                <View style={styles.helpSection}>
+                  <Text style={styles.helpSectionTitle}>Multi-Select</Text>
+                  <Text style={styles.helpSectionDesc}>
+                    Select multiple genders, ages, or states to compare across
+                    categories.
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -824,6 +920,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   chipScroll: { flexDirection: "row", marginBottom: 12 },
+  chipScrollContent: { paddingRight: 16 },
+  loadingChipsText: { color: "#9ca3af", fontSize: 14, marginLeft: 8 },
   baseChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -939,14 +1037,16 @@ const styles = StyleSheet.create({
   },
   leaderboardNameRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 6,
+    flexWrap: "wrap",
   },
   leaderboardName: {
     color: "#fff",
     fontSize: 15,
     fontWeight: "600",
     flex: 1,
+    lineHeight: 20,
   },
   awardBadges: {
     fontSize: 12,
@@ -1029,32 +1129,58 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   clearFiltersText: { color: "#3B82F6", fontSize: 14, fontWeight: "600" },
+
+  // FIXED: Modal with proper scrollable content (Session 10 pattern)
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.8)",
+    backgroundColor: "rgba(0,0,0,0.85)",
     justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 16,
   },
   modalContent: {
     backgroundColor: "#1F2937",
-    borderRadius: 16,
-    padding: 20,
-    maxHeight: "80%",
+    borderRadius: 20,
+    width: "100%",
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 16,
-    paddingBottom: 12,
+    alignItems: "center",
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
   modalTitle: { color: "#fff", fontSize: 20, fontWeight: "700" },
-  modalText: {
-    color: "#d1d5db",
-    fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 16,
+
+  // Help sections (consistent with other modals)
+  helpSection: { marginBottom: 24 },
+  helpSectionTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 8,
   },
-  modalBold: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  helpSectionDesc: {
+    color: "#9ca3af",
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  helpBulletList: { gap: 6 },
+  helpBullet: { color: "#d1d5db", fontSize: 13 },
+  gradeGuide: {
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  gradeGuideTitle: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  gradeItem: { fontSize: 12, marginBottom: 4 },
 });
