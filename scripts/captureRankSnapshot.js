@@ -1,13 +1,13 @@
 /**
- * captureRankSnapshot.js - v2.0 FIXED
+ * captureRankSnapshot.js - v2.1 FIXED
  *
  * Captures a daily snapshot of all team rankings for the "My Team's Journey" feature.
  * Called by GitHub Actions cron job daily at 6 AM UTC.
  *
- * FIX: Bypasses RPC function entirely to avoid Supabase statement timeout issues.
- * Instead, queries team_elo and inserts into rank_history directly using batched inserts.
+ * FIX v2.1: Use 1000 page size (Supabase default max) and proper pagination
+ * FIX v2.0: Bypasses RPC function entirely to avoid Supabase statement timeout issues.
  *
- * @version 2.0.0
+ * @version 2.1.0
  * @date January 2026
  */
 
@@ -37,25 +37,38 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   },
 });
 
-// Configuration
+// Configuration - Supabase default max is 1000 rows per query
 const CONFIG = {
-  BATCH_SIZE: 5000,      // Insert 5000 records at a time
-  PAGE_SIZE: 10000,      // Fetch 10000 teams at a time from team_elo
+  BATCH_SIZE: 1000,      // Insert 1000 records at a time
+  PAGE_SIZE: 1000,       // Fetch 1000 teams at a time (Supabase max)
 };
 
 async function captureRankSnapshot() {
-  console.log("📸 Capturing daily rank snapshot v2.0...");
+  console.log("📸 Capturing daily rank snapshot v2.1...");
   console.log(`📅 Date: ${new Date().toISOString()}`);
   
   const today = new Date().toISOString().split("T")[0];
   let totalCaptured = 0;
   let offset = 0;
   let hasMore = true;
+  let pageCount = 0;
 
   try {
-    // Process teams in pages to avoid memory issues
+    // First, get total count of ranked teams
+    const { count: totalRanked, error: countErr } = await supabase
+      .from("team_elo")
+      .select("*", { count: "exact", head: true })
+      .not("national_rank", "is", null);
+
+    if (countErr) {
+      console.error(`❌ Count error: ${countErr.message}`);
+    } else {
+      console.log(`📊 Total ranked teams to capture: ${totalRanked?.toLocaleString()}`);
+    }
+
+    // Process teams in pages
     while (hasMore) {
-      console.log(`\n📥 Fetching teams (offset: ${offset})...`);
+      pageCount++;
       
       // Fetch a page of ranked teams
       const { data: teams, error: fetchError } = await supabase
@@ -71,10 +84,9 @@ async function captureRankSnapshot() {
 
       if (!teams || teams.length === 0) {
         hasMore = false;
+        console.log(`\n   Page ${pageCount}: No more teams`);
         continue;
       }
-
-      console.log(`   Found ${teams.length} ranked teams`);
 
       // Transform to rank_history records
       const snapshots = teams.map(team => ({
@@ -86,27 +98,28 @@ async function captureRankSnapshot() {
         elo_rating: team.elo_rating,
       }));
 
-      // Insert in batches
-      for (let i = 0; i < snapshots.length; i += CONFIG.BATCH_SIZE) {
-        const batch = snapshots.slice(i, i + CONFIG.BATCH_SIZE);
-        
-        const { error: insertError } = await supabase
-          .from("rank_history")
-          .upsert(batch, { 
-            onConflict: "team_id,snapshot_date",
-            ignoreDuplicates: false 
-          });
+      // Insert batch
+      const { error: insertError } = await supabase
+        .from("rank_history")
+        .upsert(snapshots, { 
+          onConflict: "team_id,snapshot_date",
+          ignoreDuplicates: false 
+        });
 
-        if (insertError) {
-          console.error(`   ❌ Batch insert error: ${insertError.message}`);
-          // Continue with next batch instead of failing completely
-        } else {
-          totalCaptured += batch.length;
-          process.stdout.write(`\r   💾 Inserted: ${totalCaptured.toLocaleString()} records`);
-        }
+      if (insertError) {
+        console.error(`\n   ❌ Insert error on page ${pageCount}: ${insertError.message}`);
+        // Continue with next page instead of failing completely
+      } else {
+        totalCaptured += teams.length;
       }
 
-      // Check if we should continue
+      // Progress update every 10 pages
+      if (pageCount % 10 === 0 || teams.length < CONFIG.PAGE_SIZE) {
+        const pct = totalRanked ? ((totalCaptured / totalRanked) * 100).toFixed(1) : '?';
+        console.log(`   📥 Page ${pageCount}: ${totalCaptured.toLocaleString()} captured (${pct}%)`);
+      }
+
+      // Check if we should continue - if we got a full page, there might be more
       if (teams.length < CONFIG.PAGE_SIZE) {
         hasMore = false;
       } else {
@@ -114,17 +127,18 @@ async function captureRankSnapshot() {
       }
     }
 
-    console.log(`\n\n✅ Snapshot captured successfully!`);
+    console.log(`\n✅ Snapshot captured successfully!`);
     console.log(`   📊 Teams captured: ${totalCaptured.toLocaleString()}`);
     console.log(`   📅 Snapshot date: ${today}`);
+    console.log(`   📄 Pages processed: ${pageCount}`);
 
     // Verify the snapshot was saved
-    const { count, error: countError } = await supabase
+    const { count, error: verifyError } = await supabase
       .from("rank_history")
       .select("*", { count: "exact", head: true })
       .eq("snapshot_date", today);
 
-    if (!countError) {
+    if (!verifyError) {
       console.log(`   🔍 Verified: ${count?.toLocaleString()} records for today's date`);
     }
 
