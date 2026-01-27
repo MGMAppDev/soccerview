@@ -21,7 +21,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABAS
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  console.error("❌ Missing environment variables:");
+  console.error(`   SUPABASE_URL: ${SUPABASE_URL ? '✅ Set' : '❌ MISSING'}`);
+  console.error(`   SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_KEY ? '✅ Set' : '❌ MISSING'}`);
+  console.error("\nAvailable env vars:", Object.keys(process.env).filter(k => k.includes('SUPA') || k.includes('DATABASE')));
   process.exit(1);
 }
 
@@ -34,9 +37,10 @@ const CONFIG = {
 };
 
 async function captureRankSnapshot() {
-  console.log("📸 Capturing daily rank snapshot v2.2...");
+  console.log("📸 Capturing daily rank snapshot v2.3...");
   console.log(`📅 Date: ${new Date().toISOString()}`);
-  
+  console.log(`🔗 Supabase URL: ${SUPABASE_URL?.substring(0, 30)}...`);
+
   const today = new Date().toISOString().split("T")[0];
   let totalCaptured = 0;
   let offset = 0;
@@ -44,6 +48,17 @@ async function captureRankSnapshot() {
   let pageCount = 0;
 
   try {
+    // Connectivity test - verify rank_history table exists and is writable
+    console.log("🔍 Testing database connectivity...");
+    const { error: testError } = await supabase
+      .from("rank_history")
+      .select("team_id")
+      .limit(1);
+
+    if (testError) {
+      throw new Error(`Database connectivity test failed: ${testError.message}`);
+    }
+    console.log("✅ Database connected successfully\n");
     // Process teams in pages - no count query (it times out in GitHub Actions)
     while (hasMore) {
       pageCount++;
