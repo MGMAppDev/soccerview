@@ -1,378 +1,349 @@
 /**
- * Automated team linking script v3.1 - BULLETPROOF EDITION
+ * Team Linking Script v5.0 - BIRTH YEAR VALIDATION
+ * =================================================
  *
- * CRITICAL FIX: Previous versions made 90,000 individual RPC calls (1 per match).
- * This version processes UNIQUE TEAM NAMES only (~5,000 names vs 90,000 matches).
+ * FIXES THE ROOT CAUSE:
+ * - team_elo has names like "Club Name 2013 (U13 Boys)"
+ * - match_results has names like "Club Name 2013" (no suffix)
+ * - This script strips the suffix before matching
  *
- * STRATEGY:
- * 1. Get all unique unlinked team names
- * 2. For each unique name, find the best match ONCE
- * 3. Bulk update ALL matches with that name in one query
+ * v5.0 FIX: Validates birth years match to prevent linking
+ * "Pre-NAL 14" matches to "Pre-NAL 15" teams
  *
- * Expected completion: 5-15 minutes (vs 2+ hours before)
+ * RUNS NIGHTLY via GitHub Actions daily-data-sync.yml
  *
  * Usage:
  *   node scripts/linkTeams.js              # Default (45 min timeout)
  *   node scripts/linkTeams.js --timeout=90 # Custom timeout
- *   node scripts/linkTeams.js --threshold=0.5 # Custom similarity threshold
  */
 
-import { createClient } from "@supabase/supabase-js";
 import "dotenv/config";
+import pg from "pg";
 
-const SUPABASE_URL =
-  process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error("❌ Missing environment variables");
-  process.exit(1);
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+const DATABASE_URL = process.env.DATABASE_URL;
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Parse CLI args
 const args = process.argv.slice(2);
 const timeoutArg = args.find((a) => a.startsWith("--timeout="));
-const thresholdArg = args.find((a) => a.startsWith("--threshold="));
-
 const TIMEOUT_MINUTES = timeoutArg ? parseInt(timeoutArg.split("=")[1]) : 45;
-const SIMILARITY_THRESHOLD = thresholdArg
-  ? parseFloat(thresholdArg.split("=")[1])
-  : 0.4;
 
-const startTime = Date.now();
+// If we have DATABASE_URL, use direct Postgres (faster, no timeout issues)
+// Otherwise fall back to Supabase client
+const USE_DIRECT_PG = !!DATABASE_URL;
 
-function getElapsedMinutes() {
-  return (Date.now() - startTime) / 60000;
-}
-
-function shouldExit() {
-  return getElapsedMinutes() >= TIMEOUT_MINUTES - 2; // Exit 2 min before timeout
-}
-
-/**
- * Get current linking status
- */
-async function getStatus() {
-  const { count: total } = await supabase
-    .from("match_results")
-    .select("*", { count: "exact", head: true });
-
-  const { count: homeLinked } = await supabase
-    .from("match_results")
-    .select("*", { count: "exact", head: true })
-    .not("home_team_id", "is", null);
-
-  const { count: awayLinked } = await supabase
-    .from("match_results")
-    .select("*", { count: "exact", head: true })
-    .not("away_team_id", "is", null);
-
-  const { count: fullyLinked } = await supabase
-    .from("match_results")
-    .select("*", { count: "exact", head: true })
-    .not("home_team_id", "is", null)
-    .not("away_team_id", "is", null);
-
-  return {
-    total: total || 0,
-    homeLinked: homeLinked || 0,
-    awayLinked: awayLinked || 0,
-    fullyLinked: fullyLinked || 0,
-  };
-}
-
-/**
- * Get unique unlinked team names
- */
-async function getUniqueUnlinkedNames(field) {
-  const column = field === "home" ? "home_team_id" : "away_team_id";
-  const nameCol = field === "home" ? "home_team_name" : "away_team_name";
-
-  // Fetch distinct unlinked names (Supabase doesn't support DISTINCT directly)
-  const { data, error } = await supabase
-    .from("match_results")
-    .select(nameCol)
-    .is(column, null)
-    .not(nameCol, "is", null)
-    .limit(50000);
-
-  if (error) {
-    console.error(`❌ Error fetching ${field} names:`, error.message);
-    return [];
-  }
-
-  // Deduplicate and clean
-  const uniqueNames = [
-    ...new Set(
-      (data || [])
-        .map((r) => r[nameCol])
-        .filter((n) => n && n.trim().length > 0),
-    ),
-  ];
-
-  return uniqueNames;
-}
-
-/**
- * Build team lookup cache from team_elo
- * Key optimization: Load ALL teams into memory for instant lookups
- */
-async function buildTeamCache() {
-  console.log("📦 Building team lookup cache...");
-
-  const allTeams = [];
-  let offset = 0;
-  const batchSize = 5000;
-
-  while (true) {
-    const { data, error } = await supabase
-      .from("team_elo")
-      .select("id, team_name")
-      .range(offset, offset + batchSize - 1);
-
-    if (error) {
-      console.error("❌ Error loading teams:", error.message);
-      break;
-    }
-
-    if (!data?.length) break;
-
-    allTeams.push(...data);
-    offset += batchSize;
-
-    if (data.length < batchSize) break;
-  }
-
-  console.log(`   Loaded ${allTeams.toLocaleString()} teams into cache`);
-
-  // Build lowercase lookup map for exact matching
-  const exactMap = new Map();
-  for (const team of allTeams) {
-    const key = team.team_name.toLowerCase().trim();
-    if (!exactMap.has(key)) {
-      exactMap.set(key, team);
-    }
-  }
-
-  return { allTeams, exactMap };
-}
-
-/**
- * Simple similarity function (Sørensen–Dice coefficient)
- * Faster than pg_trgm for client-side use
- */
-function similarity(s1, s2) {
-  if (!s1 || !s2) return 0;
-  s1 = s1.toLowerCase().trim();
-  s2 = s2.toLowerCase().trim();
-  if (s1 === s2) return 1;
-  if (s1.length < 2 || s2.length < 2) return 0;
-
-  const bigrams1 = new Set();
-  for (let i = 0; i < s1.length - 1; i++) {
-    bigrams1.add(s1.substring(i, i + 2));
-  }
-
-  let matches = 0;
-  for (let i = 0; i < s2.length - 1; i++) {
-    if (bigrams1.has(s2.substring(i, i + 2))) matches++;
-  }
-
-  return (2 * matches) / (s1.length - 1 + s2.length - 1);
-}
-
-/**
- * Find best match using RPC (server-side pg_trgm)
- */
-async function findBestMatchRPC(teamName) {
-  const { data, error } = await supabase.rpc("find_similar_team", {
-    search_name: teamName.toLowerCase().trim(),
-  });
-
-  if (error || !data?.length) return null;
-  return data[0];
-}
-
-/**
- * Find best match using local cache (exact + fuzzy)
- */
-function findBestMatchLocal(teamName, cache) {
-  const searchKey = teamName.toLowerCase().trim();
-
-  // Try exact match first
-  const exactMatch = cache.exactMap.get(searchKey);
-  if (exactMatch) {
-    return { id: exactMatch.id, team_name: exactMatch.team_name, sim: 1.0 };
-  }
-
-  // Fuzzy match
-  let bestMatch = null;
-  let bestSim = 0;
-
-  for (const team of cache.allTeams) {
-    const sim = similarity(searchKey, team.team_name);
-    if (sim > bestSim) {
-      bestSim = sim;
-      bestMatch = team;
-    }
-  }
-
-  if (bestMatch && bestSim >= SIMILARITY_THRESHOLD) {
-    return { id: bestMatch.id, team_name: bestMatch.team_name, sim: bestSim };
-  }
-
-  return null;
-}
-
-/**
- * Process a field (home or away) using bulk updates
- */
-async function processField(field, cache) {
-  const column = field === "home" ? "home_team_id" : "away_team_id";
-  const nameCol = field === "home" ? "home_team_name" : "away_team_name";
-
-  const uniqueNames = await getUniqueUnlinkedNames(field);
-  console.log(
-    `   Found ${uniqueNames.length.toLocaleString()} unique unlinked ${field} names`,
-  );
-
-  if (uniqueNames.length === 0) return 0;
-
-  let linked = 0;
-  let notFound = 0;
-  let processed = 0;
-
-  for (const teamName of uniqueNames) {
-    if (shouldExit()) {
-      console.log(`\n   ⏱️ Timeout approaching - stopping early`);
-      break;
-    }
-
-    // Try local cache first (faster), fall back to RPC
-    let match = findBestMatchLocal(teamName, cache);
-
-    // If local didn't find good match, try RPC (uses server-side pg_trgm)
-    if (!match || match.sim < SIMILARITY_THRESHOLD) {
-      match = await findBestMatchRPC(teamName);
-    }
-
-    if (match && match.sim >= SIMILARITY_THRESHOLD) {
-      // Bulk update ALL matches with this team name
-      const { error, count } = await supabase
-        .from("match_results")
-        .update({ [column]: match.id })
-        .eq(nameCol, teamName)
-        .is(column, null);
-
-      if (!error) {
-        linked++;
-      }
-    } else {
-      notFound++;
-    }
-
-    processed++;
-
-    // Progress update every 50 names
-    if (processed % 50 === 0) {
-      const pct = ((processed / uniqueNames.length) * 100).toFixed(1);
-      const elapsed = getElapsedMinutes().toFixed(1);
-      process.stdout.write(
-        `   Progress: ${processed}/${uniqueNames.length} (${pct}%) | Linked: ${linked} | Elapsed: ${elapsed}m\r`,
-      );
-    }
-
-    // Small delay to avoid rate limits
-    if (processed % 10 === 0) {
-      await new Promise((r) => setTimeout(r, 50));
-    }
-  }
-
-  console.log(`\n   Completed: ${linked} linked, ${notFound} not found`);
-  return linked;
-}
-
-/**
- * Main execution
- */
 async function main() {
   console.log("=".repeat(60));
-  console.log("🔗 TEAM LINKING v3.1 - BULLETPROOF EDITION");
+  console.log("🔗 TEAM LINKING v4.0 - PRODUCTION");
   console.log("=".repeat(60));
+  console.log(`Mode: ${USE_DIRECT_PG ? 'Direct PostgreSQL' : 'Supabase API'}`);
   console.log(`Timeout: ${TIMEOUT_MINUTES} minutes`);
-  console.log(`Similarity threshold: ${SIMILARITY_THRESHOLD}`);
-  console.log("");
+  console.log(`Started at: ${new Date().toISOString()}\n`);
 
-  // Initial status
-  const startStatus = await getStatus();
-  console.log("📊 STARTING STATUS:");
-  console.log(`   Total matches: ${startStatus.total.toLocaleString()}`);
-  console.log(
-    `   Home linked: ${startStatus.homeLinked.toLocaleString()} (${((startStatus.homeLinked / startStatus.total) * 100).toFixed(1)}%)`,
-  );
-  console.log(
-    `   Away linked: ${startStatus.awayLinked.toLocaleString()} (${((startStatus.awayLinked / startStatus.total) * 100).toFixed(1)}%)`,
-  );
-  console.log(
-    `   Fully linked: ${startStatus.fullyLinked.toLocaleString()} (${((startStatus.fullyLinked / startStatus.total) * 100).toFixed(1)}%)`,
-  );
-  console.log("");
-
-  // Build team lookup cache
-  const cache = await buildTeamCache();
-  console.log("");
-
-  // Process home teams
-  console.log("🏠 Processing HOME teams...");
-  const homeLinked = await processField("home", cache);
-  console.log("");
-
-  // Check for timeout
-  if (shouldExit()) {
-    console.log("⏱️ Timeout approaching - will continue away teams next run");
-  } else {
-    // Process away teams
-    console.log("🚗 Processing AWAY teams...");
-    const awayLinked = await processField("away", cache);
-    console.log("");
+  if (!USE_DIRECT_PG) {
+    console.error("❌ DATABASE_URL required for production linking");
+    console.error("   Set DATABASE_URL environment variable");
+    process.exit(1);
   }
 
-  // Final status
-  const endStatus = await getStatus();
-  const elapsed = getElapsedMinutes().toFixed(1);
+  const client = new pg.Client({
+    connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    statement_timeout: (TIMEOUT_MINUTES - 5) * 60 * 1000, // Leave 5 min buffer
+  });
 
-  console.log("=".repeat(60));
-  console.log("📊 FINAL STATUS:");
-  console.log("=".repeat(60));
-  console.log(`   Total matches: ${endStatus.total.toLocaleString()}`);
-  console.log(
-    `   Home linked: ${endStatus.homeLinked.toLocaleString()} (${((endStatus.homeLinked / endStatus.total) * 100).toFixed(1)}%)`,
-  );
-  console.log(
-    `   Away linked: ${endStatus.awayLinked.toLocaleString()} (${((endStatus.awayLinked / endStatus.total) * 100).toFixed(1)}%)`,
-  );
-  console.log(
-    `   Fully linked: ${endStatus.fullyLinked.toLocaleString()} (${((endStatus.fullyLinked / endStatus.total) * 100).toFixed(1)}%)`,
-  );
-  console.log("");
-  console.log("📈 SESSION IMPROVEMENT:");
-  console.log(
-    `   Home: +${(endStatus.homeLinked - startStatus.homeLinked).toLocaleString()}`,
-  );
-  console.log(
-    `   Away: +${(endStatus.awayLinked - startStatus.awayLinked).toLocaleString()}`,
-  );
-  console.log(
-    `   Fully linked: +${(endStatus.fullyLinked - startStatus.fullyLinked).toLocaleString()}`,
-  );
-  console.log(`   Elapsed time: ${elapsed} minutes`);
-  console.log("=".repeat(60));
-  console.log("✅ Done!");
+  try {
+    await client.connect();
+    console.log("✅ Connected to PostgreSQL\n");
+
+    // Get initial status
+    const initialStatus = await client.query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE home_team_id IS NOT NULL AND away_team_id IS NOT NULL) as fully_linked,
+        COUNT(*) FILTER (WHERE home_team_id IS NOT NULL) as home_linked,
+        COUNT(*) FILTER (WHERE away_team_id IS NOT NULL) as away_linked
+      FROM match_results
+    `);
+    
+    const initial = initialStatus.rows[0];
+    console.log("📊 INITIAL STATUS:");
+    console.log(`   Total matches: ${parseInt(initial.total).toLocaleString()}`);
+    console.log(`   Fully linked: ${parseInt(initial.fully_linked).toLocaleString()} (${(initial.fully_linked / initial.total * 100).toFixed(1)}%)`);
+    console.log(`   Home linked: ${parseInt(initial.home_linked).toLocaleString()}`);
+    console.log(`   Away linked: ${parseInt(initial.away_linked).toLocaleString()}`);
+    console.log("");
+
+    const chunks = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
+    
+    // ============================================================
+    // STRATEGY 1: Exact match (case-insensitive, no suffix strip)
+    // For matches where names already match perfectly
+    // ============================================================
+    console.log("🎯 STRATEGY 1: Exact match (case-insensitive)...\n");
+    
+    let s1Home = 0, s1Away = 0;
+    
+    for (const letter of chunks) {
+      const homeResult = await client.query(`
+        UPDATE match_results mr
+        SET home_team_id = te.id
+        FROM team_elo te
+        WHERE mr.home_team_id IS NULL
+          AND mr.home_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.home_team_name, 1)) = $1
+          AND LOWER(TRIM(mr.home_team_name)) = LOWER(TRIM(te.team_name))
+      `, [letter]);
+      
+      const awayResult = await client.query(`
+        UPDATE match_results mr
+        SET away_team_id = te.id
+        FROM team_elo te
+        WHERE mr.away_team_id IS NULL
+          AND mr.away_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.away_team_name, 1)) = $1
+          AND LOWER(TRIM(mr.away_team_name)) = LOWER(TRIM(te.team_name))
+      `, [letter]);
+      
+      s1Home += homeResult.rowCount;
+      s1Away += awayResult.rowCount;
+    }
+    
+    console.log(`   ✅ Exact: Home +${s1Home.toLocaleString()}, Away +${s1Away.toLocaleString()}\n`);
+
+    // ============================================================
+    // STRATEGY 2: Match after stripping (Uxx Boys/Girls) suffix
+    // ROOT CAUSE FIX: team_elo has suffix, match_results doesn't
+    // ============================================================
+    console.log("🎯 STRATEGY 2: Match after stripping (Uxx Boys/Girls) suffix...\n");
+    
+    let s2Home = 0, s2Away = 0;
+    
+    for (const letter of chunks) {
+      const homeResult = await client.query(`
+        UPDATE match_results mr
+        SET home_team_id = te.id
+        FROM team_elo te
+        WHERE mr.home_team_id IS NULL
+          AND mr.home_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.home_team_name, 1)) = $1
+          AND LOWER(TRIM(mr.home_team_name)) = LOWER(TRIM(REGEXP_REPLACE(te.team_name, '\\s*\\([^)]*\\)\\s*$', '')))
+      `, [letter]);
+      
+      const awayResult = await client.query(`
+        UPDATE match_results mr
+        SET away_team_id = te.id
+        FROM team_elo te
+        WHERE mr.away_team_id IS NULL
+          AND mr.away_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.away_team_name, 1)) = $1
+          AND LOWER(TRIM(mr.away_team_name)) = LOWER(TRIM(REGEXP_REPLACE(te.team_name, '\\s*\\([^)]*\\)\\s*$', '')))
+      `, [letter]);
+      
+      s2Home += homeResult.rowCount;
+      s2Away += awayResult.rowCount;
+      
+      if (homeResult.rowCount > 0 || awayResult.rowCount > 0) {
+        process.stdout.write(`   ${letter}: +${homeResult.rowCount + awayResult.rowCount} `);
+      }
+    }
+    
+    console.log(`\n   ✅ Suffix-stripped: Home +${s2Home.toLocaleString()}, Away +${s2Away.toLocaleString()}\n`);
+
+    // ============================================================
+    // STRATEGY 3: Prefix match (30 chars) WITH BIRTH YEAR VALIDATION
+    // v5.0 FIX: Extract birth year from both names and require match
+    // ============================================================
+    console.log("🎯 STRATEGY 3: Prefix match (30 chars) + birth year validation...\n");
+
+    let s3Home = 0, s3Away = 0;
+
+    // Helper: Extract birth year from name (matches 2009-2019, or "Pre-NAL 14" style)
+    const BIRTH_YEAR_REGEX = "(20[0-1][0-9])|(Pre-?NAL\\s*([0-9]{2}))";
+
+    for (const letter of chunks) {
+      // Strategy 3a: Both have birth years - must match
+      const homeResult = await client.query(`
+        WITH team_prefixes AS (
+          SELECT DISTINCT ON (LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 30))
+            id,
+            LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 30) as prefix,
+            COALESCE(
+              (regexp_match(team_name, '(20[0-1][0-9])'))[1],
+              '20' || (regexp_match(team_name, 'Pre-?NAL\\s*([0-9]{2})', 'i'))[1]
+            ) as birth_year
+          FROM team_elo
+          WHERE UPPER(LEFT(team_name, 1)) = $1
+          ORDER BY LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 30), elo_rating DESC
+        )
+        UPDATE match_results mr
+        SET home_team_id = tp.id
+        FROM team_prefixes tp
+        WHERE mr.home_team_id IS NULL
+          AND mr.home_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.home_team_name, 1)) = $1
+          AND LEFT(LOWER(TRIM(mr.home_team_name)), 30) = tp.prefix
+          AND (
+            -- Either both have matching birth years
+            (tp.birth_year IS NOT NULL AND (
+              mr.home_team_name ~ ('(^|\\D)' || tp.birth_year || '(\\D|$)')
+              OR mr.home_team_name ~* ('Pre-?NAL\\s*' || RIGHT(tp.birth_year, 2))
+            ))
+            -- Or neither has a birth year
+            OR (tp.birth_year IS NULL AND mr.home_team_name !~ '20[0-1][0-9]' AND mr.home_team_name !~* 'Pre-?NAL\\s*[0-9]{2}')
+          )
+      `, [letter]);
+
+      const awayResult = await client.query(`
+        WITH team_prefixes AS (
+          SELECT DISTINCT ON (LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 30))
+            id,
+            LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 30) as prefix,
+            COALESCE(
+              (regexp_match(team_name, '(20[0-1][0-9])'))[1],
+              '20' || (regexp_match(team_name, 'Pre-?NAL\\s*([0-9]{2})', 'i'))[1]
+            ) as birth_year
+          FROM team_elo
+          WHERE UPPER(LEFT(team_name, 1)) = $1
+          ORDER BY LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 30), elo_rating DESC
+        )
+        UPDATE match_results mr
+        SET away_team_id = tp.id
+        FROM team_prefixes tp
+        WHERE mr.away_team_id IS NULL
+          AND mr.away_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.away_team_name, 1)) = $1
+          AND LEFT(LOWER(TRIM(mr.away_team_name)), 30) = tp.prefix
+          AND (
+            -- Either both have matching birth years
+            (tp.birth_year IS NOT NULL AND (
+              mr.away_team_name ~ ('(^|\\D)' || tp.birth_year || '(\\D|$)')
+              OR mr.away_team_name ~* ('Pre-?NAL\\s*' || RIGHT(tp.birth_year, 2))
+            ))
+            -- Or neither has a birth year
+            OR (tp.birth_year IS NULL AND mr.away_team_name !~ '20[0-1][0-9]' AND mr.away_team_name !~* 'Pre-?NAL\\s*[0-9]{2}')
+          )
+      `, [letter]);
+
+      s3Home += homeResult.rowCount;
+      s3Away += awayResult.rowCount;
+    }
+
+    console.log(`   ✅ 30-char prefix + year: Home +${s3Home.toLocaleString()}, Away +${s3Away.toLocaleString()}\n`);
+
+    // ============================================================
+    // STRATEGY 4: Shorter prefix (20 chars) WITH BIRTH YEAR VALIDATION
+    // v5.0 FIX: Must validate birth years to prevent cross-age linking
+    // ============================================================
+    console.log("🎯 STRATEGY 4: Prefix match (20 chars) + birth year validation...\n");
+
+    let s4Home = 0, s4Away = 0;
+
+    for (const letter of chunks) {
+      const homeResult = await client.query(`
+        WITH team_prefixes AS (
+          SELECT DISTINCT ON (LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 20))
+            id,
+            LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 20) as prefix,
+            COALESCE(
+              (regexp_match(team_name, '(20[0-1][0-9])'))[1],
+              '20' || (regexp_match(team_name, 'Pre-?NAL\\s*([0-9]{2})', 'i'))[1]
+            ) as birth_year
+          FROM team_elo
+          WHERE UPPER(LEFT(team_name, 1)) = $1
+          ORDER BY LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 20), elo_rating DESC
+        )
+        UPDATE match_results mr
+        SET home_team_id = tp.id
+        FROM team_prefixes tp
+        WHERE mr.home_team_id IS NULL
+          AND mr.home_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.home_team_name, 1)) = $1
+          AND LEFT(LOWER(TRIM(mr.home_team_name)), 20) = tp.prefix
+          AND (
+            -- Either both have matching birth years
+            (tp.birth_year IS NOT NULL AND (
+              mr.home_team_name ~ ('(^|\\D)' || tp.birth_year || '(\\D|$)')
+              OR mr.home_team_name ~* ('Pre-?NAL\\s*' || RIGHT(tp.birth_year, 2))
+            ))
+            -- Or neither has a birth year
+            OR (tp.birth_year IS NULL AND mr.home_team_name !~ '20[0-1][0-9]' AND mr.home_team_name !~* 'Pre-?NAL\\s*[0-9]{2}')
+          )
+      `, [letter]);
+
+      const awayResult = await client.query(`
+        WITH team_prefixes AS (
+          SELECT DISTINCT ON (LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 20))
+            id,
+            LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 20) as prefix,
+            COALESCE(
+              (regexp_match(team_name, '(20[0-1][0-9])'))[1],
+              '20' || (regexp_match(team_name, 'Pre-?NAL\\s*([0-9]{2})', 'i'))[1]
+            ) as birth_year
+          FROM team_elo
+          WHERE UPPER(LEFT(team_name, 1)) = $1
+          ORDER BY LEFT(LOWER(TRIM(REGEXP_REPLACE(team_name, '\\s*\\([^)]*\\)\\s*$', ''))), 20), elo_rating DESC
+        )
+        UPDATE match_results mr
+        SET away_team_id = tp.id
+        FROM team_prefixes tp
+        WHERE mr.away_team_id IS NULL
+          AND mr.away_team_name IS NOT NULL
+          AND UPPER(LEFT(mr.away_team_name, 1)) = $1
+          AND LEFT(LOWER(TRIM(mr.away_team_name)), 20) = tp.prefix
+          AND (
+            -- Either both have matching birth years
+            (tp.birth_year IS NOT NULL AND (
+              mr.away_team_name ~ ('(^|\\D)' || tp.birth_year || '(\\D|$)')
+              OR mr.away_team_name ~* ('Pre-?NAL\\s*' || RIGHT(tp.birth_year, 2))
+            ))
+            -- Or neither has a birth year
+            OR (tp.birth_year IS NULL AND mr.away_team_name !~ '20[0-1][0-9]' AND mr.away_team_name !~* 'Pre-?NAL\\s*[0-9]{2}')
+          )
+      `, [letter]);
+
+      s4Home += homeResult.rowCount;
+      s4Away += awayResult.rowCount;
+    }
+
+    console.log(`   ✅ 20-char prefix + year: Home +${s4Home.toLocaleString()}, Away +${s4Away.toLocaleString()}\n`);
+
+    // ============================================================
+    // FINAL STATUS
+    // ============================================================
+    const finalStatus = await client.query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE home_team_id IS NOT NULL AND away_team_id IS NOT NULL) as fully_linked,
+        COUNT(*) FILTER (WHERE home_team_id IS NOT NULL) as home_linked,
+        COUNT(*) FILTER (WHERE away_team_id IS NOT NULL) as away_linked
+      FROM match_results
+    `);
+    
+    const final = finalStatus.rows[0];
+    
+    console.log("=".repeat(60));
+    console.log("📊 FINAL STATUS:");
+    console.log("=".repeat(60));
+    console.log(`   Total matches: ${parseInt(final.total).toLocaleString()}`);
+    console.log(`   Fully linked: ${parseInt(final.fully_linked).toLocaleString()} (${(final.fully_linked / final.total * 100).toFixed(1)}%)`);
+    console.log(`   Home linked: ${parseInt(final.home_linked).toLocaleString()} (${(final.home_linked / final.total * 100).toFixed(1)}%)`);
+    console.log(`   Away linked: ${parseInt(final.away_linked).toLocaleString()} (${(final.away_linked / final.total * 100).toFixed(1)}%)`);
+    console.log("");
+    console.log("📈 SESSION IMPROVEMENT:");
+    console.log(`   Fully linked: +${(parseInt(final.fully_linked) - parseInt(initial.fully_linked)).toLocaleString()}`);
+    console.log(`   Home: +${(parseInt(final.home_linked) - parseInt(initial.home_linked)).toLocaleString()}`);
+    console.log(`   Away: +${(parseInt(final.away_linked) - parseInt(initial.away_linked)).toLocaleString()}`);
+
+  } catch (err) {
+    console.error("\n❌ Error:", err.message);
+    process.exit(1);
+  } finally {
+    await client.end();
+  }
+
+  console.log(`\n✅ Completed at: ${new Date().toISOString()}`);
 }
 
-main().catch((err) => {
-  console.error("❌ Fatal error:", err);
-  process.exit(1);
-});
+main();
