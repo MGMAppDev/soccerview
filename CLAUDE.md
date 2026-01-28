@@ -194,24 +194,31 @@ DATABASE_URL
 
 ## Key Scripts
 
-### Data Pipeline (V2)
+### Daily Pipeline (`scripts/daily/`)
 
 | Script | Purpose |
 |--------|---------|
+| `syncActiveEvents.js` | GotSport data collection |
 | `validationPipeline.js` | Staging → Production |
 | `recalculate_elo_v2.js` | ELO calculation |
+| `scorePredictions.js` | Score user predictions |
+| `captureRankSnapshot.js` | Daily rank history |
 
-### Scrapers (Write to staging_games)
+### Scrapers (`scripts/scrapers/`)
 
 | Script | Source |
 |--------|--------|
-| `syncActiveEvents.js` | GotSport |
-| `scrapeHTGSports.js` | HTGSports |
-| `scrapeHeartlandResults.js` | Heartland CGI |
+| `scrapeHTGSports.js` | HTGSports tournaments |
+| `scrapeHeartlandLeague.js` | Heartland calendar |
+| `scrapeHeartlandResults.js` | Heartland CGI (scores) |
 
-### Archived Scripts
+### Maintenance (`scripts/maintenance/`)
 
-See `scripts/_archive/README.md` for V1 scripts (no longer used).
+Diagnostics, audits, and utilities (23 scripts).
+
+### Archived
+
+See `scripts/_archive/` for deprecated V1 scripts.
 
 ---
 
@@ -263,19 +270,36 @@ eas build --platform android
 
 ## Current Session Status
 
-### Session 50 - V2 Complete (January 28, 2026)
+### Session 50 - V2 Complete & Project Cleanup (January 28, 2026)
 
 **Accomplished:**
 - ✅ V2 architecture fully implemented
 - ✅ All scrapers write to staging tables
 - ✅ V1 tables archived to `*_deprecated`
 - ✅ V1 scripts moved to `scripts/_archive/`
-- ✅ Documentation reorganized into docs/ folder
+- ✅ Documentation reorganized into `docs/` folder
+- ✅ Scripts reorganized into subdirectories
+- ✅ GitHub Actions workflow paths updated
+- ✅ Local script testing verified
+
+**Scripts Structure (NEW):**
+```
+scripts/
+├── daily/          ← GitHub Actions pipeline (6 scripts)
+├── scrapers/       ← Data collection (6 scripts)
+├── maintenance/    ← Diagnostics & utilities (23 scripts)
+├── onetime/        ← Rarely used (13 scripts)
+├── migrations/     ← Database migrations
+├── _archive/       ← Deprecated V1 scripts
+└── _debug/         ← Debug output files
+```
 
 **Data Flow:**
 ```
 Scrapers → staging_games → validationPipeline.js → matches_v2 → app_views → App
 ```
+
+**Next:** QC testing of the complete V2 system
 
 ### Database Architecture
 
@@ -309,17 +333,20 @@ soccerview/
 │   ├── supabase.ts       # Supabase client
 │   └── leagues.ts        # League functions
 ├── scripts/
-│   ├── validationPipeline.js  # Main pipeline
-│   ├── recalculate_elo_v2.js  # ELO calc
+│   ├── daily/            # GitHub Actions pipeline
+│   ├── scrapers/         # Data collection
+│   ├── maintenance/      # Diagnostics & utilities
+│   ├── onetime/          # Rarely used
 │   ├── migrations/       # DB migrations
-│   └── _archive/         # Deprecated scripts
+│   ├── _archive/         # Deprecated V1 scripts
+│   └── _debug/           # Debug output files
 ├── docs/
 │   ├── ARCHITECTURE.md   # V2 schema
 │   ├── DATA_SCRAPING_PLAYBOOK.md
 │   ├── DATA_EXPANSION_ROADMAP.md
 │   ├── UI_PATTERNS.md
 │   ├── SESSION_HISTORY.md
-│   └── _archive/         # Old docs
+│   └── _archive/         # Completed docs
 ├── CLAUDE.md             # THIS FILE
 └── package.json
 ```

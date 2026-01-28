@@ -19,11 +19,11 @@
 
 ---
 
-## Session 50 - V2 Cutover & Archival (January 28, 2026) - COMPLETE
+## Session 50 - V2 Cutover, Archival & Project Cleanup (January 28, 2026) - COMPLETE
 
-**Major Accomplishment:** Completed V2 database architecture cutover.
+**Major Accomplishment:** Completed V2 database architecture cutover and project reorganization.
 
-### Work Completed:
+### Part 1: V2 Cutover
 1. **Updated GitHub Actions** - `daily-data-sync.yml` now uses V2 pipeline
 2. **Archived V1 Tables** - Renamed to `*_deprecated`:
    - `teams` → `teams_deprecated`
@@ -33,12 +33,41 @@
    - `rank_history` → `rank_history_deprecated`
    - `predictions` → `predictions_deprecated`
 3. **Archived V1 Scripts** - Moved 45 deprecated scripts to `scripts/_archive/`
-4. **Updated Documentation** - CLAUDE.md and DATABASE_RESTRUCTURE_MASTER_PLAN.md
 
-### Data Flow (New):
+### Part 2: Documentation Reorganization
+- **CLAUDE.md reduced** from 2,093 lines to 346 lines (83% reduction)
+- **Created `docs/` structure:**
+  - `docs/ARCHITECTURE.md` - V2 database architecture
+  - `docs/DATA_SCRAPING_PLAYBOOK.md` - Updated for V2
+  - `docs/DATA_EXPANSION_ROADMAP.md` - Updated for V2
+  - `docs/SESSION_HISTORY.md` - All session summaries
+  - `docs/UI_PATTERNS.md` - Mandatory UI patterns
+- **Archived 12 completed docs** to `docs/_archive/`
+
+### Part 3: Scripts Reorganization
+Reorganized 47 scripts into subdirectories:
+```
+scripts/
+├── daily/          ← 6 scripts (GitHub Actions)
+├── scrapers/       ← 6 scripts (data collection)
+├── maintenance/    ← 23 scripts (diagnostics)
+├── onetime/        ← 13 scripts (rarely used)
+├── migrations/     ← DB migrations
+├── _archive/       ← Deprecated V1 scripts
+└── _debug/         ← Debug output files
+```
+
+### Part 4: GitHub Actions Update
+- Updated all script paths in `daily-data-sync.yml`
+- Tested scripts locally - all working
+- Pushed changes to GitHub
+
+### Data Flow (Final):
 ```
 Scrapers → staging_games → validationPipeline.js → matches_v2 → app_* views → App
 ```
+
+### Status: Ready for QC Testing
 
 ---
 
