@@ -1,0 +1,154 @@
+{
+  "title": "2024 Heartland Invitational Tournament - Boys",
+  "bodyClasses": "default",
+  "mainContainers": [
+    {
+      "tag": "DIV",
+      "id": "divImage",
+      "class": "container hidden-xs",
+      "childCount": 1
+    },
+    {
+      "tag": "DIV",
+      "id": "layerslider",
+      "class": "ls-container ls-grove",
+      "childCount": 3
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "ls-loading-container",
+      "childCount": 1
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 2
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 2
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 2
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "modal-content",
+      "childCount": 3
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 1
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 2
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 1
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 1
+    },
+    {
+      "tag": "DIV",
+      "id": "(no id)",
+      "class": "container",
+      "childCount": 2
+    }
+  ],
+  "tables": [
+    {
+      "index": 0,
+      "className": "inner_table_small",
+      "rowCount": 6,
+      "headerPreview": "  Pool A "
+    },
+    {
+      "index": 1,
+      "className": "inner_table_small",
+      "rowCount": 6,
+      "headerPreview": "  Pool B "
+    },
+    {
+      "index": 2,
+      "className": "(no class)",
+      "rowCount": 1,
+      "headerPreview": "Points:  \tWin = 3 pts, \tTie = 1 pt "
+    },
+    {
+      "index": 3,
+      "className": "table table-striped table-hover table-condensed",
+      "rowCount": 12,
+      "headerPreview": "1239673\t11/08/2024\t6:00PM\tOP-12S\tA2\tSKV 17B Academy Select\t2\tA3\tSporting City West 2017B Blue\t5"
+    },
+    {
+      "index": 4,
+      "className": "table table-striped table-hover table-condensed",
+      "rowCount": 1,
+      "headerPreview": "1239684\t11/10/2024\t4:30PM\tOSC-6S Capelli\tA4\tUFA DSM 2017B\t0\tB1\tJUSC U8 Boys Red\t8"
+    }
+  ],
+  "divPatterns": [],
+  "allTextWithScores": [
+    {
+      "tag": "DIV",
+      "className": "row",
+      "text": "  Pool A \nID\tName\t W\t L\tT\tPts\tGF\tGA\tGD\tRC\nA4\tUFA DSM 2017B\t3\t0\t0\t9\t15\t1\t9\t0\nA3\tSporting City West 2017B Blue\t2\t1\t0\t6\t11\t9\t2\t0\nA1\tLeawood Leopards\t1\t2\t0\t3\t7\t10\t-3\t0\nA2\tSKV 17B Academy Select\t0\t3\t0\t0\t3\t16\t-8\t0\n  Pool B \nID\tName\t W\t L\tT\tPts\tGF\tGA\tGD\tRC\nB1\tJUSC U8 Boys Red\t3\t0\t0\t9\t19\t2\t10\t0\nB4\tKS Rush Wichita Jr. Academy Blue 17B\t2\t1\t0\t6\t21\t3\t6\t0\nB2\tSporting City North 2017B Blue\t0\t2\t1\t1\t3\t16\t-8\t0\nB3\t"
+    },
+    {
+      "tag": "TABLE",
+      "className": "inner_table_small",
+      "text": "  Pool A \nID\tName\t W\t L\tT\tPts\tGF\tGA\tGD\tRC\nA4\tUFA DSM 2017B\t3\t0\t0\t9\t15\t1\t9\t0\nA3\tSporting City West 2017B Blue\t2\t1\t0\t6\t11\t9\t2\t0\nA1\tLeawood Leopards\t1\t2\t0\t3\t7\t10\t-3\t0\nA2\tSKV 17B Academy Select\t0\t3\t0\t0\t3\t16\t-8\t0"
+    },
+    {
+      "tag": "TR",
+      "className": "inner_table_ontop",
+      "text": "A1\tLeawood Leopards\t1\t2\t0\t3\t7\t10\t-3\t0"
+    },
+    {
+      "tag": "TR",
+      "className": "inner_table_ontop",
+      "text": "A2\tSKV 17B Academy Select\t0\t3\t0\t0\t3\t16\t-8\t0"
+    },
+    {
+      "tag": "TABLE",
+      "className": "inner_table_small",
+      "text": "  Pool B \nID\tName\t W\t L\tT\tPts\tGF\tGA\tGD\tRC\nB1\tJUSC U8 Boys Red\t3\t0\t0\t9\t19\t2\t10\t0\nB4\tKS Rush Wichita Jr. Academy Blue 17B\t2\t1\t0\t6\t21\t3\t6\t0\nB2\tSporting City North 2017B Blue\t0\t2\t1\t1\t3\t16\t-8\t0\nB3\tSPORTING BV West Ham 17\t0\t2\t1\t1\t2\t24\t-8\t0"
+    },
+    {
+      "tag": "TR",
+      "className": "inner_table_ontop",
+      "text": "B2\tSporting City North 2017B Blue\t0\t2\t1\t1\t3\t16\t-8\t0"
+    },
+    {
+      "tag": "TR",
+      "className": "inner_table_ontop",
+      "text": "B3\tSPORTING BV West Ham 17\t0\t2\t1\t1\t2\t24\t-8\t0"
+    }
+  ],
+  "potentialMatchElements": [],
+  "frameworkInfo": {
+    "angularElements": 0,
+    "reactElements": 0,
+    "vueElements": 0
+  }
+}

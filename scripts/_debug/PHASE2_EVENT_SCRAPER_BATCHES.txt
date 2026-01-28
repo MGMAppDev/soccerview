@@ -1,0 +1,94 @@
+# ============================================================
+# PHASE 2: Event Scraper - BATCH TRACKING LIST
+# ============================================================
+# 
+# NOTE: Can run in PARALLEL with Phase 1 Team Scraper!
+# Events are discovered by Team Scraper and stored in event_registry
+#
+# Batch size: 300 events per run
+# Estimated time per batch: ~5-6 hours
+#
+# VPN ROTATION: Switch Mullvad server before each batch
+# ============================================================
+
+# BATCH 1: Mullvad → US - New York
+node scripts/runEventScraperBatch.js --count 300
+# STATUS: ✅ COMPLETE
+# Results: 300 processed, 292 successful, 8 skipped, 0 failed
+# Matches: 86,052 found, 79,080 actually added
+# Runtime: 320m 59s
+# DB Verification: 55,451 before → 134,531 after
+
+# BATCH 2: Mullvad → US - Los Angeles
+node scripts/runEventScraperBatch.js --count 300
+# STATUS: 🔄 IN PROGRESS
+
+# BATCH 3: Mullvad → US - Chicago
+node scripts/runEventScraperBatch.js --count 300
+# STATUS: ⏳ PENDING
+
+# BATCH 4: Mullvad → US - Dallas
+node scripts/runEventScraperBatch.js --count 300
+# STATUS: ⏳ PENDING
+
+# BATCH 5: Mullvad → US - Miami
+node scripts/runEventScraperBatch.js --count 300
+# STATUS: ⏳ PENDING
+
+# BATCH 6: Mullvad → US - Seattle
+node scripts/runEventScraperBatch.js --count 300
+# STATUS: ⏳ PENDING
+
+# (Add more batches as needed - depends on total events in registry)
+
+# ============================================================
+# PROGRESS SUMMARY (Updated Jan 21, 2026)
+# ============================================================
+# Batches Complete: 1 of ~6+
+# Events Processed: 300
+# Events Successful: 292
+# Matches in DB: 134,531
+# Events Remaining: ~1,450 (depends on Team Scraper discovery)
+# ============================================================
+
+# ============================================================
+# HOW MANY MORE BATCHES NEEDED?
+# ============================================================
+# Check pending events:
+#   SELECT COUNT(*) FROM event_registry WHERE last_scraped_at IS NULL;
+#
+# Divide by 300 = number of batches needed
+# Example: 1500 pending / 300 = 5 more batches
+# ============================================================
+
+# ============================================================
+# WORKFLOW
+# ============================================================
+# 1. Switch VPN to next city
+# 2. Copy/paste the batch command into terminal
+# 3. Wait for completion (~5-6 hours per 300 events)
+# 4. Update STATUS above (change ⏳ to 🔄 then ✅)
+# 5. Repeat until all events scraped
+#
+# If batch fails mid-run:
+# - Script auto-saves checkpoint
+# - Switch VPN server
+# - Re-run SAME command (it will resume from checkpoint)
+# ============================================================
+
+# ============================================================
+# COMPLETION CHECKLIST
+# ============================================================
+# After all batches complete, verify in Supabase:
+#
+# 1. Check match count:
+#    SELECT COUNT(*) FROM match_results;
+#    (Target: 150,000+ matches)
+#
+# 2. Check events scraped:
+#    SELECT COUNT(*) FROM event_registry WHERE last_scraped_at IS NOT NULL;
+#
+# 3. Run linkTeams.js to connect match team names to team_elo records
+#
+# 4. Ready for: App Testing & Launch!
+# ============================================================

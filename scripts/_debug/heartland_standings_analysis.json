@@ -1,0 +1,590 @@
+{
+  "title": "Score – Standings | Heartland Soccer Association",
+  "iframes": [
+    {
+      "src": "https://www.heartlandsoccer.net/wp-content/fragments/empty.html",
+      "id": "results-target",
+      "name": "iresults",
+      "classes": ""
+    },
+    {
+      "src": "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LdUnN8rAAAAALRyukO4091IIYsjPAmrr2zGv4jf&co=aHR0cHM6Ly93d3cuaGVhcnRsYW5kc29jY2VyLm5ldDo0NDM.&hl=en&v=PoyoqOPhxBO7pBk68S4YbpHZ&theme=light&size=invisible&badge=bottomright&anchor-ms=20000&execute-ms=30000&cb=d5hbrwuncmtp",
+      "id": "",
+      "name": "a-l0a9ev3ve84g",
+      "classes": ""
+    },
+    {
+      "src": "",
+      "id": "",
+      "name": "",
+      "classes": ""
+    },
+    {
+      "src": "about:blank",
+      "id": "gform_ajax_frame_1",
+      "name": "gform_ajax_frame_1",
+      "classes": ""
+    },
+    {
+      "src": "",
+      "id": "",
+      "name": "",
+      "classes": ""
+    },
+    {
+      "src": "",
+      "id": "",
+      "name": "",
+      "classes": ""
+    },
+    {
+      "src": "https://tag.trovo-tag.com/q3qKiU6D5bKb5FhEZuXC?rurl=https%3A%2F%2Fwww.heartlandsoccer.net%2Fleague%2Fscore-standings%2F&ref=&v=js-0.1.0&aid=2e0105c7&external_id=db6ecf826c5433aac2ccb0269865f75d&rid=b04d097c-fc5d-4fe9-9b6b-fadae1dc892e",
+      "id": "",
+      "name": "",
+      "classes": ""
+    }
+  ],
+  "externalScripts": [
+    "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/965102729/?random=1769405260830&cv=11&fst=1769405260830&bg=ffffff&guid=ON&async=1&gtm=45be61m0z871740188za20gzb71740188zd71740188xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=102015666~103116026~103200004~104527907~104528501~104684208~104684211~105391253~115616985~115938465~115938469~116682876~117025847~117041587&u_w=800&u_h=600&url=https%3A%2F%2Fwww.heartlandsoccer.net%2Fleague%2Fscore-standings%2F&frm=0&tiba=Score%20%E2%80%93%20Standings%20%7C%20Heartland%20Soccer%20Association&hn=www.googleadservices.com&npa=0&uaa=x86&uab=64&uafvl=Chromium%3B143.0.7499.192%7CNot%2520A(Brand%3B24.0.0.0&uamb=0&uam=&uap=Windows&uapv=19.0.0&uaw=0&_tu=CA&gap.plf=5&rfmt=3&fmt=4"
+  ],
+  "forms": [
+    {
+      "action": "https://heartlandsoccer.net/reports/cgi-jrb/team_results.cgi",
+      "method": "get",
+      "id": ""
+    },
+    {
+      "action": "https://heartlandsoccer.net/reports/cgi-jrb/subdiv_results.cgi",
+      "method": "get",
+      "id": ""
+    },
+    {
+      "action": "https://heartlandsoccer.net/reports/cgi-jrb/subdiv_results.cgi",
+      "method": "get",
+      "id": ""
+    },
+    {
+      "action": "https://heartlandsoccer.net/reports/cgi-jrb/subdiv_standings.cgi",
+      "method": "get",
+      "id": ""
+    },
+    {
+      "action": "https://heartlandsoccer.net/reports/cgi-jrb/subdiv_standings.cgi",
+      "method": "get",
+      "id": ""
+    },
+    {
+      "action": "https://www.heartlandsoccer.net/league/score-standings/#gf_1",
+      "method": "post",
+      "id": "gform_1"
+    }
+  ],
+  "buttons": [
+    {
+      "text": "\n                  \n                    \n                  \n                ",
+      "type": "button",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "\n                  \n                    \n                  \n                ",
+      "type": "button",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "",
+      "type": "submit",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "Go!",
+      "type": "submit",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "Go!",
+      "type": "submit",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "Go!",
+      "type": "submit",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "Go!",
+      "type": "submit",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "Go!",
+      "type": "submit",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "\n                  \n                    \n                  \n                ",
+      "type": "button",
+      "id": "",
+      "onclick": null
+    },
+    {
+      "text": "Subscribe",
+      "type": "submit",
+      "id": "gform_submit_button_1",
+      "onclick": "gform.submission.handleButtonClick(this);"
+    }
+  ],
+  "links": [
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/#",
+      "text": ""
+    },
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/#",
+      "text": "League"
+    },
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/",
+      "text": ""
+    },
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/#",
+      "text": "Coaches"
+    },
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/#",
+      "text": "Referees"
+    },
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/#",
+      "text": ""
+    },
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/",
+      "text": "Standings"
+    },
+    {
+      "href": "https://www.heartlandsoccer.net/league/score-standings/",
+      "text": "Standings"
+    }
+  ],
+  "selectDropdowns": [
+    {
+      "id": "results-recreational-b_g3",
+      "name": "b_g3",
+      "classes": "form-control",
+      "optionCount": 2,
+      "sampleOptions": [
+        {
+          "value": "Boys",
+          "text": "Boys"
+        },
+        {
+          "value": "Girls",
+          "text": "Girls"
+        }
+      ]
+    },
+    {
+      "id": "results-recreational-age1",
+      "name": "age1",
+      "classes": "form-control",
+      "optionCount": 9,
+      "sampleOptions": [
+        {
+          "value": "U-9/3rd Grade 7v7",
+          "text": "U-9/3rd Grade 7v7"
+        },
+        {
+          "value": "U-9/10-3rd/4th Grade 9v9",
+          "text": "U-9/10-3rd/4th Grade 9v9"
+        },
+        {
+          "value": "U-10/4th Grade 7v7",
+          "text": "U-10/4th Grade 7v7"
+        },
+        {
+          "value": "U-10/4th Grade 9v9",
+          "text": "U-10/4th Grade 9v9"
+        },
+        {
+          "value": "U-11/5th Grade 9v9",
+          "text": "U-11/5th Grade 9v9"
+        },
+        {
+          "value": "U-12/6th Grade 9v9",
+          "text": "U-12/6th Grade 9v9"
+        },
+        {
+          "value": "U-13/7th Grade",
+          "text": "U-13/7th Grade"
+        },
+        {
+          "value": "U-14/8th Grade",
+          "text": "U-14/8th Grade"
+        },
+        {
+          "value": "U-14/15-8th/9th Grade",
+          "text": "U-14/15-8th/9th Grade"
+        }
+      ]
+    },
+    {
+      "id": "results-recreational-subdivison1",
+      "name": "subdivison1",
+      "classes": "form-control",
+      "optionCount": 6,
+      "sampleOptions": [
+        {
+          "value": "CANADA",
+          "text": "CANADA"
+        },
+        {
+          "value": "MEXICO",
+          "text": "MEXICO"
+        },
+        {
+          "value": "USA",
+          "text": "USA"
+        },
+        {
+          "value": "1",
+          "text": "1"
+        },
+        {
+          "value": "2",
+          "text": "2"
+        },
+        {
+          "value": "3",
+          "text": "3"
+        }
+      ]
+    },
+    {
+      "id": "results-premier-b_g",
+      "name": "b_g",
+      "classes": "form-control",
+      "optionCount": 2,
+      "sampleOptions": [
+        {
+          "value": "Boys",
+          "text": "Boys"
+        },
+        {
+          "value": "Girls",
+          "text": "Girls"
+        }
+      ]
+    },
+    {
+      "id": "results-premier-age",
+      "name": "age",
+      "classes": "form-control",
+      "optionCount": 11,
+      "sampleOptions": [
+        {
+          "value": "U-9",
+          "text": "U-9"
+        },
+        {
+          "value": "U-10",
+          "text": "U-10"
+        },
+        {
+          "value": "U-11",
+          "text": "U-11"
+        },
+        {
+          "value": "U-12",
+          "text": "U-12"
+        },
+        {
+          "value": "U-13",
+          "text": "U-13"
+        },
+        {
+          "value": "U-14",
+          "text": "U-14"
+        },
+        {
+          "value": "U-15",
+          "text": "U-15"
+        },
+        {
+          "value": "U-16",
+          "text": "U-16"
+        },
+        {
+          "value": "U-17",
+          "text": "U-17"
+        },
+        {
+          "value": "U-18",
+          "text": "U-18"
+        }
+      ]
+    },
+    {
+      "id": "results-premier-subdivison",
+      "name": "subdivison",
+      "classes": "form-control",
+      "optionCount": 14,
+      "sampleOptions": [
+        {
+          "value": "1",
+          "text": "1"
+        },
+        {
+          "value": "2",
+          "text": "2"
+        },
+        {
+          "value": "3",
+          "text": "3"
+        },
+        {
+          "value": "4",
+          "text": "4"
+        },
+        {
+          "value": "5",
+          "text": "5"
+        },
+        {
+          "value": "6",
+          "text": "6"
+        },
+        {
+          "value": "7",
+          "text": "7"
+        },
+        {
+          "value": "8",
+          "text": "8"
+        },
+        {
+          "value": "9",
+          "text": "9"
+        },
+        {
+          "value": "10",
+          "text": "10"
+        }
+      ]
+    },
+    {
+      "id": "standings-recreational-b_g3",
+      "name": "b_g3",
+      "classes": "form-control",
+      "optionCount": 2,
+      "sampleOptions": [
+        {
+          "value": "Boys",
+          "text": "Boys"
+        },
+        {
+          "value": "Girls",
+          "text": "Girls"
+        }
+      ]
+    },
+    {
+      "id": "standings-recreational-age1",
+      "name": "age1",
+      "classes": "form-control",
+      "optionCount": 9,
+      "sampleOptions": [
+        {
+          "value": "U-9/3rd Grade 7v7",
+          "text": "U-9/3rd Grade 7v7"
+        },
+        {
+          "value": "U-9/10-3rd/4th Grade 9v9",
+          "text": "U-9/10-3rd/4th Grade 9v9"
+        },
+        {
+          "value": "U-10/4th Grade 7v7",
+          "text": "U-10/4th Grade 7v7"
+        },
+        {
+          "value": "U-10/4th Grade 9v9",
+          "text": "U-10/4th Grade 9v9"
+        },
+        {
+          "value": "U-11/5th Grade 9v9",
+          "text": "U-11/5th Grade 9v9"
+        },
+        {
+          "value": "U-12/6th Grade 9v9",
+          "text": "U-12/6th Grade 9v9"
+        },
+        {
+          "value": "U-13/7th Grade",
+          "text": "U-13/7th Grade"
+        },
+        {
+          "value": "U-14/8th Grade",
+          "text": "U-14/8th Grade"
+        },
+        {
+          "value": "U-14/15-8th/9th Grade",
+          "text": "U-14/15-8th/9th Grade"
+        }
+      ]
+    },
+    {
+      "id": "standings-recreational-subdivison1",
+      "name": "subdivison1",
+      "classes": "form-control",
+      "optionCount": 6,
+      "sampleOptions": [
+        {
+          "value": "CANADA",
+          "text": "CANADA"
+        },
+        {
+          "value": "MEXICO",
+          "text": "MEXICO"
+        },
+        {
+          "value": "USA",
+          "text": "USA"
+        },
+        {
+          "value": "1",
+          "text": "1"
+        },
+        {
+          "value": "2",
+          "text": "2"
+        },
+        {
+          "value": "3",
+          "text": "3"
+        }
+      ]
+    },
+    {
+      "id": "standings-premier-b_g",
+      "name": "b_g",
+      "classes": "form-control",
+      "optionCount": 2,
+      "sampleOptions": [
+        {
+          "value": "Boys",
+          "text": "Boys"
+        },
+        {
+          "value": "Girls",
+          "text": "Girls"
+        }
+      ]
+    },
+    {
+      "id": "standings-premier-age",
+      "name": "age",
+      "classes": "form-control",
+      "optionCount": 11,
+      "sampleOptions": [
+        {
+          "value": "U-9",
+          "text": "U-9"
+        },
+        {
+          "value": "U-10",
+          "text": "U-10"
+        },
+        {
+          "value": "U-11",
+          "text": "U-11"
+        },
+        {
+          "value": "U-12",
+          "text": "U-12"
+        },
+        {
+          "value": "U-13",
+          "text": "U-13"
+        },
+        {
+          "value": "U-14",
+          "text": "U-14"
+        },
+        {
+          "value": "U-15",
+          "text": "U-15"
+        },
+        {
+          "value": "U-16",
+          "text": "U-16"
+        },
+        {
+          "value": "U-17",
+          "text": "U-17"
+        },
+        {
+          "value": "U-18",
+          "text": "U-18"
+        }
+      ]
+    },
+    {
+      "id": "standings-premier-subdivison",
+      "name": "subdivison",
+      "classes": "form-control",
+      "optionCount": 14,
+      "sampleOptions": [
+        {
+          "value": "1",
+          "text": "1"
+        },
+        {
+          "value": "2",
+          "text": "2"
+        },
+        {
+          "value": "3",
+          "text": "3"
+        },
+        {
+          "value": "4",
+          "text": "4"
+        },
+        {
+          "value": "5",
+          "text": "5"
+        },
+        {
+          "value": "6",
+          "text": "6"
+        },
+        {
+          "value": "7",
+          "text": "7"
+        },
+        {
+          "value": "8",
+          "text": "8"
+        },
+        {
+          "value": "9",
+          "text": "9"
+        },
+        {
+          "value": "10",
+          "text": "10"
+        }
+      ]
+    }
+  ],
+  "tables": [],
+  "divContent": "Live Stream Games @ GOSC\n|\nWeather\n|"
+}

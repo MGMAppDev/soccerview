@@ -1,0 +1,81 @@
+# ============================================================
+# PHASE 1: Team Scraper - BATCH TRACKING LIST
+# ============================================================
+# 
+# PRE-REQUISITE: Ensure SUPABASE_SERVICE_ROLE_KEY is in .env file!
+#
+# Progress: 93,000 teams scraped (as of Jan 21, 2026)
+# Remaining: ~24,000 teams (offsets 93000-117000)
+# Batches needed: 6 more batches @ 4000 each
+#
+# Estimated time per batch: ~2-4 hours
+# Total remaining time: ~12-24 hours
+#
+# VPN ROTATION: Switch Mullvad server before each batch
+# ============================================================
+
+# BATCH 1: Mullvad → US - New York
+node scripts/runTeamScraperBatch.js --start 77000 --count 4000
+# STATUS: ✅ COMPLETE
+
+# BATCH 2: Mullvad → US - Los Angeles
+node scripts/runTeamScraperBatch.js --start 81000 --count 4000
+# STATUS: ✅ COMPLETE
+
+# BATCH 3: Mullvad → US - Chicago
+node scripts/runTeamScraperBatch.js --start 85000 --count 4000
+# STATUS: ✅ COMPLETE
+
+# BATCH 4: Mullvad → US - Dallas
+node scripts/runTeamScraperBatch.js --start 89000 --count 4000
+# STATUS: ✅ COMPLETE
+# Results: 3269 teams with data, 731 no data, 1516 events discovered
+# Runtime: 226.2 min
+
+# BATCH 5: Mullvad → US - Miami
+node scripts/runTeamScraperBatch.js --start 93000 --count 4000
+# STATUS: 🔄 IN PROGRESS
+
+# BATCH 6: Mullvad → US - Seattle
+node scripts/runTeamScraperBatch.js --start 97000 --count 4000
+# STATUS: ⏳ PENDING
+
+# BATCH 7: Mullvad → US - Atlanta
+node scripts/runTeamScraperBatch.js --start 101000 --count 4000
+# STATUS: ⏳ PENDING
+
+# BATCH 8: Mullvad → US - Denver
+node scripts/runTeamScraperBatch.js --start 105000 --count 4000
+# STATUS: ⏳ PENDING
+
+# BATCH 9: Mullvad → US - Phoenix
+node scripts/runTeamScraperBatch.js --start 109000 --count 4000
+# STATUS: ⏳ PENDING
+
+# BATCH 10 (FINAL): Mullvad → US - Salt Lake City
+node scripts/runTeamScraperBatch.js --start 113000 --count 4084
+# STATUS: ⏳ PENDING
+
+# ============================================================
+# PROGRESS SUMMARY (Updated Jan 21, 2026)
+# ============================================================
+# Batches Complete: 4 of 10
+# Teams Processed: ~16,000 of 40,000
+# Events in Registry: 1,751
+# Matches Found (by team scraper): 31,086+
+# ============================================================
+
+# ============================================================
+# WORKFLOW
+# ============================================================
+# 1. Switch VPN to next city
+# 2. Copy/paste the batch command into terminal
+# 3. Wait for completion (~2-4 hours)
+# 4. Update STATUS above (change ⏳ to 🔄 then ✅)
+# 5. Repeat for next batch
+#
+# If batch fails mid-run:
+# - Script auto-saves checkpoint
+# - Switch VPN server
+# - Re-run SAME command (it will resume)
+# ============================================================

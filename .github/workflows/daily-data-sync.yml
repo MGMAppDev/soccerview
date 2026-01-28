@@ -1,22 +1,24 @@
-name: Daily Data Sync (All Sources)
+name: Daily Data Sync (V2 Architecture)
 
 # =============================================================================
-# SoccerView Daily Data Pipeline
+# SoccerView Daily Data Pipeline - V2 Architecture
 # =============================================================================
-# Comprehensive data synchronization across all sources with optimized
-# parallelization, proper error handling, and detailed reporting.
+# Uses the three-layer database architecture:
+#   Staging Tables -> Validation Pipeline -> Production Tables -> App Views
 #
 # Pipeline Flow:
 #   1. DATA COLLECTION (parallel):
-#      - GotSport active events
-#      - Heartland tournaments (HTGSports)
-#      - Heartland league calendar
-#      - Heartland results with scores (CGI)
-#   2. TEAM INTEGRATION - Create Heartland teams + link matches
-#   3. TEAM LINKING - Link all remaining unlinked matches
-#   4. ELO CALCULATION - Update power ratings
-#   5. MATCH COUNT SYNC - Update teams.matches_played
-#   6. PREDICTION SCORING - Score user predictions
+#      - GotSport active events       -> staging_games
+#      - Heartland tournaments         -> staging_games
+#      - Heartland league calendar     -> staging_games
+#      - Heartland results (scores)    -> staging_games
+#   2. VALIDATION PIPELINE:
+#      - Process staging_games -> matches_v2
+#      - Create/link teams in teams_v2
+#      - Create/link events in leagues/tournaments
+#      - Refresh materialized views
+#   3. ELO CALCULATION - Update power ratings in teams_v2
+#   4. PREDICTION SCORING - Score user predictions
 #
 # Runtime: ~30-45 minutes total
 # =============================================================================
@@ -36,17 +38,16 @@ on:
           - full
           - gotsport_only
           - heartland_only
-          - linking_only
+          - validation_only
           - elo_only
           - scoring_only
-          - counts_only
 
 env:
   NODE_VERSION: "20"
 
 jobs:
   # ============================================================================
-  # PHASE 1: DATA COLLECTION (Parallel)
+  # PHASE 1: DATA COLLECTION (Parallel) - All write to staging_games
   # ============================================================================
 
   sync-gotsport:
@@ -60,7 +61,7 @@ jobs:
       }}
     timeout-minutes: 60
     outputs:
-      matches_synced: ${{ steps.sync.outputs.matches_synced }}
+      matches_staged: ${{ steps.sync.outputs.matches_staged }}
       status: ${{ steps.sync.outcome }}
 
     steps:
@@ -74,16 +75,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Sync Active GotSport Events
+      - name: Sync Active GotSport Events (to staging)
         id: sync
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/syncActiveEvents.js 2>&1 | tee sync_output.txt
-          # Extract match count from output if available
-          MATCHES=$(grep -oP 'Synced \K\d+' sync_output.txt | tail -1 || echo "0")
-          echo "matches_synced=$MATCHES" >> $GITHUB_OUTPUT
+          node scripts/daily/syncActiveEvents.js 2>&1 | tee sync_output.txt
+          # Extract staged match count from output
+          MATCHES=$(grep -oP 'Staged \K\d+' sync_output.txt | tail -1 || echo "0")
+          echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
         timeout-minutes: 45
 
   sync-heartland-puppeteer:
@@ -97,8 +98,8 @@ jobs:
       }}
     timeout-minutes: 90
     outputs:
-      htgsports_matches: ${{ steps.htgsports.outputs.matches }}
-      league_matches: ${{ steps.league.outputs.matches }}
+      htgsports_staged: ${{ steps.htgsports.outputs.matches }}
+      league_staged: ${{ steps.league.outputs.matches }}
       status: ${{ job.status }}
 
     steps:
@@ -115,26 +116,26 @@ jobs:
       - name: Install Puppeteer browsers
         run: npx puppeteer browsers install chrome
 
-      - name: Sync HTGSports Tournaments
+      - name: Sync HTGSports Tournaments (to staging)
         id: htgsports
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/scrapeHTGSports.js --active-only 2>&1 | tee htg_output.txt || true
-          MATCHES=$(grep -oP 'inserted: \K\d+' htg_output.txt | tail -1 || echo "0")
+          node scripts/scrapers/scrapeHTGSports.js --active-only 2>&1 | tee htg_output.txt || true
+          MATCHES=$(grep -oP 'Staged: \K\d+' htg_output.txt | tail -1 || echo "0")
           echo "matches=$MATCHES" >> $GITHUB_OUTPUT
         timeout-minutes: 45
         continue-on-error: true
 
-      - name: Sync Heartland League Calendar
+      - name: Sync Heartland League Calendar (to staging)
         id: league
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/scrapeHeartlandLeague.js --active-only 2>&1 | tee league_output.txt || true
-          MATCHES=$(grep -oP 'inserted: \K\d+' league_output.txt | tail -1 || echo "0")
+          node scripts/scrapers/scrapeHeartlandLeague.js --active-only 2>&1 | tee league_output.txt || true
+          MATCHES=$(grep -oP 'Staged: \K\d+' league_output.txt | tail -1 || echo "0")
           echo "matches=$MATCHES" >> $GITHUB_OUTPUT
         timeout-minutes: 30
         continue-on-error: true
@@ -150,7 +151,7 @@ jobs:
       }}
     timeout-minutes: 30
     outputs:
-      matches_with_scores: ${{ steps.results.outputs.matches }}
+      matches_staged: ${{ steps.results.outputs.matches }}
       status: ${{ steps.results.outcome }}
 
     steps:
@@ -164,88 +165,45 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Scrape Heartland Results (CGI)
+      - name: Scrape Heartland Results (to staging)
         id: results
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/scrapeHeartlandResults.js 2>&1 | tee results_output.txt
-          MATCHES=$(grep -oP 'upserted: \K\d+' results_output.txt | tail -1 || echo "0")
+          node scripts/scrapers/scrapeHeartlandResults.js 2>&1 | tee results_output.txt
+          MATCHES=$(grep -oP 'Staged \K\d+' results_output.txt | tail -1 || echo "0")
           echo "matches=$MATCHES" >> $GITHUB_OUTPUT
         timeout-minutes: 20
 
   # ============================================================================
-  # PHASE 2: TEAM INTEGRATION (After Heartland data collected)
+  # PHASE 2: VALIDATION PIPELINE (After all data collected)
+  # Process staging_games -> matches_v2, create/link teams, refresh views
   # ============================================================================
 
-  integrate-heartland-teams:
-    name: "🔗 Integrate Heartland Teams"
+  validation-pipeline:
+    name: "🔄 Validation Pipeline"
     runs-on: ubuntu-latest
-    needs: [sync-heartland-puppeteer, sync-heartland-results]
+    needs: [sync-gotsport, sync-heartland-puppeteer, sync-heartland-results]
     if: >-
       ${{
         always() &&
         (github.event.inputs.sync_type == 'full' ||
-         github.event.inputs.sync_type == 'heartland_only' ||
-         github.event.inputs.sync_type == null) &&
-        (needs.sync-heartland-puppeteer.result == 'success' ||
-         needs.sync-heartland-results.result == 'success' ||
-         needs.sync-heartland-puppeteer.result == 'skipped' ||
-         needs.sync-heartland-results.result == 'skipped')
-      }}
-    timeout-minutes: 30
-    outputs:
-      teams_created: ${{ steps.integrate.outputs.teams }}
-      matches_linked: ${{ steps.integrate.outputs.linked }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Integrate Heartland Teams
-        id: integrate
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          node scripts/integrateHeartlandTeams.js 2>&1 | tee integrate_output.txt
-          TEAMS=$(grep -oP 'Created \K\d+' integrate_output.txt | head -1 || echo "0")
-          LINKED=$(grep -oP 'Linked \K\d+' integrate_output.txt | tail -1 || echo "0")
-          echo "teams=$TEAMS" >> $GITHUB_OUTPUT
-          echo "linked=$LINKED" >> $GITHUB_OUTPUT
-        timeout-minutes: 20
-
-  # ============================================================================
-  # PHASE 3: TEAM LINKING (After all data sources synced)
-  # ============================================================================
-
-  link-teams:
-    name: "🔗 Link All Teams"
-    runs-on: ubuntu-latest
-    needs: [sync-gotsport, integrate-heartland-teams]
-    if: >-
-      ${{
-        always() &&
-        (github.event.inputs.sync_type == 'full' ||
-         github.event.inputs.sync_type == 'linking_only' ||
+         github.event.inputs.sync_type == 'validation_only' ||
          github.event.inputs.sync_type == null) &&
         (needs.sync-gotsport.result == 'success' ||
          needs.sync-gotsport.result == 'skipped') &&
-        (needs.integrate-heartland-teams.result == 'success' ||
-         needs.integrate-heartland-teams.result == 'skipped')
+        (needs.sync-heartland-puppeteer.result == 'success' ||
+         needs.sync-heartland-puppeteer.result == 'skipped' ||
+         needs.sync-heartland-puppeteer.result == 'failure') &&
+        (needs.sync-heartland-results.result == 'success' ||
+         needs.sync-heartland-results.result == 'skipped')
       }}
     timeout-minutes: 45
     outputs:
-      matches_linked: ${{ steps.link.outputs.linked }}
+      matches_validated: ${{ steps.validate.outputs.matches }}
+      teams_created: ${{ steps.validate.outputs.teams }}
+      views_refreshed: ${{ steps.validate.outputs.views }}
 
     steps:
       - uses: actions/checkout@v4
@@ -258,34 +216,37 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Link Teams to Matches
-        id: link
+      - name: Run Validation Pipeline
+        id: validate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/linkTeams.js --timeout=40 2>&1 | tee link_output.txt
-          LINKED=$(grep -oP 'Linked: \K\d+' link_output.txt | tail -1 || echo "0")
-          echo "linked=$LINKED" >> $GITHUB_OUTPUT
+          node scripts/daily/validationPipeline.js --refresh-views 2>&1 | tee validate_output.txt
+          MATCHES=$(grep -oP 'Matches validated: \K\d+' validate_output.txt | tail -1 || echo "0")
+          TEAMS=$(grep -oP 'Teams created: \K\d+' validate_output.txt | tail -1 || echo "0")
+          VIEWS=$(grep -oP 'Views refreshed' validate_output.txt && echo "yes" || echo "no")
+          echo "matches=$MATCHES" >> $GITHUB_OUTPUT
+          echo "teams=$TEAMS" >> $GITHUB_OUTPUT
+          echo "views=$VIEWS" >> $GITHUB_OUTPUT
         timeout-minutes: 40
 
   # ============================================================================
-  # PHASE 4: ELO CALCULATION
+  # PHASE 3: ELO CALCULATION (Uses matches_v2)
   # ============================================================================
 
   recalculate-elo:
     name: "📈 Recalculate ELO"
     runs-on: ubuntu-latest
-    needs: link-teams
+    needs: validation-pipeline
     if: >-
       ${{
         always() &&
         (github.event.inputs.sync_type == 'full' ||
          github.event.inputs.sync_type == 'elo_only' ||
          github.event.inputs.sync_type == null) &&
-        (needs.link-teams.result == 'success' ||
-         needs.link-teams.result == 'skipped')
+        (needs.validation-pipeline.result == 'success' ||
+         needs.validation-pipeline.result == 'skipped')
       }}
     timeout-minutes: 30
     outputs:
@@ -309,55 +270,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/recalculate_elo_v2.js 2>&1 | tee elo_output.txt
+          node scripts/daily/recalculate_elo_v2.js 2>&1 | tee elo_output.txt
           TEAMS=$(grep -oP 'Teams with ELO: \K\d+' elo_output.txt | tail -1 || echo "0")
           echo "teams=$TEAMS" >> $GITHUB_OUTPUT
         timeout-minutes: 20
 
   # ============================================================================
-  # PHASE 5: MATCH COUNT SYNC
-  # ============================================================================
-
-  sync-match-counts:
-    name: "🔢 Sync Match Counts"
-    runs-on: ubuntu-latest
-    needs: recalculate-elo
-    if: >-
-      ${{
-        always() &&
-        (github.event.inputs.sync_type == 'full' ||
-         github.event.inputs.sync_type == 'counts_only' ||
-         github.event.inputs.sync_type == null) &&
-        (needs.recalculate-elo.result == 'success' ||
-         needs.recalculate-elo.result == 'skipped')
-      }}
-    timeout-minutes: 20
-    outputs:
-      teams_updated: ${{ steps.counts.outputs.teams }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Sync Match Counts
-        id: counts
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          node scripts/syncMatchCounts.js 2>&1 | tee counts_output.txt
-          TEAMS=$(grep -oP 'Updated \K\d+' counts_output.txt | tail -1 || echo "0")
-          echo "teams=$TEAMS" >> $GITHUB_OUTPUT
-        timeout-minutes: 15
-
-  # ============================================================================
-  # PHASE 6: PREDICTION SCORING
+  # PHASE 4: PREDICTION SCORING
   # ============================================================================
 
   score-predictions:
@@ -391,7 +310,56 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/scorePredictions.js
+        run: node scripts/daily/scorePredictions.js
+        timeout-minutes: 10
+
+  # ============================================================================
+  # PHASE 5: REFRESH VIEWS (Final step - ensure app data is current)
+  # ============================================================================
+
+  refresh-views:
+    name: "🔄 Refresh App Views"
+    runs-on: ubuntu-latest
+    needs: [recalculate-elo, score-predictions]
+    if: >-
+      ${{
+        always() &&
+        (github.event.inputs.sync_type == 'full' ||
+         github.event.inputs.sync_type == null) &&
+        (needs.recalculate-elo.result == 'success' ||
+         needs.recalculate-elo.result == 'skipped')
+      }}
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh Materialized Views
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node -e "
+          const { createClient } = require('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+          (async () => {
+            console.log('Refreshing materialized views...');
+            const { error } = await supabase.rpc('refresh_app_views');
+            if (error) {
+              console.error('Error:', error.message);
+              process.exit(1);
+            }
+            console.log('Views refreshed successfully');
+          })();
+          "
         timeout-minutes: 10
 
   # ============================================================================
@@ -405,47 +373,58 @@ jobs:
       - sync-gotsport
       - sync-heartland-puppeteer
       - sync-heartland-results
-      - integrate-heartland-teams
-      - link-teams
+      - validation-pipeline
       - recalculate-elo
-      - sync-match-counts
       - score-predictions
+      - refresh-views
     if: always()
 
     steps:
       - name: Generate Pipeline Summary
         run: |
-          echo "# 🏆 SoccerView Daily Data Sync" >> $GITHUB_STEP_SUMMARY
+          echo "# 🏆 SoccerView Daily Data Sync (V2)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Run:** #${{ github.run_number }} | **Triggered:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "## 📊 Data Collection" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Phase 1: Data Collection (Staging)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Source | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| GotSport Events | ${{ needs.sync-gotsport.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Heartland (Puppeteer) | ${{ needs.sync-heartland-puppeteer.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Heartland Results | ${{ needs.sync-heartland-results.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Source | Status | Matches Staged |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|----------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| GotSport Events | ${{ needs.sync-gotsport.result || '⏭️ skipped' }} | ${{ needs.sync-gotsport.outputs.matches_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| HTGSports | ${{ needs.sync-heartland-puppeteer.result || '⏭️ skipped' }} | ${{ needs.sync-heartland-puppeteer.outputs.htgsports_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Heartland League | ${{ needs.sync-heartland-puppeteer.result || '⏭️ skipped' }} | ${{ needs.sync-heartland-puppeteer.outputs.league_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Heartland Results | ${{ needs.sync-heartland-results.result || '⏭️ skipped' }} | ${{ needs.sync-heartland-results.outputs.matches_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "## 🔧 Processing" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔄 Phase 2: Validation Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ needs.validation-pipeline.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Matches Validated | ${{ needs.validation-pipeline.outputs.matches_validated || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Teams Created | ${{ needs.validation-pipeline.outputs.teams_created || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 📈 Phase 3-5: Processing" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Integrate Heartland Teams | ${{ needs.integrate-heartland-teams.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Link Teams | ${{ needs.link-teams.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Recalculate ELO | ${{ needs.recalculate-elo.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Sync Match Counts | ${{ needs.sync-match-counts.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Score Predictions | ${{ needs.score-predictions.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Refresh Views | ${{ needs.refresh-views.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Overall status
           if [[ "${{ needs.sync-gotsport.result }}" == "failure" ]] || \
-             [[ "${{ needs.link-teams.result }}" == "failure" ]] || \
+             [[ "${{ needs.validation-pipeline.result }}" == "failure" ]] || \
              [[ "${{ needs.recalculate-elo.result }}" == "failure" ]]; then
             echo "## ⚠️ Pipeline completed with errors" >> $GITHUB_STEP_SUMMARY
           else
             echo "## ✅ Pipeline completed successfully" >> $GITHUB_STEP_SUMMARY
           fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*V2 Architecture: staging_games → matches_v2 → app_* views*" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,41 @@
+{
+  "title": "Team Lookup",
+  "url": "https://calendar.heartlandsoccer.net/team/",
+  "bodyClasses": "",
+  "forms": [
+    {
+      "index": 0,
+      "id": "(no id)",
+      "action": "https://calendar.heartlandsoccer.net/team/search",
+      "method": "post",
+      "classes": "(no class)"
+    }
+  ],
+  "inputs": [
+    {
+      "tag": "input",
+      "type": "text",
+      "name": "team_search[name]",
+      "id": "team_search_name",
+      "placeholder": "",
+      "classes": "form-control"
+    }
+  ],
+  "buttons": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "classes": "navbar-toggler border-0"
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Submit",
+      "classes": "btn-primary btn"
+    }
+  ],
+  "links": [],
+  "tables": [],
+  "iframes": []
+}
