@@ -110,7 +110,7 @@ jobs:
           echo "framework=universal" >> $GITHUB_OUTPUT
 
           exit $EXIT_CODE
-        timeout-minutes: 45
+        timeout-minutes: 90
         continue-on-error: ${{ env.FALLBACK_ENABLED == 'true' }}
 
       - name: Sync GotSport (Legacy Fallback)
@@ -127,7 +127,7 @@ jobs:
           MATCHES=$(grep -oP 'Staged \K\d+' sync_output.txt | tail -1 || echo "0")
           echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
           echo "framework=legacy" >> $GITHUB_OUTPUT
-        timeout-minutes: 45
+        timeout-minutes: 90
 
   sync-htgsports:
     name: "🏆 HTGSports Tournaments"
