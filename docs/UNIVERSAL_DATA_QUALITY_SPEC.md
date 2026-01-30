@@ -1,3 +1,9 @@
+> ?? **CRITICAL WARNING (Jan 30, 2026):** Some numbers in this spec are STALE.
+> ALWAYS verify actual database state before acting:
+> - clubs: 122,418 ? ALREADY POPULATED - DO NOT REBUILD
+> - leagues: 279 ? ALREADY POPULATED - DO NOT REBUILD  
+> - seasons: 3 ? ALREADY POPULATED
+> - staging_games: ~32K (verify actual count)
 # SoccerView Universal Data Quality Specification
 ## Authoritative Technical Specification v1.0
 ### Date: January 30, 2026
@@ -1048,3 +1054,4 @@ Claude Code MUST:
 4. **Report Phase 0 status before proceeding**
 
 **Do not proceed to Phase 1 until Phase 0 exit criteria are met.**
+
