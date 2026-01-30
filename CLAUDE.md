@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 6.9** | Last Updated: January 30, 2026 | Session 57 Complete
+> **Version 7.1** | Last Updated: January 30, 2026 | Session 60 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -10,6 +10,7 @@
 
 | Document | Purpose |
 |----------|---------|
+| [docs/UNIVERSAL_DATA_QUALITY_SPEC.md](docs/UNIVERSAL_DATA_QUALITY_SPEC.md) | **ACTIVE** Data quality system spec |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | V2 database architecture (3-layer design) |
 | [docs/DATA_SCRAPING_PLAYBOOK.md](docs/DATA_SCRAPING_PLAYBOOK.md) | How to add new data sources |
 | [docs/DATA_EXPANSION_ROADMAP.md](docs/DATA_EXPANSION_ROADMAP.md) | Priority queue for expansion |
@@ -141,6 +142,25 @@ A technically elegant architecture with widespread data issues is a failed produ
 
 **Mitigation:** Validation pipeline now detects `home_team_id == away_team_id` and skips with error log instead of crashing.
 
+### 9. Prevent Duplicate League Entries (Session 59)
+
+**Problem:** Different scrapers can create multiple league entries for the same real-world league:
+- `scrapeHeartlandLeague.js` created "Heartland Soccer League 2025"
+- `scrapeHeartlandResults.js` created "Heartland Premier League 2025"
+
+**Impact:** Team Details page shows same matches split across multiple leagues.
+
+**Root Cause:** Inconsistent `source_event_id` naming between scrapers:
+- Calendar scraper: `heartland-league-2025`
+- Results scraper: `heartland-premier-2025`
+
+**Prevention:**
+1. All scrapers for a source MUST use identical `source_event_id` format
+2. New adapters should follow the pattern in `scripts/adapters/_template.js`
+3. Run `mergeHeartlandLeagues.js` pattern if duplicates are discovered
+
+**Fix Script:** `scripts/maintenance/mergeHeartlandLeagues.js`
+
 ---
 
 ## Quick Reference
@@ -149,11 +169,13 @@ A technically elegant architecture with widespread data issues is a failed produ
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 142,541 | Team records (982 duplicates merged in Session 54) |
-| `matches_v2` | 300,564 | Match results |
-| `clubs` | 32,334 | Club organizations |
+| `teams_v2` | 147,706 | Team records |
+| `matches_v2` | 304,293 | Match results |
+| `clubs` | 122,418 | Club organizations |
 | `leagues` | 280 | League metadata |
-| `tournaments` | 1,514 | Tournament metadata (+13 HTGSports in Session 56) |
+| `tournaments` | 1,726 | Tournament metadata |
+| `canonical_events` | 4 | Canonical registry (Heartland mappings) |
+| `seasons` | 3 | Season definitions |
 
 ### Materialized Views (App Queries)
 
@@ -318,10 +340,46 @@ node scripts/universal/coreScraper.js --adapter htgsports --event 12345
 node scripts/universal/coreScraper.js --adapter heartland --active --dry-run
 ```
 
+### Universal Data Quality System (`scripts/universal/`)
+
+**NEW in Session 60** - Complete data quality pipeline. Core engine + pure-function normalizers.
+
+**Core Engine:**
+| Script | Purpose |
+|--------|---------|
+| `dataQualityEngine.js` | **Main orchestrator** (680+ lines) - 4-step pipeline: Normalize → Resolve → Deduplicate → Promote |
+| `testDataQualityEngine.js` | Integration test for full pipeline |
+
+**Usage:**
+```bash
+node scripts/universal/dataQualityEngine.js --process-staging
+node scripts/universal/dataQualityEngine.js --process-staging --dry-run --limit 1000
+node scripts/universal/dataQualityEngine.js --audit-report --days 30
+```
+
+**Normalizers (`scripts/universal/normalizers/`):**
+Performance: 4.6ms per 1000 records.
+
+| Script | Purpose | Tests |
+|--------|---------|-------|
+| `teamNormalizer.js` | Standardize team names, extract birth_year/gender | 6/6 |
+| `eventNormalizer.js` | Standardize event names, detect league/tournament | 6/6 |
+| `matchNormalizer.js` | Parse dates/scores, generate source_match_key | 7/7 |
+| `clubNormalizer.js` | Extract club name from team name | 7/7 |
+| `testWithStagingData.js` | Integration test with real staging data | - |
+
+**Canonical Registry Functions (DB):**
+| Function | Purpose |
+|----------|---------|
+| `resolve_canonical_event()` | Fuzzy match event to canonical name |
+| `resolve_canonical_team()` | Match team to canonical with birth_year/gender |
+| `resolve_canonical_club()` | Match club to canonical |
+
 ### Database Migrations (`scripts/migrations/`)
 
 | Script | Purpose |
 |--------|---------|
+| `run_phase1_functions.js` | Create canonical registry tables + resolve functions |
 | `backfillSourceMatchKey.js` | Backfilled 286,253 NULL source_match_key values |
 | `deduplicateMatchKeys.js` | Removed 3,562 duplicate source_match_key records |
 | `applyConstraint.js` | Added UNIQUE constraint on source_match_key |
@@ -338,6 +396,7 @@ Diagnostics, audits, and utilities.
 | `linkFromV1Archive.js` | Link legacy gotsport via V1 archived data (67% success) |
 | `inferEventLinkage.js` | **NIGHTLY** Infer event from team activity patterns |
 | `cleanupGarbageMatches.js` | Delete future-dated matches (2027+) |
+| `mergeHeartlandLeagues.js` | Merge duplicate league entries (Session 59) |
 
 ### Archived
 
@@ -375,7 +434,18 @@ See `scripts/_archive/` for deprecated V1 scripts.
 # Start development
 npx expo start
 
-# Run validation pipeline
+# Run data quality engine (replaces validation pipeline)
+node scripts/universal/dataQualityEngine.js --process-staging
+
+# Run data quality engine (dry run)
+node scripts/universal/dataQualityEngine.js --process-staging --dry-run --limit 1000
+
+# Run deduplication reports
+node scripts/universal/deduplication/matchDedup.js --report
+node scripts/universal/deduplication/teamDedup.js --report
+node scripts/universal/deduplication/eventDedup.js --report
+
+# Legacy validation pipeline (fallback)
 node scripts/daily/validationPipeline.js --refresh-views
 
 # Recalculate ELO
@@ -409,6 +479,136 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 60 - Universal Data Quality System (January 30, 2026) - PHASE 6 COMPLETE
+
+**Goal:** Implement Universal Data Quality System per `docs/UNIVERSAL_DATA_QUALITY_SPEC.md`
+
+**Constraint:** Backend only - NO changes to /app/ or /components/
+
+**Phases Completed:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| **Phase 0** | Immediate Fixes | ✅ COMPLETE |
+| **Phase 1** | Canonical Registries | ✅ COMPLETE |
+| **Phase 2** | Normalizers | ✅ COMPLETE |
+| **Phase 3** | Core Engine | ✅ COMPLETE |
+| **Phase 4** | Deduplication | ✅ COMPLETE |
+| **Phase 5** | Infrastructure Population | ✅ COMPLETE |
+| **Phase 6** | Pipeline Integration | ✅ COMPLETE |
+
+**Phase 5 Deliverables:**
+- [x] `scripts/onetime/populateClubs.js` - Populate clubs from team names
+- [x] `scripts/onetime/rebuildLeagues.js` - Normalize league metadata
+- [x] 100% teams_v2.club_id linked (was 93%, now 100%)
+- [x] 2,232 new clubs created
+- [x] 38 leagues updated with state/region metadata
+
+**Phase 5 Results:**
+| Metric | Before | After |
+|--------|--------|-------|
+| Teams with club_id | 137,357 (93%) | **147,706 (100%)** |
+| Clubs | 122,418 | **124,650** |
+| Leagues with state | ~0 | **35** |
+
+**Phase 4 Deliverables:**
+- [x] `scripts/universal/deduplication/matchDedup.js` - Detect/resolve duplicate matches
+- [x] `scripts/universal/deduplication/teamDedup.js` - Detect/resolve duplicate teams
+- [x] `scripts/universal/deduplication/eventDedup.js` - Detect/resolve duplicate events
+- [x] `scripts/maintenance/mergeTeams.js` - Manual team merge utility
+- [x] `scripts/maintenance/mergeEvents.js` - Manual event merge utility
+
+**CLI Usage:**
+```bash
+# Populate clubs (one-time or catch-up)
+node scripts/onetime/populateClubs.js --dry-run
+node scripts/onetime/populateClubs.js
+
+# Rebuild leagues (normalize metadata)
+node scripts/onetime/rebuildLeagues.js --dry-run
+node scripts/onetime/rebuildLeagues.js
+
+# Deduplication reports
+node scripts/universal/deduplication/matchDedup.js --report
+node scripts/universal/deduplication/teamDedup.js --report
+node scripts/universal/deduplication/eventDedup.js --report
+
+# Manual merge utilities
+node scripts/maintenance/mergeTeams.js --find "team name"
+node scripts/maintenance/mergeTeams.js --keep <uuid> --merge <uuid1,uuid2> --execute
+node scripts/maintenance/mergeEvents.js --type league --find "Heartland"
+```
+
+**Phase 6 Deliverables:**
+- [x] `.github/workflows/daily-data-sync.yml` updated to use dataQualityEngine
+- [x] New job: `weekly-dedup-check` runs Sundays (match/team/event dedup reports)
+- [x] Legacy fallback: validationPipeline.js runs if dataQualityEngine fails
+- [x] New workflow input: `run_dedup` to manually trigger dedup check
+- [x] Summary section updated with engine info and dedup results
+
+**Nightly Pipeline (Updated):**
+```
+Phase 1: Data Collection (parallel scrapers → staging_games)
+Phase 2: Data Quality Engine (dataQualityEngine.js → matches_v2)
+Phase 2.25: Weekly Dedup Check (Sundays only)
+Phase 2.5: Inference Linkage (inferEventLinkage.js)
+Phase 3: ELO Calculation (recalculate_elo_v2.js)
+Phase 4: Prediction Scoring (scorePredictions.js)
+Phase 5: Refresh Views (refresh_app_views())
+```
+
+**Database State After Phase 6:**
+- teams_v2: 147,706 rows (100% have club_id)
+- clubs: 124,650 rows
+- leagues: 280 rows (35 with state metadata)
+- matches_v2: 295,575 rows
+- canonical_events: 4 rows (Heartland mappings)
+- canonical_teams: 0 rows (populate from dedup merges)
+- canonical_clubs: 0 rows (populate from dedup merges)
+
+**Universal Data Quality System - COMPLETE**
+
+---
+
+### Session 59 - Heartland League Duplicate Fix (January 30, 2026) - COMPLETE
+
+**Goal:** Fix duplicate Heartland leagues appearing on Team Details page.
+
+**Problem Identified:**
+Two different scrapers created separate league entries for the same real-world league:
+- `scrapeHeartlandLeague.js` → "Heartland Soccer League 2025" (source_event_id: `heartland-league-2025`)
+- `scrapeHeartlandResults.js` → "Heartland Premier League 2025" (source_event_id: `heartland-premier-2025`)
+
+This caused teams (e.g., Sporting BV Pre-NAL 15) to show TWO Heartland leagues in their Match History.
+
+**Root Cause Analysis:**
+- Same match recorded twice with different `source_match_key` formats
+- Different team name formatting led to different `team_id` lookups
+- Both matches linked to same away team but different home team entries
+
+**Fix Applied:**
+
+| Action | Count |
+|--------|-------|
+| Duplicate matches deleted | 1,581 |
+| Unique matches migrated | 446 |
+| League entry deleted | "Heartland Soccer League 2025" |
+
+**Script Created:** `scripts/maintenance/mergeHeartlandLeagues.js`
+- Dry-run mode: `--dry-run`
+- Matches duplicates using Heartland source IDs from `source_match_key`
+- Deletes duplicates, migrates unique matches, removes empty league
+
+**Database Impact:**
+- `matches_v2`: 300,564 → 295,575 (-4,989 from duplicates + other cleanup)
+- `leagues`: 280 → 279 (removed "Heartland Soccer League 2025")
+
+**Documentation Updated:**
+- Added Principle 9: "Prevent Duplicate League Entries"
+- Added `mergeHeartlandLeagues.js` to maintenance scripts
+
+---
 
 ### Session 58 - GitHub Actions Fixes & Security Hardening (January 30, 2026) - COMPLETE
 
