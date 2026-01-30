@@ -9,9 +9,8 @@ name: Daily Data Sync (V2 Architecture)
 # Pipeline Flow:
 #   1. DATA COLLECTION (parallel):
 #      - GotSport active events       -> staging_games
-#      - Heartland tournaments         -> staging_games
-#      - Heartland league calendar     -> staging_games
-#      - Heartland results (scores)    -> staging_games
+#      - HTGSports tournaments        -> staging_games
+#      - Heartland league             -> staging_games
 #   2. VALIDATION PIPELINE:
 #      - Process staging_games -> matches_v2
 #      - Create/link teams in teams_v2
@@ -19,6 +18,11 @@ name: Daily Data Sync (V2 Architecture)
 #      - Refresh materialized views
 #   3. ELO CALCULATION - Update power ratings in teams_v2
 #   4. PREDICTION SCORING - Score user predictions
+#
+# SCRAPER FRAMEWORK:
+#   - Default: Universal Scraper Framework (scripts/universal/coreScraper.js)
+#   - Fallback: Legacy scrapers (scripts/daily/syncActiveEvents.js, etc.)
+#   - Toggle via workflow_dispatch input: use_universal_framework
 #
 # Runtime: ~30-45 minutes total
 # =============================================================================
@@ -41,9 +45,22 @@ on:
           - validation_only
           - elo_only
           - scoring_only
+      use_universal_framework:
+        description: "Use new Universal Scraper Framework"
+        required: false
+        default: true
+        type: boolean
+      fallback_on_error:
+        description: "Fall back to legacy scrapers if universal fails"
+        required: false
+        default: true
+        type: boolean
 
 env:
   NODE_VERSION: "20"
+  # Default to universal framework for scheduled runs
+  USE_UNIVERSAL: ${{ github.event.inputs.use_universal_framework == 'true' || github.event.inputs.use_universal_framework == null }}
+  FALLBACK_ENABLED: ${{ github.event.inputs.fallback_on_error == 'true' || github.event.inputs.fallback_on_error == null }}
 
 jobs:
   # ============================================================================
@@ -61,8 +78,9 @@ jobs:
       }}
     timeout-minutes: 60
     outputs:
-      matches_staged: ${{ steps.sync.outputs.matches_staged }}
-      status: ${{ steps.sync.outcome }}
+      matches_staged: ${{ steps.sync.outputs.matches_staged || steps.fallback.outputs.matches_staged }}
+      status: ${{ steps.sync.outcome || steps.fallback.outcome }}
+      framework_used: ${{ steps.sync.outputs.framework || steps.fallback.outputs.framework }}
 
     steps:
       - uses: actions/checkout@v4
@@ -75,20 +93,44 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Sync Active GotSport Events (to staging)
+      - name: Sync GotSport (Universal Framework)
         id: sync
+        if: ${{ env.USE_UNIVERSAL == 'true' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
+          echo "🚀 Using Universal Scraper Framework"
+          node scripts/universal/coreScraper.js --adapter gotsport --active-only 2>&1 | tee sync_output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          # Extract staged match count from output
+          MATCHES=$(grep -oP 'Total matches staged:\s*\K\d+' sync_output.txt | tail -1 || echo "0")
+          echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
+          echo "framework=universal" >> $GITHUB_OUTPUT
+
+          exit $EXIT_CODE
+        timeout-minutes: 45
+        continue-on-error: ${{ env.FALLBACK_ENABLED == 'true' }}
+
+      - name: Sync GotSport (Legacy Fallback)
+        id: fallback
+        if: ${{ env.USE_UNIVERSAL != 'true' || (steps.sync.outcome == 'failure' && env.FALLBACK_ENABLED == 'true') }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "📦 Using Legacy Scraper (syncActiveEvents.js)"
           node scripts/daily/syncActiveEvents.js 2>&1 | tee sync_output.txt
+
           # Extract staged match count from output
           MATCHES=$(grep -oP 'Staged \K\d+' sync_output.txt | tail -1 || echo "0")
           echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
+          echo "framework=legacy" >> $GITHUB_OUTPUT
         timeout-minutes: 45
 
-  sync-heartland-puppeteer:
-    name: "🏈 Heartland (Puppeteer)"
+  sync-htgsports:
+    name: "🏆 HTGSports Tournaments"
     runs-on: ubuntu-latest
     if: >-
       ${{
@@ -96,11 +138,11 @@ jobs:
         github.event.inputs.sync_type == 'heartland_only' ||
         github.event.inputs.sync_type == null
       }}
-    timeout-minutes: 90
+    timeout-minutes: 60
     outputs:
-      htgsports_staged: ${{ steps.htgsports.outputs.matches }}
-      league_staged: ${{ steps.league.outputs.matches }}
+      matches_staged: ${{ steps.sync.outputs.matches_staged || steps.fallback.outputs.matches_staged }}
       status: ${{ job.status }}
+      framework_used: ${{ steps.sync.outputs.framework || steps.fallback.outputs.framework }}
 
     steps:
       - uses: actions/checkout@v4
@@ -116,32 +158,41 @@ jobs:
       - name: Install Puppeteer browsers
         run: npx puppeteer browsers install chrome
 
-      - name: Sync HTGSports Tournaments (to staging)
-        id: htgsports
+      - name: Sync HTGSports (Universal Framework)
+        id: sync
+        if: ${{ env.USE_UNIVERSAL == 'true' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/scrapers/scrapeHTGSports.js --active-only 2>&1 | tee htg_output.txt || true
-          MATCHES=$(grep -oP 'Staged: \K\d+' htg_output.txt | tail -1 || echo "0")
-          echo "matches=$MATCHES" >> $GITHUB_OUTPUT
+          echo "🚀 Using Universal Scraper Framework"
+          node scripts/universal/coreScraper.js --adapter htgsports --active-only 2>&1 | tee htg_output.txt || true
+
+          # Extract staged match count from output
+          MATCHES=$(grep -oP 'Total matches staged:\s*\K\d+' htg_output.txt | tail -1 || echo "0")
+          echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
+          echo "framework=universal" >> $GITHUB_OUTPUT
         timeout-minutes: 45
         continue-on-error: true
 
-      - name: Sync Heartland League Calendar (to staging)
-        id: league
+      - name: Sync HTGSports (Legacy Fallback)
+        id: fallback
+        if: ${{ env.USE_UNIVERSAL != 'true' || steps.sync.outcome == 'failure' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/scrapers/scrapeHeartlandLeague.js --active-only 2>&1 | tee league_output.txt || true
-          MATCHES=$(grep -oP 'Staged: \K\d+' league_output.txt | tail -1 || echo "0")
-          echo "matches=$MATCHES" >> $GITHUB_OUTPUT
-        timeout-minutes: 30
+          echo "📦 Using Legacy Scraper (scrapeHTGSports.js)"
+          node scripts/scrapers/scrapeHTGSports.js --active-only 2>&1 | tee htg_output.txt || true
+
+          MATCHES=$(grep -oP 'Staged: \K\d+' htg_output.txt | tail -1 || echo "0")
+          echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
+          echo "framework=legacy" >> $GITHUB_OUTPUT
+        timeout-minutes: 45
         continue-on-error: true
 
-  sync-heartland-results:
-    name: "📋 Heartland Results (Scores)"
+  sync-heartland:
+    name: "⚽ Heartland League"
     runs-on: ubuntu-latest
     if: >-
       ${{
@@ -149,10 +200,11 @@ jobs:
         github.event.inputs.sync_type == 'heartland_only' ||
         github.event.inputs.sync_type == null
       }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     outputs:
-      matches_staged: ${{ steps.results.outputs.matches }}
-      status: ${{ steps.results.outcome }}
+      matches_staged: ${{ steps.sync.outputs.matches_staged || steps.fallback.outputs.matches_staged }}
+      status: ${{ job.status }}
+      framework_used: ${{ steps.sync.outputs.framework || steps.fallback.outputs.framework }}
 
     steps:
       - uses: actions/checkout@v4
@@ -165,16 +217,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Scrape Heartland Results (to staging)
-        id: results
+      - name: Sync Heartland (Universal Framework)
+        id: sync
+        if: ${{ env.USE_UNIVERSAL == 'true' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/scrapers/scrapeHeartlandResults.js 2>&1 | tee results_output.txt
-          MATCHES=$(grep -oP 'Staged \K\d+' results_output.txt | tail -1 || echo "0")
-          echo "matches=$MATCHES" >> $GITHUB_OUTPUT
-        timeout-minutes: 20
+          echo "🚀 Using Universal Scraper Framework"
+          node scripts/universal/coreScraper.js --adapter heartland --active-only 2>&1 | tee heartland_output.txt || true
+
+          # Extract staged match count from output
+          MATCHES=$(grep -oP 'Total matches staged:\s*\K\d+' heartland_output.txt | tail -1 || echo "0")
+          echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
+          echo "framework=universal" >> $GITHUB_OUTPUT
+        timeout-minutes: 30
+        continue-on-error: true
+
+      - name: Sync Heartland (Legacy Fallback)
+        id: fallback
+        if: ${{ env.USE_UNIVERSAL != 'true' || steps.sync.outcome == 'failure' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "📦 Using Legacy Scrapers"
+          # Run both league calendar and results scrapers
+          node scripts/scrapers/scrapeHeartlandLeague.js --active-only 2>&1 | tee league_output.txt || true
+          node scripts/scrapers/scrapeHeartlandResults.js 2>&1 | tee results_output.txt || true
+
+          LEAGUE_MATCHES=$(grep -oP 'Staged: \K\d+' league_output.txt | tail -1 || echo "0")
+          RESULTS_MATCHES=$(grep -oP 'Staged \K\d+' results_output.txt | tail -1 || echo "0")
+          TOTAL=$((LEAGUE_MATCHES + RESULTS_MATCHES))
+          echo "matches_staged=$TOTAL" >> $GITHUB_OUTPUT
+          echo "framework=legacy" >> $GITHUB_OUTPUT
+        timeout-minutes: 30
+        continue-on-error: true
 
   # ============================================================================
   # PHASE 2: VALIDATION PIPELINE (After all data collected)
@@ -184,7 +262,7 @@ jobs:
   validation-pipeline:
     name: "🔄 Validation Pipeline"
     runs-on: ubuntu-latest
-    needs: [sync-gotsport, sync-heartland-puppeteer, sync-heartland-results]
+    needs: [sync-gotsport, sync-htgsports, sync-heartland]
     if: >-
       ${{
         always() &&
@@ -193,11 +271,12 @@ jobs:
          github.event.inputs.sync_type == null) &&
         (needs.sync-gotsport.result == 'success' ||
          needs.sync-gotsport.result == 'skipped') &&
-        (needs.sync-heartland-puppeteer.result == 'success' ||
-         needs.sync-heartland-puppeteer.result == 'skipped' ||
-         needs.sync-heartland-puppeteer.result == 'failure') &&
-        (needs.sync-heartland-results.result == 'success' ||
-         needs.sync-heartland-results.result == 'skipped')
+        (needs.sync-htgsports.result == 'success' ||
+         needs.sync-htgsports.result == 'skipped' ||
+         needs.sync-htgsports.result == 'failure') &&
+        (needs.sync-heartland.result == 'success' ||
+         needs.sync-heartland.result == 'skipped' ||
+         needs.sync-heartland.result == 'failure')
       }}
     timeout-minutes: 45
     outputs:
@@ -223,13 +302,57 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           node scripts/daily/validationPipeline.js --refresh-views 2>&1 | tee validate_output.txt
-          MATCHES=$(grep -oP 'Matches validated: \K\d+' validate_output.txt | tail -1 || echo "0")
-          TEAMS=$(grep -oP 'Teams created: \K\d+' validate_output.txt | tail -1 || echo "0")
+          MATCHES=$(grep -oP 'Games valid:\s*\K\d+' validate_output.txt | tail -1 || echo "0")
+          TEAMS=$(grep -oP 'Teams created:\s*\K\d+' validate_output.txt | tail -1 || echo "0")
           VIEWS=$(grep -oP 'Views refreshed' validate_output.txt && echo "yes" || echo "no")
           echo "matches=$MATCHES" >> $GITHUB_OUTPUT
           echo "teams=$TEAMS" >> $GITHUB_OUTPUT
           echo "views=$VIEWS" >> $GITHUB_OUTPUT
         timeout-minutes: 40
+
+  # ============================================================================
+  # PHASE 2.5: INFERENCE LINKAGE (Fix orphaned matches over time)
+  # Links unlinked matches by inferring event from team activity patterns
+  # ============================================================================
+
+  infer-event-linkage:
+    name: "🔗 Infer Event Linkage"
+    runs-on: ubuntu-latest
+    needs: validation-pipeline
+    if: >-
+      ${{
+        always() &&
+        (github.event.inputs.sync_type == 'full' ||
+         github.event.inputs.sync_type == null) &&
+        (needs.validation-pipeline.result == 'success' ||
+         needs.validation-pipeline.result == 'skipped')
+      }}
+    timeout-minutes: 20
+    outputs:
+      matches_linked: ${{ steps.infer.outputs.matches }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Infer Event Linkage for Orphaned Matches
+        id: infer
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node scripts/maintenance/inferEventLinkage.js 2>&1 | tee infer_output.txt
+          MATCHES=$(grep -oP 'Matches updated:\s+\K\d+' infer_output.txt | tail -1 || echo "0")
+          echo "matches=$MATCHES" >> $GITHUB_OUTPUT
+        timeout-minutes: 15
+        continue-on-error: true
 
   # ============================================================================
   # PHASE 3: ELO CALCULATION (Uses matches_v2)
@@ -238,7 +361,7 @@ jobs:
   recalculate-elo:
     name: "📈 Recalculate ELO"
     runs-on: ubuntu-latest
-    needs: validation-pipeline
+    needs: [validation-pipeline, infer-event-linkage]
     if: >-
       ${{
         always() &&
@@ -344,22 +467,10 @@ jobs:
 
       - name: Refresh Materialized Views
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          node -e "
-          const { createClient } = require('@supabase/supabase-js');
-          const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-          (async () => {
-            console.log('Refreshing materialized views...');
-            const { error } = await supabase.rpc('refresh_app_views');
-            if (error) {
-              console.error('Error:', error.message);
-              process.exit(1);
-            }
-            console.log('Views refreshed successfully');
-          })();
-          "
+        run: node scripts/refresh_views_manual.js
         timeout-minutes: 10
 
   # ============================================================================
@@ -371,9 +482,10 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - sync-gotsport
-      - sync-heartland-puppeteer
-      - sync-heartland-results
+      - sync-htgsports
+      - sync-heartland
       - validation-pipeline
+      - infer-event-linkage
       - recalculate-elo
       - score-predictions
       - refresh-views
@@ -390,12 +502,11 @@ jobs:
 
           echo "## 📊 Phase 1: Data Collection (Staging)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Source | Status | Matches Staged |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|--------|----------------|" >> $GITHUB_STEP_SUMMARY
-          echo "| GotSport Events | ${{ needs.sync-gotsport.result || '⏭️ skipped' }} | ${{ needs.sync-gotsport.outputs.matches_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| HTGSports | ${{ needs.sync-heartland-puppeteer.result || '⏭️ skipped' }} | ${{ needs.sync-heartland-puppeteer.outputs.htgsports_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Heartland League | ${{ needs.sync-heartland-puppeteer.result || '⏭️ skipped' }} | ${{ needs.sync-heartland-puppeteer.outputs.league_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Heartland Results | ${{ needs.sync-heartland-results.result || '⏭️ skipped' }} | ${{ needs.sync-heartland-results.outputs.matches_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Source | Status | Matches | Framework |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|---------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| GotSport | ${{ needs.sync-gotsport.result || '⏭️ skipped' }} | ${{ needs.sync-gotsport.outputs.matches_staged || '-' }} | ${{ needs.sync-gotsport.outputs.framework_used || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| HTGSports | ${{ needs.sync-htgsports.result || '⏭️ skipped' }} | ${{ needs.sync-htgsports.outputs.matches_staged || '-' }} | ${{ needs.sync-htgsports.outputs.framework_used || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Heartland | ${{ needs.sync-heartland.result || '⏭️ skipped' }} | ${{ needs.sync-heartland.outputs.matches_staged || '-' }} | ${{ needs.sync-heartland.outputs.framework_used || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "## 🔄 Phase 2: Validation Pipeline" >> $GITHUB_STEP_SUMMARY
@@ -405,6 +516,14 @@ jobs:
           echo "| Status | ${{ needs.validation-pipeline.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Matches Validated | ${{ needs.validation-pipeline.outputs.matches_validated || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Teams Created | ${{ needs.validation-pipeline.outputs.teams_created || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 🔗 Phase 2.5: Inference Linkage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ needs.infer-event-linkage.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Orphaned Matches Linked | ${{ needs.infer-event-linkage.outputs.matches_linked || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "## 📈 Phase 3-5: Processing" >> $GITHUB_STEP_SUMMARY
@@ -428,3 +547,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "*V2 Architecture: staging_games → matches_v2 → app_* views*" >> $GITHUB_STEP_SUMMARY
+          echo "*Scraper Framework: Universal (default) with Legacy fallback*" >> $GITHUB_STEP_SUMMARY

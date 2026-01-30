@@ -1,21 +1,20 @@
 /**
- * captureRankSnapshot.js - v2.2 GITHUB ACTIONS FIX
+ * captureRankSnapshot.js - v3.0 V2 ARCHITECTURE
  *
- * Captures a daily snapshot of all team rankings for the "My Team's Journey" feature.
+ * Captures a daily snapshot of all team rankings for the "Ranking Journey" feature.
  * Called by GitHub Actions cron job daily at 6 AM UTC.
  *
- * FIX v2.2: Remove count query that times out in GitHub Actions
- * FIX v2.1: Use 1000 page size (Supabase default max) and proper pagination
- * FIX v2.0: Bypasses RPC function entirely to avoid Supabase statement timeout issues.
+ * V3.0: Updated for V2 architecture
+ *   - Uses teams_v2 instead of team_elo view
+ *   - Writes to rank_history_v2 instead of rank_history
+ *   - Captures both GotSport ranks and ELO ranks
  *
- * @version 2.2.0
+ * @version 3.0.0
  * @date January 2026
  */
 
 import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
-
-dotenv.config();
+import "dotenv/config";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -37,7 +36,7 @@ const CONFIG = {
 };
 
 async function captureRankSnapshot() {
-  console.log("📸 Capturing daily rank snapshot v2.3...");
+  console.log("📸 Capturing daily rank snapshot v3.0 (V2 Architecture)...");
   console.log(`📅 Date: ${new Date().toISOString()}`);
   console.log(`🔗 Supabase URL: ${SUPABASE_URL?.substring(0, 30)}...`);
 
@@ -48,10 +47,10 @@ async function captureRankSnapshot() {
   let pageCount = 0;
 
   try {
-    // Connectivity test - verify rank_history table exists and is writable
-    console.log("🔍 Testing database connectivity...");
+    // Connectivity test - verify rank_history_v2 table exists and is writable
+    console.log("🔍 Testing database connectivity (V2 tables)...");
     const { error: testError } = await supabase
-      .from("rank_history")
+      .from("rank_history_v2")
       .select("team_id")
       .limit(1);
 
@@ -62,12 +61,13 @@ async function captureRankSnapshot() {
     // Process teams in pages - no count query (it times out in GitHub Actions)
     while (hasMore) {
       pageCount++;
-      
-      // Fetch a page of ranked teams - fast indexed query
+
+      // Fetch a page of ranked teams from teams_v2 - fast indexed query
+      // Capture teams with either GotSport rank OR matches played (have ELO)
       const { data: teams, error: fetchError } = await supabase
-        .from("team_elo")
-        .select("id, national_rank, state_rank, regional_rank, elo_rating")
-        .not("national_rank", "is", null)
+        .from("teams_v2")
+        .select("id, national_rank, state_rank, elo_rating")
+        .or("national_rank.not.is.null,matches_played.gt.0")
         .order("id", { ascending: true })
         .range(offset, offset + CONFIG.PAGE_SIZE - 1);
 
@@ -81,22 +81,23 @@ async function captureRankSnapshot() {
         continue;
       }
 
-      // Transform to rank_history records
+      // Transform to rank_history_v2 records
+      // Note: rank_history_v2 stores elo_rating, national_rank, state_rank
+      // ELO ranks can be derived from elo_rating if needed
       const snapshots = teams.map(team => ({
         team_id: team.id,
         snapshot_date: today,
         national_rank: team.national_rank,
         state_rank: team.state_rank,
-        regional_rank: team.regional_rank,
         elo_rating: team.elo_rating,
       }));
 
-      // Insert batch
+      // Insert batch to rank_history_v2
       const { error: insertError } = await supabase
-        .from("rank_history")
-        .upsert(snapshots, { 
+        .from("rank_history_v2")
+        .upsert(snapshots, {
           onConflict: "team_id,snapshot_date",
-          ignoreDuplicates: false 
+          ignoreDuplicates: false
         });
 
       if (insertError) {
