@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 7.1** | Last Updated: January 30, 2026 | Session 60 Complete
+> **Version 7.7** | Last Updated: January 31, 2026 | Session 67 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -161,6 +161,227 @@ A technically elegant architecture with widespread data issues is a failed produ
 
 **Fix Script:** `scripts/maintenance/mergeHeartlandLeagues.js`
 
+### 10. Alphanumeric Team ID Extraction (Session 61)
+
+**Problem:** Heartland scraper was silently skipping matches because team IDs can be alphanumeric (e.g., "711A"), not just numeric (e.g., "7115").
+
+**Root Cause:** The regex `^\d+` in `scripts/adapters/heartland.js` only matched pure numeric IDs.
+
+**Impact:** 64 matches per Heartland subdivision were silently skipped, causing incomplete team records.
+
+**Universal Fix:**
+```javascript
+// ❌ WRONG - Only matches numeric IDs
+extractTeamId: (name) => name.match(/^(\d+)\s+/)?.[1]
+
+// ✅ CORRECT - Matches all alphanumeric IDs
+extractTeamId: (name) => name.match(/^([A-Za-z0-9]+)\s+/)?.[1]
+```
+
+**Prevention:** When writing adapters, ALWAYS use alphanumeric-capable regex patterns for ID extraction.
+
+### 11. Build for N Sources, Not Current Sources
+
+**Every system must work for ANY future data source with ZERO custom code.**
+
+This applies to:
+- **Scrapers** → Use universal adapter pattern (`scripts/adapters/`)
+- **Data Quality** → Use canonical registries, not hardcoded mappings
+- **Deduplication** → Use fuzzy matching algorithms, not source-specific rules
+- **Validation** → Use configurable rules, not if/else by platform
+
+**Test:** If adding MLS Next tomorrow requires writing source-specific logic anywhere except an adapter config file, the architecture is wrong.
+
+**Anti-patterns to reject:**
+- `if (source === 'gotsport') { ... }`
+- Hardcoded team/event name mappings in JavaScript
+- Source-specific normalizer functions
+- Any code that "works for now" but won't scale
+
+See [docs/UNIVERSAL_DATA_QUALITY_SPEC.md](docs/UNIVERSAL_DATA_QUALITY_SPEC.md) for full specification.
+
+### 12. Optimize for Speed and Accuracy
+
+**Process thousands of records per minute - not dozens.**
+
+| Do This | Not This |
+|---------|----------|
+| Direct SQL with pg Pool | Supabase client for bulk operations |
+| Bulk INSERT/UPDATE (1000+ rows) | Row-by-row loops |
+| Batch processing with CASE statements | Individual UPDATE per record |
+| PostgreSQL functions for complex logic | Round-trips from Node.js |
+
+**Benchmark:** If processing 10K+ records takes more than a few minutes, you're doing it wrong.
+
+**Example - ELO recalculation:**
+```javascript
+// ❌ WRONG - 3+ hours for 300K matches
+for (const match of matches) {
+  await supabase.from('teams').update({ elo: newElo }).eq('id', teamId);
+}
+
+// ✅ CORRECT - 6 minutes for 300K matches
+const sql = `UPDATE teams_v2 SET elo_rating = CASE id ${cases} END WHERE id IN (${ids})`;
+await pool.query(sql);
+```
+
+### 13. Universal, Not Specific
+
+**Every fix must work for ANY data source - not just the one with the current problem.**
+
+- No hardcoding
+- No source-specific logic
+- No shortcuts that "work for now"
+
+**Before committing any data fix, ask:** Will this same code work correctly when we add MLS Next, ECNL, SINC Sports, or any of the other 400+ potential sources?
+
+If the answer is "no" or "maybe" - rewrite it to be universal.
+
+### 14. Schema Column Names Must Match Database (Session 63)
+
+**Problem:** Supabase queries fail silently or crash when column names in `.select()` don't match the actual database schema.
+
+**Common Mistakes:**
+```typescript
+// ❌ WRONG - Column doesn't exist on this table
+.select('id, match_date, birth_year')  // birth_year is on teams_v2, not matches_v2
+
+// ❌ WRONG - Typo creates undefined property
+season: tournament.season_id_id  // Should be season_id
+
+// ❌ WRONG - Wrong column name
+.select('id, name, season, ...')  // Column is season_id, not season
+```
+
+**Correct Patterns:**
+```typescript
+// ✅ Use foreign key joins for related table columns
+.select(`
+  id, match_date,
+  home_team:teams_v2!matches_v2_home_team_id_fkey(display_name, birth_year, gender)
+`)
+
+// ✅ Reference exact column names from schema
+.select('id, name, season_id, state, region')
+```
+
+**Prevention:**
+1. Verify column names against actual database schema before writing queries
+2. Use TypeScript types that match schema (see `lib/supabase.types.ts`)
+3. Test queries in isolation before integrating
+
+### 15. Adaptive Learning - The System Gets Smarter Over Time
+
+**Every fix should teach the system to prevent the same problem in the future.**
+
+The data quality system must be SELF-IMPROVING, not just reactive:
+
+| Action | Learning Outcome |
+|--------|------------------|
+| Merge duplicate teams | Add merged name to `canonical_teams.aliases` |
+| Merge duplicate events | Add merged name to `canonical_events.aliases` |
+| Create new team | Auto-register in `canonical_teams` for future matching |
+| Successful fuzzy match | Increase confidence score in `learned_patterns` |
+| Failed fuzzy match | Decrease confidence, flag for review |
+
+**The Feedback Loop:**
+```
+New Data → Normalize → Check Canonical → Create/Match → Learn → Prevent Future Duplicates
+     ↑                                                              │
+     └──────────────── Patterns feed back ──────────────────────────┘
+```
+
+**Key Components:**
+- `canonical_teams` / `canonical_events` / `canonical_clubs` - Known good entity names with aliases
+- `learned_patterns` table - Stores patterns learned from successful operations
+- `adaptiveLearning.js` - Pattern learning and application engine
+
+**Test:** If the same duplicate is created twice, the system failed to learn. Every merge should prevent future occurrences of that same duplicate.
+
+**Anti-patterns to reject:**
+- One-time fixes that don't update canonical registries
+- Manual mappings that aren't persisted to the database
+- Fixes that solve today's problem but don't prevent tomorrow's
+
+### 16. App UI Must Use V2 Views - NEVER V1 Tables (Session 66)
+
+**CRITICAL:** The V1 tables have been archived/deleted. App code MUST use V2 views.
+
+| V1 Table (DELETED) | V2 Replacement | Used By |
+|-------------------|----------------|---------|
+| `team_elo` | `app_team_profile` | Team Detail page |
+| `match_results` | `matches_v2` + joins | Match queries |
+| `rank_history` | `rank_history_v2` | Ranking Journey chart |
+
+**Column Name Mapping:**
+```typescript
+// V1 → V2 mapping (app/team/[id].tsx)
+team_name → display_name  // Map after fetch: { ...data, team_name: data.display_name }
+```
+
+**Match Query Pattern (V2):**
+```typescript
+const matchQuery = `
+  id, match_date, match_time, home_score, away_score,
+  home_team_id, away_team_id, league_id, tournament_id, status,
+  home_team:teams_v2!matches_v2_home_team_id_fkey(display_name),
+  away_team:teams_v2!matches_v2_away_team_id_fkey(display_name),
+  league:leagues(name),
+  tournament:tournaments(name)
+`;
+```
+
+**Before ANY database query in app code, verify:**
+1. Table/view exists in V2 schema (check `docs/ARCHITECTURE.md`)
+2. Column names match V2 schema (not V1)
+3. Use proper Supabase joins for related data
+
+**Anti-patterns:**
+- ❌ Using `team_elo`, `match_results`, or `rank_history` directly
+- ❌ Assuming column names without checking schema
+- ❌ Running `git checkout` on UI files without checking for uncommitted features
+
+### 17. UI Protection Protocol (Session 67)
+
+**CRITICAL:** UI files are PROTECTED ARTIFACTS. They require mandatory backups before any modification.
+
+**LOCKED UI COMPONENTS:**
+
+| Component | File | Golden Archive |
+|-----------|------|----------------|
+| Team Details | `app/team/[id].tsx` | `ui-archives/team-details/v1.0_golden_2026-01-31.tsx` |
+| Rankings | `app/(tabs)/rankings.tsx` | `ui-archives/rankings/v1.0_golden_2026-01-31.tsx` |
+| Matches | `app/(tabs)/matches.tsx` | `ui-archives/matches/v1.0_golden_2026-01-31.tsx` |
+| Teams | `app/(tabs)/teams.tsx` | `ui-archives/teams/v1.0_golden_2026-01-31.tsx` |
+| Home | `app/(tabs)/index.tsx` | `ui-archives/home/v1.0_golden_2026-01-31.tsx` |
+
+**MANDATORY PRE-EDIT PROTOCOL:**
+
+Before touching ANY file in `/app/` or `/components/`:
+
+1. **CREATE BACKUP**: `node scripts/ui-backup.js app/team/[id].tsx`
+2. **READ FULL FILE**: Understand existing structure before changes
+3. **MINIMAL CHANGES ONLY**: Fix specific issue, do NOT refactor
+4. **TEST**: Verify UI renders correctly after each change
+
+**FORBIDDEN OPERATIONS:**
+- ❌ `git checkout HEAD -- app/**/*.tsx` (WIPES UNCOMMITTED WORK)
+- ❌ `git reset` on UI files
+- ❌ Rewriting entire components
+- ❌ Changing data types/interfaces without mapping
+- ❌ Removing features to "simplify"
+
+**DISASTER RECOVERY:**
+```bash
+# List available versions
+node scripts/ui-restore.js team-details
+
+# Restore golden version
+node scripts/ui-restore.js team-details golden
+```
+
+**Archive Location:** `ui-archives/ARCHIVE_INDEX.md`
+
 ---
 
 ## Quick Reference
@@ -169,12 +390,16 @@ A technically elegant architecture with widespread data issues is a failed produ
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 147,706 | Team records |
-| `matches_v2` | 304,293 | Match results |
-| `clubs` | 122,418 | Club organizations |
-| `leagues` | 280 | League metadata |
-| `tournaments` | 1,726 | Tournament metadata |
-| `canonical_events` | 4 | Canonical registry (Heartland mappings) |
+| `teams_v2` | 147,794 | Team records (100% have club_id) |
+| `matches_v2` | 304,624 | Match results |
+| `clubs` | 124,650 | Club organizations |
+| `leagues` | 280 | League metadata (38 with state) |
+| `tournaments` | 1,728 | Tournament metadata |
+| `canonical_events` | 1,795 | Canonical event registry (Session 62) |
+| `canonical_teams` | 19,271 | Canonical team registry (Session 62) |
+| `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
+| `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
+| `staging_games` | 41,095 | Staging area (0 unprocessed) |
 | `seasons` | 3 | Season definitions |
 
 ### Materialized Views (App Queries)
@@ -318,11 +543,12 @@ DATABASE_URL
 
 ### Universal Scraper Framework (`scripts/universal/` + `scripts/adapters/`)
 
-**NEW in Session 57** - Source-agnostic scraping engine. Adding a new data source now requires only a config file (~50 lines), not a custom script.
+**Session 57-63** - Source-agnostic scraping engine with universal discovery and adaptive learning.
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/universal/coreScraper.js` | Core engine (841 lines) - handles all scraping logic |
+| `scripts/universal/coreScraper.js` | Core engine + `discoverEventsFromDatabase()` |
+| `scripts/universal/adaptiveLearning.js` | **NEW** Adaptive learning engine (Session 63) |
 | `scripts/adapters/gotsport.js` | GotSport adapter config |
 | `scripts/adapters/htgsports.js` | HTGSports adapter (Puppeteer for SPA) |
 | `scripts/adapters/heartland.js` | Heartland adapter (Cheerio for CGI) |
@@ -330,14 +556,17 @@ DATABASE_URL
 
 **Usage:**
 ```bash
-# Scrape all active events for a source
+# Scrape all active events (uses universal discovery)
 node scripts/universal/coreScraper.js --adapter gotsport --active
 
 # Scrape specific event
 node scripts/universal/coreScraper.js --adapter htgsports --event 12345
 
-# Dry run (no database writes)
-node scripts/universal/coreScraper.js --adapter heartland --active --dry-run
+# Learn patterns from existing data
+node scripts/universal/adaptiveLearning.js --learn-teams --source htgsports
+
+# Classify a new event
+node scripts/universal/adaptiveLearning.js --classify "KC Spring Classic 2026"
 ```
 
 ### Universal Data Quality System (`scripts/universal/`)
@@ -397,6 +626,17 @@ Diagnostics, audits, and utilities.
 | `inferEventLinkage.js` | **NIGHTLY** Infer event from team activity patterns |
 | `cleanupGarbageMatches.js` | Delete future-dated matches (2027+) |
 | `mergeHeartlandLeagues.js` | Merge duplicate league entries (Session 59) |
+
+### Onetime Scripts (`scripts/onetime/`)
+
+Rarely-run scripts for bootstrapping or one-time data operations.
+
+| Script | Purpose |
+|--------|---------|
+| `backfillEloHistory.js` | Replay ELO from matches → populate rank_history_v2 (Session 65) |
+| `seedCanonicalRegistries.js` | Bulk SQL bootstrap of canonical registries (Session 62) |
+| `populateClubs.js` | Create clubs from team names (Session 60) |
+| `rebuildLeagues.js` | Normalize league metadata (Session 60) |
 
 ### Archived
 
@@ -480,13 +720,335 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
-### Session 60 - Universal Data Quality System (January 30, 2026) - PHASE 6 COMPLETE
+### Session 66 - V1→V2 UI Migration Fix (January 31, 2026) - COMPLETE ✅
+
+**Goal:** Fix Team Details page crash caused by V1 table references after database migration.
+
+**Problem Identified:**
+- Team Details page crashed with: "Could not find the table 'public.team_elo'"
+- App code was still using V1 tables that were archived/deleted in Session 50
+- Uncommitted UI features (League/Tournament grouping) were lost during troubleshooting
+
+**Root Cause:**
+The app's `app/team/[id].tsx` was never updated when V1 tables were archived:
+- `team_elo` → archived to `team_elo_deprecated` then dropped
+- `match_results` → archived to `match_results_deprecated`
+- `rank_history` → migrated to `rank_history_v2`
+
+**Solution Implemented:**
+
+| V1 Reference | V2 Replacement | Notes |
+|--------------|----------------|-------|
+| `team_elo` | `app_team_profile` | Map `display_name` → `team_name` |
+| `match_results` | `matches_v2` + joins | Join teams_v2 for names |
+| `rank_history` | `rank_history_v2` | Map missing fields to null |
+
+**UI Features Restored:**
+- Team name display (was showing "Unknown")
+- Match history with proper team names
+- League/Tournament grouping with event cards
+- Win-loss-draw records per event
+- Date ranges for events
+
+**Files Modified:**
+- [app/team/[id].tsx](app/team/[id].tsx) - Complete V1→V2 migration + restored grouping UI
+
+**New Principle Added:**
+- Principle 16: "App UI Must Use V2 Views - NEVER V1 Tables"
+
+**Lessons Learned:**
+1. NEVER run `git checkout` on files with uncommitted features without checking first
+2. Database migrations MUST include app code updates in same PR
+3. Add schema validation tests to catch V1 references
+
+---
+
+### Session 65 - Ranking Journey Chart Fix (January 31, 2026) - COMPLETE ✅
+
+**Goal:** Fix the "My Team's Journey" chart to show historical ranking data instead of just today's snapshot.
+
+**Problem Identified:**
+- Chart showed "Rank history coming soon" message despite having a V2 snapshot system
+- App was reading from V1 `rank_history` table (deprecated/deleted)
+- V2 `rank_history_v2` table exists and is populated by nightly `captureRankSnapshot.js`
+- GotSport ranks are external data - cannot be backfilled (only captured via daily snapshots)
+
+**Solution Implemented:**
+
+| Change | Description |
+|--------|-------------|
+| Fixed data source | Changed from `rank_history` (V1) to `rank_history_v2` (V2) |
+| ELO history backfill | Created and ran `backfillEloHistory.js` - 171,712 records |
+| Historical coverage | ELO data now spans Aug 1, 2025 → Jan 31, 2026 (6 months) |
+
+**Data State After Fix:**
+
+| Metric | Records | Date Range |
+|--------|---------|------------|
+| ELO History | 416,904 | 2025-08-01 → 2026-01-31 |
+| GotSport Rank | 242,198 | 2026-01-30 only (accumulating) |
+
+**Why GotSport Rank Can't Be Backfilled:**
+GotSport ranks are external data from their proprietary algorithm. Unlike ELO (which we calculate from matches), we cannot reconstruct historical GotSport ranks. The chart will populate as daily snapshots accumulate.
+
+**Files Created/Modified:**
+- [scripts/onetime/backfillEloHistory.js](scripts/onetime/backfillEloHistory.js) - NEW: Replay ELO from match history
+- [app/team/[id].tsx](app/team/[id].tsx) - Fixed data source to V2 table
+
+**Chart Behavior:**
+- Shows "Rank history coming soon" until 2+ days of GotSport rank data exists
+- Will automatically populate as nightly `captureRankSnapshot.js` runs
+- By next week, meaningful trend line will be visible
+
+---
+
+### Session 64 - Adaptive Learning Integration (January 31, 2026) - COMPLETE ✅
+
+**Goal:** Wire adaptive learning INTO the data quality pipeline so the system improves over time.
+
+**Context:** The adaptive learning INFRASTRUCTURE existed but was NOT integrated:
+- `scripts/universal/adaptiveLearning.js` - EXISTS (364 lines)
+- `scripts/migrations/040_create_learned_patterns.sql` - EXISTS
+- Normalizers - DID NOT use adaptive learning
+- dataQualityEngine.js - DID NOT call feedback functions
+
+**Integration Completed:**
+
+| Component | Change |
+|-----------|--------|
+| `adaptiveLearning.js` | Fixed `supabase.raw()` calls (invalid method) → proper update patterns |
+| `teamNormalizer.js` | Added `initializeLearnedPatterns()` + `extractClubName()` checks learned prefixes first |
+| `eventNormalizer.js` | Added `initializeLearnedPatterns()` + `determineEventType()` checks learned keywords first |
+| `dataQualityEngine.js` | Imports + initializes learned patterns before processing |
+| `dataQualityEngine.js` | Records `recordSuccess()` on canonical match |
+| `dataQualityEngine.js` | Records `recordFailure()` on duplicate not prevented by registry |
+| `daily-data-sync.yml` | Added "Learn Patterns (Weekly)" step to weekly-dedup-check job |
+| `daily-data-sync.yml` | Added "Adaptive Learning" section to summary |
+
+**The Feedback Loop:**
+
+```
+Data In → Normalize (uses patterns) → Resolve (uses canonical) → Create/Match → Learn → Prevent Future Duplicates
+     ↑                                                                                          │
+     └─────────────────────────── Patterns feed back ───────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+- **Non-blocking feedback**: `recordSuccess`/`recordFailure` use `.catch(() => {})` - never slow down processing
+- **Sync performance preserved**: Patterns loaded once async before bulk ops, then used synchronously
+- **Graceful degradation**: If learned_patterns table doesn't exist, normalizers work normally
+- **Weekly learning**: Patterns re-learned every Sunday from existing data
+
+**New CLI Commands:**
+```bash
+# Bootstrap patterns from existing data (run after deploying migration)
+node scripts/universal/adaptiveLearning.js --learn-teams --source all
+node scripts/universal/adaptiveLearning.js --learn-events --source all
+```
+
+**Files Modified:**
+- [scripts/universal/adaptiveLearning.js](scripts/universal/adaptiveLearning.js) - Fixed Supabase methods
+- [scripts/universal/normalizers/teamNormalizer.js](scripts/universal/normalizers/teamNormalizer.js) - Adaptive learning integration
+- [scripts/universal/normalizers/eventNormalizer.js](scripts/universal/normalizers/eventNormalizer.js) - Adaptive learning integration
+- [scripts/universal/dataQualityEngine.js](scripts/universal/dataQualityEngine.js) - Pattern init + feedback
+- [.github/workflows/daily-data-sync.yml](.github/workflows/daily-data-sync.yml) - Learn Patterns step
+
+**DEPLOYMENT REQUIRED:**
+Run migration before next nightly sync:
+```sql
+-- In Supabase SQL Editor, run contents of:
+-- scripts/migrations/040_create_learned_patterns.sql
+```
+
+Then bootstrap patterns:
+```bash
+node scripts/universal/adaptiveLearning.js --learn-teams --source all
+node scripts/universal/adaptiveLearning.js --learn-events --source all
+```
+
+**Verification Checklist:**
+- [ ] `learned_patterns` table exists
+- [ ] `node scripts/universal/dataQualityEngine.js --process-staging --limit 10 --dry-run` shows "Patterns loaded"
+- [ ] Weekly GitHub Actions shows "Adaptive Learning" section in summary
+
+---
+
+### Session 63 - QC Testing & Universal Discovery (January 30, 2026) - COMPLETE ✅
+
+**Goal:** Complete QC testing, fix League Standings page errors, verify data integrity, and make event discovery truly universal.
+
+**Issues Fixed:**
+
+| Issue | Root Cause | Fix |
+|-------|------------|-----|
+| Season Stats math discrepancy | Used stored `team.matches_played` | Calculate from actual matches |
+| League Standings crash | Typo `tournament.season_id_id` | Fixed to `tournament.season_id` |
+| League Standings column error | Wrong column `season` | Changed to `season_id` |
+| HTGSports static event list | Manual maintenance required | Universal database-based discovery |
+
+**Universal Event Discovery (NEW):**
+
+Added `discoverEventsFromDatabase()` to core engine - works for ANY source:
+
+```javascript
+// Extracts prefix from matchKeyFormat (e.g., "htg-{eventId}" -> "htg")
+const matchKeyPrefix = this.adapter.matchKeyFormat?.split('-')[0];
+const sourcePattern = `${matchKeyPrefix}-%`;
+
+// Finds events with recent activity filtered by source
+await supabase.from("matches_v2")
+  .select("league_id, tournament_id")
+  .like("source_match_key", sourcePattern);
+```
+
+**Discovery by source:**
+| Source | Matches | Prefix |
+|--------|---------|--------|
+| gotsport | 9,268 | `gotsport` |
+| htgsports | 5,224 | `htg` |
+| heartland | 5,129 | `heartland` |
+
+**Adaptive Learning Infrastructure (NEW):**
+
+Created future-proof adaptive learning system:
+
+| Component | Purpose |
+|-----------|---------|
+| `scripts/universal/adaptiveLearning.js` | Core learning engine |
+| `scripts/migrations/040_create_learned_patterns.sql` | Database schema |
+| `learned_patterns` table | Stores patterns with confidence scores |
+
+**Learning Types:**
+- Team name patterns (club prefixes, birth year formats, gender indicators)
+- Event classification (league vs tournament keywords)
+- Feedback loop (success/failure adjusts confidence)
+- Auto-cleanup (low-confidence patterns removed)
+
+**Usage:**
+```bash
+node scripts/universal/adaptiveLearning.js --learn-teams --source htgsports
+node scripts/universal/adaptiveLearning.js --classify "KC Spring Classic 2026"
+```
+
+**Files Created/Modified:**
+- `scripts/universal/coreScraper.js` - Added universal `discoverEventsFromDatabase()`
+- `scripts/universal/adaptiveLearning.js` - **NEW** Adaptive learning engine
+- `scripts/migrations/040_create_learned_patterns.sql` - **NEW** Learning DB schema
+- `scripts/adapters/*.js` - All adapters now use universal discovery
+- `lib/leagues.ts` - Fixed column name typos
+- `app/team/[id].tsx` - Fixed Season Stats calculation
+
+**Verification:**
+- ✅ Universal discovery works for ALL sources
+- ✅ No manual static list maintenance needed
+- ✅ Adaptive learning stores patterns for improvement
+- ✅ Data integrity 100% vs official Heartland website
+- ✅ No hardcoded source-specific logic
+
+---
+
+### Session 62 - Self-Learning Canonical Registries (January 30, 2026) - COMPLETE ✅
+
+**Goal:** Fix the gap where canonical registries were built but empty, causing duplicates to be DETECTED but not PREVENTED.
+
+**Problem Identified:**
+- canonical_events: 4 rows (Heartland only)
+- canonical_teams: 0 rows
+- canonical_clubs: 0 rows
+
+This meant every new data source would create the same duplicate problems because there was no "known good" reference data.
+
+**Fixes Applied:**
+
+| Fix | Description | Status |
+|-----|-------------|--------|
+| **Fix 1** | Self-learning in `mergeTeams.js` - auto-adds merged names to canonical_teams | ✅ |
+| **Fix 1b** | Self-learning in `mergeEvents.js` - auto-adds merged names to canonical_events | ✅ |
+| **Fix 2** | `seedCanonicalRegistries.js` - bulk SQL bootstrap (20K records in seconds) | ✅ |
+| **Fix 3** | `dataQualityEngine.js` - adds new teams/events to registry after creation | ✅ |
+| **Fix 4** | Confidence-based auto-merge in `teamDedup.js` (≥0.95 similarity) | ✅ |
+| **Fix 5** | Weekly registry growth report in GitHub Actions | ✅ |
+
+**Canonical Registry Results (Before → After):**
+| Registry | Before | After | Change |
+|----------|--------|-------|--------|
+| canonical_teams | 0 | **19,271** | +19,271 |
+| canonical_events | 4 | **1,795** | +1,791 |
+| canonical_clubs | 0 | **7,301** | +7,301 |
+
+**Key Technical Decisions:**
+- Used bulk SQL `INSERT...SELECT` instead of row-by-row loops (20K records in 3 seconds vs 30+ minutes)
+- Auto-merge threshold: ≥0.95 similarity + same birth_year + same gender
+- Review threshold: 0.85-0.95 similarity (flagged for human review)
+
+**Files Created/Modified:**
+- `scripts/onetime/seedCanonicalRegistries.js` - Bulk SQL bootstrap script
+- `scripts/maintenance/mergeTeams.js` - Added self-learning
+- `scripts/maintenance/mergeEvents.js` - Added self-learning
+- `scripts/universal/dataQualityEngine.js` - Added registry population on create
+- `scripts/universal/deduplication/teamDedup.js` - Added auto-merge and review modes
+- `.github/workflows/daily-data-sync.yml` - Added registry growth reporting
+
+**New CLI Commands:**
+```bash
+# Bootstrap canonical registries (bulk SQL - fast)
+node scripts/onetime/seedCanonicalRegistries.js --dry-run
+node scripts/onetime/seedCanonicalRegistries.js
+
+# Auto-merge high-confidence team duplicates
+node scripts/universal/deduplication/teamDedup.js --auto-merge --dry-run
+node scripts/universal/deduplication/teamDedup.js --auto-merge --execute
+
+# Find duplicates needing human review (0.85-0.95 similarity)
+node scripts/universal/deduplication/teamDedup.js --review-candidates
+```
+
+**Impact:** Future data sources will now benefit from the canonical registry:
+1. When a new team comes in, it checks canonical_teams first
+2. If found (exact or alias match), uses existing team_v2_id
+3. If not found, creates new team AND adds to registry
+4. When duplicates are merged, merged names become aliases for prevention
+
+---
+
+### Session 61 - Alphanumeric Team ID Fix (January 30, 2026) - COMPLETE ✅
+
+**Goal:** Fix missing matches caused by restrictive regex that only matched numeric team IDs.
+
+**Problem:** User reported that their son's team (Sporting BV Pre-NAL 15) showed 7 league matches instead of 8. TeamSnap screenshot proved the Sep 14, 2025 match against Union KC Jr Elite B15 existed (4-1 win).
+
+**Root Cause:** `scripts/adapters/heartland.js` used regex `^\d+` which only matched numeric team IDs. The Sep 14 match had team ID "711A" (alphanumeric), causing it to be skipped.
+
+**Fix Applied:**
+```javascript
+// Changed from: /^(\d+)\s+/  (only numeric)
+// Changed to:   /^([A-Za-z0-9]+)\s+/  (alphanumeric)
+```
+
+**Results:**
+| Metric | Before | After |
+|--------|--------|-------|
+| Team league matches | 7 | **8** |
+| Record | 4W-0D-3L | **5W-0D-3L** |
+| Points | 12 | **15** |
+
+**Impact:** 64 matches per Heartland subdivision were being silently skipped due to alphanumeric team IDs.
+
+**Documentation Updated:**
+- [x] Added Principle 10 to CLAUDE.md (Alphanumeric Team ID Extraction)
+- [x] Added anti-pattern #9 to UNIVERSAL_DATA_QUALITY_SPEC.md
+- [x] Added adapter guideline to DATA_SCRAPING_PLAYBOOK.md
+- [x] Added Session 61 entry to SESSION_HISTORY.md
+
+---
+
+### Session 60 - Universal Data Quality System (January 30, 2026) - COMPLETE ✅
 
 **Goal:** Implement Universal Data Quality System per `docs/UNIVERSAL_DATA_QUALITY_SPEC.md`
 
 **Constraint:** Backend only - NO changes to /app/ or /components/
 
-**Phases Completed:**
+**ALL PHASES COMPLETE - VERIFIED IN PRODUCTION:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
@@ -496,7 +1058,13 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 | **Phase 3** | Core Engine | ✅ COMPLETE |
 | **Phase 4** | Deduplication | ✅ COMPLETE |
 | **Phase 5** | Infrastructure Population | ✅ COMPLETE |
-| **Phase 6** | Pipeline Integration | ✅ COMPLETE |
+| **Phase 6** | Pipeline Integration | ✅ VERIFIED |
+
+**Production Verification:**
+- Workflow Run: Daily Data Sync #18
+- Duration: 39m 1s
+- Status: SUCCESS
+- Engine: dataQualityEngine.js (universal)
 
 **Phase 5 Deliverables:**
 - [x] `scripts/onetime/populateClubs.js` - Populate clubs from team names
@@ -558,16 +1126,26 @@ Phase 4: Prediction Scoring (scorePredictions.js)
 Phase 5: Refresh Views (refresh_app_views())
 ```
 
-**Database State After Phase 6:**
-- teams_v2: 147,706 rows (100% have club_id)
-- clubs: 124,650 rows
-- leagues: 280 rows (35 with state metadata)
-- matches_v2: 295,575 rows
-- canonical_events: 4 rows (Heartland mappings)
-- canonical_teams: 0 rows (populate from dedup merges)
-- canonical_clubs: 0 rows (populate from dedup merges)
+**Database State (Final - Verified):**
+| Table | Rows | Notes |
+|-------|------|-------|
+| teams_v2 | 147,706 | 100% have club_id |
+| matches_v2 | 304,293 | All linked |
+| clubs | 124,650 | — |
+| leagues | 280 | 38 with state metadata |
+| tournaments | 1,727 | — |
+| canonical_events | 4 | Heartland mappings |
+| staging_games | 41,095 | 0 unprocessed |
 
-**Universal Data Quality System - COMPLETE**
+**Universal Data Quality System - FULLY OPERATIONAL**
+
+The nightly pipeline now:
+1. Scrapes data from 3 sources (GotSport, HTGSports, Heartland)
+2. Processes staging via `dataQualityEngine.js`
+3. Falls back to legacy pipeline if needed
+4. Runs weekly deduplication checks (Sundays)
+5. Recalculates ELO ratings
+6. Refreshes all materialized views
 
 ---
 
