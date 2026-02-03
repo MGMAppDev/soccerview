@@ -232,5 +232,5 @@ If something goes wrong:
 - [x] Phase 1 completed and verified
 - [x] Phase 2 completed - Event discovery added to daily sync
 - [x] Documentation updated (CLAUDE.md session summary)
-- [ ] Git committed and pushed
+- [x] Git committed and pushed (commits: `7ee511f`, `567a18d`)
 - [x] Health check passing (except coverage gap)
