@@ -1056,7 +1056,7 @@ async function promoteRecords(records, client, dryRun) {
       try {
         await client.query(`
           UPDATE matches_v2
-          SET home_score = $1, away_score = $2, updated_at = NOW()
+          SET home_score = $1, away_score = $2
           WHERE id = $3
         `, [match.home_score, match.away_score, match.id]);
 
