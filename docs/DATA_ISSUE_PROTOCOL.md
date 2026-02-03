@@ -1,6 +1,6 @@
 # Data Issue Protocol
 
-> **Version 1.2** | Created: Session 79 | February 3, 2026
+> **Version 1.3** | Created: Session 79 | February 3, 2026
 >
 > Standard protocol for reporting and fixing data issues in SoccerView.
 
@@ -56,9 +56,27 @@ WHERE birth_year IS NULL AND display_name ~ '\\d{2}[BG]?\\s*\\(U\\d+';
 When you find a data issue, copy and paste this template to Claude Code:
 
 ```
-## Data Issue Report
+## MANDATORY GATE — Complete Before ANY Other Action
 
-**FIRST:** Read docs/DATA_ISSUE_PROTOCOL.md and docs/1.1-GUARDRAILS_v2.md before doing ANY work.
+Do NOT read the problem description below yet.
+Do NOT run any scripts, queries, or commands yet.
+Do NOT write any code yet.
+
+You must complete these 2 reads FIRST and prove it:
+
+1. Read the FULL file: docs/DATA_ISSUE_PROTOCOL.md
+2. Read the FULL file: docs/1.1-GUARDRAILS_v2.md
+
+After reading both files, STOP and respond with ONLY this:
+- List 3 specific rules from GUARDRAILS that are relevant to this type of fix
+- State which V2-compliant scripts from the Protocol are approved for use
+- Confirm: "I have read both documents and will not bypass normalizers, use ad-hoc fuzzy matching, or ignore birth_year."
+
+Do NOT proceed past this gate until you have printed the above.
+
+---
+
+## Data Issue Report (Read ONLY after completing the gate above)
 
 **Problem:** [One sentence describing what's wrong]
 
@@ -70,11 +88,7 @@ When you find a data issue, copy and paste this template to Claude Code:
 
 ---
 
-**Instructions for Claude Code:**
-
-⚠️ STOP. Before doing anything:
-1. Read docs/DATA_ISSUE_PROTOCOL.md (contains rules you MUST follow)
-2. Read docs/1.1-GUARDRAILS_v2.md (non-negotiable constraints)
+**Instructions for Claude Code (after gate is complete):**
 
 ⚠️ CRITICAL: The team above is ONE EXAMPLE. Fix must be UNIVERSAL.
 
@@ -472,6 +486,7 @@ No trial-and-error. No "let me try this." Research → Present → Approve → I
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.2 | 2026-02-03 | **CRITICAL**: Added "Think Big, Fix Big" - universal fixes required |
+| 1.3 | 2026-02-03 | **CRITICAL**: Restructured prompt template with mandatory gate - Claude Code must prove it read GUARDRAILS before seeing problem details |
+| 1.2 | 2026-02-03 | Added "Think Big, Fix Big" - universal fixes required |
 | 1.1 | 2026-02-03 | Added session reminders, performance requirements, 3-layer check |
 | 1.0 | 2026-02-02 | Initial protocol created (Session 79) |
