@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 8.9** | Last Updated: February 2, 2026 | Session 79 Complete
+> **Version 9.0** | Last Updated: February 3, 2026 | Session 81 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1148,30 +1148,51 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
-### Session 80 - Heartland Data Coverage Gap (February 3, 2026) - IN PROGRESS 🔄
+### Session 81 - Pipeline Reliability & Unified Heartland Adapter (February 3, 2026) - COMPLETE ✅
 
-**Goal:** Complete V2 architecture for Heartland by creating calendar adapter.
+**Goal:** Fix validation pipeline reliability issues and unify Heartland adapter.
 
-**Critical Finding:**
-The Universal Framework does NOT cover all Heartland data sources:
+**Completed:**
 
-| Scraper | Source | Data Type | In Universal? |
-|---------|--------|-----------|---------------|
-| `scrapeHeartlandResults.js` | CGI reports | Results WITH scores | ✅ `heartland.js` adapter |
-| `scrapeHeartlandLeague.js` | Calendar site | Future schedules | ❌ **NO ADAPTER** |
+| Task | Status |
+|------|--------|
+| Unified Heartland adapter (CGI + Calendar) | ✅ `scripts/adapters/heartland.js` v2.0 |
+| Pipeline reliability fixes | ✅ Circuit breaker, retry logic, pool error handler |
+| Fixed `updated_at` column error | ✅ Removed from `matches_v2` UPDATE |
+| Validation Pipeline test | ✅ **24m 9s** (vs 30m+ failure before) |
 
-**Problem:** When Universal times out, the Legacy fallback actually gets MORE data because it runs BOTH scrapers.
+**Key Fixes:**
 
-**Next Steps:**
-1. Create `scripts/adapters/heartland-calendar.js` for the calendar site (Puppeteer-based)
-2. Update workflow to run both Heartland adapters
-3. Test full data coverage
+1. **Unified Heartland Adapter** - Single adapter handles both data sources:
+   - CGI Results (Cheerio): `heartland-premier-2026`, `heartland-recreational-2026`
+   - Calendar (Puppeteer): `heartland-calendar-2026`
+   - Routes via `event.level` property
 
-**Session 80 Also Completed:**
+2. **Pipeline Reliability** (`dataQualityEngine.js`):
+   - Added pool-level error handler to prevent unhandled crashes
+   - Added `refreshViewsWithRetry()` with 3 retries, exponential backoff, fresh connections
+   - 10-minute statement_timeout at pool level
+
+3. **Circuit Breaker** (`adaptiveLearning.js`):
+   - Prevents cascading failures when Supabase has issues
+   - Opens after 5 failures, resets after 60 seconds
+   - Limits error logging to first 3 failures
+
+**Commits:**
+- `396f8f9` - Session 81: Unify Heartland adapter with CGI + Calendar scraping
+- `ac01b45` - Session 81: Fix validation pipeline reliability issues
+- `df5ec21` - Session 81: Fix updated_at column reference + Heartland adapter cleanup
+
+---
+
+### Session 80 - Heartland Data Coverage Gap (February 3, 2026) - COMPLETE ✅
+
+**Completed:**
 - ✅ Fixed ECONNRESET in view refresh (`scripts/refresh_views_manual.js`)
 - ✅ Committed 380 V2 architecture files (commit `4e6ea74`)
 - ✅ Added Git Hygiene Protocol to governance docs (GUARDRAILS §15, CLAUDE.md Principle 26)
 - ✅ Added Project Tools & Integrations section to CLAUDE.md
+- ✅ Identified Heartland calendar adapter gap (fixed in Session 81)
 
 ---
 
