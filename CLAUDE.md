@@ -1148,6 +1148,33 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
+### Session 80 - Heartland Data Coverage Gap (February 3, 2026) - IN PROGRESS 🔄
+
+**Goal:** Complete V2 architecture for Heartland by creating calendar adapter.
+
+**Critical Finding:**
+The Universal Framework does NOT cover all Heartland data sources:
+
+| Scraper | Source | Data Type | In Universal? |
+|---------|--------|-----------|---------------|
+| `scrapeHeartlandResults.js` | CGI reports | Results WITH scores | ✅ `heartland.js` adapter |
+| `scrapeHeartlandLeague.js` | Calendar site | Future schedules | ❌ **NO ADAPTER** |
+
+**Problem:** When Universal times out, the Legacy fallback actually gets MORE data because it runs BOTH scrapers.
+
+**Next Steps:**
+1. Create `scripts/adapters/heartland-calendar.js` for the calendar site (Puppeteer-based)
+2. Update workflow to run both Heartland adapters
+3. Test full data coverage
+
+**Session 80 Also Completed:**
+- ✅ Fixed ECONNRESET in view refresh (`scripts/refresh_views_manual.js`)
+- ✅ Committed 380 V2 architecture files (commit `4e6ea74`)
+- ✅ Added Git Hygiene Protocol to governance docs (GUARDRAILS §15, CLAUDE.md Principle 26)
+- ✅ Added Project Tools & Integrations section to CLAUDE.md
+
+---
+
 ### Session 79 - V2 Architecture Enforcement (February 2, 2026) - COMPLETE ✅
 
 **Goal:** Build a scalable, repeatable system that enforces ONE entry point and ONE processing path for all data.
