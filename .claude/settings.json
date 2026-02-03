@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:nebraskasoccer.affinitysoccer.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(for i in 1 2 3 4 5)",
+      "Bash(do echo \"Attempt $i...\")",
+      "Bash(del:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\MathieuMiles\\Projects\\soccerview"
+    ]
+  }
+}

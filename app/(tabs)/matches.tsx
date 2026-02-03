@@ -17,12 +17,19 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MatchCard, MatchCardData } from "../../components/MatchCard";
+import { MatchListSkeleton } from "../../components/SkeletonLoader";
 import { supabase } from "../../lib/supabase";
+import {
+  AppMatchesFeedRow,
+  GENDER_DISPLAY,
+} from "../../lib/supabase.types";
 
 // ============================================================
-// TYPES - Updated for match_results table
+// TYPES - Legacy format for UI compatibility
 // ============================================================
 
+// UI-facing type compatible with MatchCard component
 type MatchRow = {
   id: string;
   event_id: string | null;
@@ -46,30 +53,39 @@ type MatchRow = {
 type TimeFilter = "all" | "today" | "week" | "month";
 
 // ============================================================
+// DATA TRANSFORMATION
+// Transform new schema to legacy format for UI compatibility
+// ============================================================
+
+function transformMatchFeedRow(row: AppMatchesFeedRow): MatchRow {
+  return {
+    id: row.id,
+    event_id: row.event?.id ?? null,
+    event_name: row.event?.name ?? null,
+    match_date: row.match_date,
+    match_time: row.match_time,
+    home_team_name: row.home_team?.display_name ?? null,
+    home_team_id: row.home_team?.id ?? null,
+    home_score: row.home_score,
+    away_team_name: row.away_team?.display_name ?? null,
+    away_team_id: row.away_team?.id ?? null,
+    away_score: row.away_score,
+    status: null, // Not in new schema
+    location: row.venue?.name ?? null,
+    source_type: row.event?.type ?? null,
+    source_platform: null, // Not in new view
+    age_group: row.age_group,
+    gender: GENDER_DISPLAY[row.gender] ?? row.gender, // 'M' -> 'Boys', 'F' -> 'Girls'
+  };
+}
+
+// ============================================================
 // CONSTANTS
 // ============================================================
 
 const PAGE_SIZE = 50;
 
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
-
-function formatDate(isoDate: string | null): string {
-  if (!isoDate) return "";
-  try {
-    const d = new Date(isoDate);
-    return d.toLocaleDateString("en-US", {
-      month: "numeric",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return "";
-  }
-}
-
-// Note: Removed source badges to avoid platform branding
+// Note: Match card rendering uses shared MatchCard component from components/MatchCard.tsx
 
 // ============================================================
 // MAIN COMPONENT
@@ -98,18 +114,26 @@ export default function MatchesTab() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Fetch matches with pagination
+  // Fetch matches with pagination - USING NEW MATERIALIZED VIEW (Phase 3)
   const fetchMatches = async (reset: boolean = false) => {
     try {
       setError(null);
       const currentOffset = reset ? 0 : offset;
 
-      // Build query for match_results table
+      // Get total count via estimated count on first load only
+      if (reset && totalCount === 0) {
+        const { count } = await supabase
+          .from("app_matches_feed")
+          .select("id", { count: "estimated", head: true });
+        setTotalCount(count || 0);
+      }
+
+      // Build query for app_matches_feed materialized view
+      // All team/event data is embedded as JSONB - no joins needed!
       let query = supabase
-        .from("match_results")
+        .from("app_matches_feed")
         .select(
-          "id, event_id, event_name, match_date, match_time, home_team_name, home_team_id, home_score, away_team_name, away_team_id, away_score, status, location, source_type, source_platform, age_group, gender",
-          { count: "exact" },
+          "id, match_date, match_time, home_score, away_score, home_team, away_team, event, venue, gender, birth_year, age_group, state",
         )
         .order("match_date", { ascending: false })
         .range(currentOffset, currentOffset + PAGE_SIZE - 1);
@@ -132,19 +156,24 @@ export default function MatchesTab() {
         query = query.gte("match_date", monthAgo.toISOString().split("T")[0]);
       }
 
-      // Apply search filter
+      // Apply search filter - search in embedded JSONB fields
+      // Note: JSONB text search requires different syntax
       if (debouncedSearch.trim()) {
-        const searchTerm = `%${debouncedSearch.trim()}%`;
+        const searchTerm = debouncedSearch.trim().toLowerCase();
+        // For JSONB fields, we need to use contains or text search
+        // Simplified: search on state for now (native column)
+        // TODO: Add full-text search on materialized view if needed
         query = query.or(
-          `home_team_name.ilike.${searchTerm},away_team_name.ilike.${searchTerm},location.ilike.${searchTerm},event_name.ilike.${searchTerm}`,
+          `state.ilike.%${searchTerm}%,age_group.ilike.%${searchTerm}%`,
         );
       }
 
-      const { data, error: queryError, count } = await query;
+      const { data, error: queryError } = await query;
 
       if (queryError) throw queryError;
 
-      const newMatches = (data || []) as MatchRow[];
+      // Transform from new schema to legacy format for MatchCard compatibility
+      const newMatches = (data || []).map(row => transformMatchFeedRow(row as AppMatchesFeedRow));
 
       if (reset) {
         setMatches(newMatches);
@@ -154,7 +183,7 @@ export default function MatchesTab() {
         setOffset(currentOffset + PAGE_SIZE);
       }
 
-      setTotalCount(count || 0);
+      // Determine hasMore based on whether we got a full page
       setHasMore(newMatches.length === PAGE_SIZE);
     } catch (err: any) {
       console.error("Error fetching matches:", err);
@@ -200,74 +229,10 @@ export default function MatchesTab() {
     }
   };
 
-  // Render match card
-  const renderMatch = useCallback(({ item }: { item: MatchRow }) => {
-    const dateStr = formatDate(item.match_date);
-    const hasScore = item.home_score !== null && item.away_score !== null;
-    const isScheduled = item.status === "scheduled";
-
-    // Build location string
-    const locationParts: string[] = [];
-    if (dateStr) locationParts.push(dateStr);
-    if (item.location) locationParts.push(item.location);
-    const locationStr = locationParts.join(" · ");
-
-    return (
-      <TouchableOpacity
-        style={styles.matchCard}
-        activeOpacity={0.7}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push(`/match/${item.id}`);
-        }}
-      >
-        {/* Top row: Date/Location + Source Badge */}
-        <View style={styles.matchTopRow}>
-          {locationStr ? (
-            <Text style={styles.locationText} numberOfLines={1}>
-              {locationStr}
-            </Text>
-          ) : null}
-        </View>
-
-        {/* Event name if available - filter out "GotSport" branding */}
-        {item.event_name && item.event_name !== "GotSport" && (
-          <Text style={styles.eventName} numberOfLines={1}>
-            {item.event_name}
-          </Text>
-        )}
-
-        {/* Main content row: Teams + Score */}
-        <View style={styles.matchContent}>
-          {/* Teams column */}
-          <View style={styles.teamsContainer}>
-            <Text style={styles.homeTeam} numberOfLines={1}>
-              {item.home_team_name ?? "Home Team"}
-            </Text>
-            <Text style={styles.awayTeam} numberOfLines={1}>
-              vs {item.away_team_name ?? "Away Team"}
-            </Text>
-          </View>
-
-          {/* Score column */}
-          <View style={styles.scoreContainer}>
-            {hasScore ? (
-              <Text style={styles.scoreText}>
-                {item.home_score} - {item.away_score}
-              </Text>
-            ) : isScheduled ? (
-              <Text style={styles.scheduledText}>TBD</Text>
-            ) : (
-              <Text style={styles.pendingText}>—</Text>
-            )}
-          </View>
-
-          {/* Chevron */}
-          <Ionicons name="chevron-forward" size={18} color="#4b5563" />
-        </View>
-      </TouchableOpacity>
-    );
-  }, []);
+  // Use shared MatchCard component for consistent display across all tabs
+  const renderMatch = ({ item }: { item: MatchRow }) => {
+    return <MatchCard match={item as MatchCardData} />;
+  };
 
   // Render footer (loading more indicator)
   const renderFooter = () => {
@@ -377,10 +342,7 @@ export default function MatchesTab() {
 
       {/* Main Content */}
       {loading && matches.length === 0 ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#3B82F6" />
-          <Text style={styles.loadingText}>Loading matches...</Text>
-        </View>
+        <MatchListSkeleton count={8} />
       ) : (
         <FlatList
           data={matches}
@@ -401,9 +363,12 @@ export default function MatchesTab() {
           ListFooterComponent={renderFooter}
           ListEmptyComponent={renderEmpty}
           showsVerticalScrollIndicator={false}
-          initialNumToRender={20}
-          maxToRenderPerBatch={20}
-          removeClippedSubviews={Platform.OS === "android"}
+          // Performance optimizations for smooth scrolling
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          initialNumToRender={10}
+          updateCellsBatchingPeriod={50}
         />
       )}
 
@@ -504,25 +469,36 @@ const styles = StyleSheet.create({
   resultsText: { color: "#9ca3af", fontSize: 14, marginBottom: 12 },
   listContent: { paddingBottom: 24, paddingHorizontal: 16, flexGrow: 1 },
 
-  // Match Card
+  // Match Card - styled to match Home tab
   matchCard: {
     padding: 14,
     borderRadius: 12,
     backgroundColor: "#111",
-    marginBottom: 10,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
-  matchTopRow: {
+  matchHeaderRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 10,
+    gap: 10,
   },
-  locationText: {
-    color: "#6b7280",
+  dateBadge: {
+    backgroundColor: "rgba(59, 130, 246, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  dateBadgeText: {
+    color: "#3B82F6",
     fontSize: 12,
-    flex: 1,
+    fontWeight: "700",
+  },
+  divisionText: {
+    color: "#9ca3af",
+    fontSize: 12,
+    fontWeight: "500",
   },
   eventName: {
     color: "#9ca3af",
@@ -530,42 +506,28 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontStyle: "italic",
   },
-  matchContent: {
+  matchTeamsRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
   },
-  teamsContainer: {
+  matchTeamsContainer: {
     flex: 1,
     marginRight: 12,
   },
-  homeTeam: {
+  teamName: {
     color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  awayTeam: {
-    color: "#9ca3af",
     fontSize: 14,
+    fontWeight: "600",
   },
-  scoreContainer: {
-    minWidth: 60,
-    alignItems: "center",
-    marginRight: 8,
+  vsText: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginVertical: 2,
   },
   scoreText: {
     color: "#3B82F6",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  scheduledText: {
-    color: "#f59e0b",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  pendingText: {
-    color: "#6b7280",
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "bold",
   },
 

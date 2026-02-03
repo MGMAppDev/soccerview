@@ -177,7 +177,8 @@ export async function generatePrediction(
     homeWinProb -= diff;
   }
 
-  // Predict scores
+  // Predict scores - MUST be consistent with win probabilities
+  // Use GPG to determine scoring magnitude, but winner must match probability
   const homeGPG = homeTeam.matches_played
     ? (homeTeam.goals_for || 0) / homeTeam.matches_played
     : 1.5;
@@ -185,15 +186,41 @@ export async function generatePrediction(
     ? (awayTeam.goals_for || 0) / awayTeam.matches_played
     : 1.5;
 
-  const homeExpectedGoals = homeGPG * (1 + totalImpact * 0.3);
-  const awayExpectedGoals = awayGPG * (1 - totalImpact * 0.3);
+  // Average expected goals for this matchup
+  const avgGoals = (homeGPG + awayGPG) / 2;
+  const baseGoals = Math.max(1, Math.min(3, avgGoals)); // Clamp to realistic range
 
-  const predictedHomeScore = Math.round(
-    Math.max(0, Math.min(6, homeExpectedGoals)),
-  );
-  const predictedAwayScore = Math.round(
-    Math.max(0, Math.min(6, awayExpectedGoals)),
-  );
+  // Determine predicted winner from probabilities (single source of truth)
+  let predictedHomeScore: number;
+  let predictedAwayScore: number;
+
+  if (homeWinProb > awayWinProb && homeWinProb > drawProb) {
+    // Home favored - home wins
+    const margin = Math.max(1, Math.round(Math.abs(adjustedImpact) * 2));
+    predictedHomeScore = Math.round(baseGoals + margin * 0.5);
+    predictedAwayScore = Math.round(Math.max(0, baseGoals - margin * 0.5));
+    // Ensure home wins
+    if (predictedHomeScore <= predictedAwayScore) {
+      predictedHomeScore = predictedAwayScore + 1;
+    }
+  } else if (awayWinProb > homeWinProb && awayWinProb > drawProb) {
+    // Away favored - away wins
+    const margin = Math.max(1, Math.round(Math.abs(adjustedImpact) * 2));
+    predictedAwayScore = Math.round(baseGoals + margin * 0.5);
+    predictedHomeScore = Math.round(Math.max(0, baseGoals - margin * 0.5));
+    // Ensure away wins
+    if (predictedAwayScore <= predictedHomeScore) {
+      predictedAwayScore = predictedHomeScore + 1;
+    }
+  } else {
+    // Draw most likely or too close - predict draw
+    predictedHomeScore = Math.round(baseGoals);
+    predictedAwayScore = Math.round(baseGoals);
+  }
+
+  // Clamp to reasonable range (0-6)
+  predictedHomeScore = Math.max(0, Math.min(6, predictedHomeScore));
+  predictedAwayScore = Math.max(0, Math.min(6, predictedAwayScore));
 
   // Calculate confidence
   let confidenceScore = 0;

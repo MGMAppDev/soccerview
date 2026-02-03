@@ -1,0 +1,190 @@
+{
+  "timestamp": "2026-01-26T03:21:52.228Z",
+  "summary": {
+    "totalScreenshots": 13,
+    "screenshotDir": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc",
+    "viewport": {
+      "width": 390,
+      "height": 844,
+      "deviceScaleFactor": 2
+    }
+  },
+  "screens": [
+    {
+      "filename": "01_home_scroll0_2026-01-26T03-21-06-062Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\01_home_scroll0_2026-01-26T03-21-06-062Z.png",
+      "description": "Scroll position: 0px",
+      "screen": "01_home"
+    },
+    {
+      "filename": "01_home_scroll1_2026-01-26T03-21-06-776Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\01_home_scroll1_2026-01-26T03-21-06-776Z.png",
+      "description": "Scroll position: 500px",
+      "screen": "01_home"
+    },
+    {
+      "filename": "01_home_scroll2_2026-01-26T03-21-07-433Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\01_home_scroll2_2026-01-26T03-21-07-433Z.png",
+      "description": "Scroll position: 1000px",
+      "screen": "01_home"
+    },
+    {
+      "filename": "02_rankings_scroll0_2026-01-26T03-21-14-790Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\02_rankings_scroll0_2026-01-26T03-21-14-790Z.png",
+      "description": "Scroll position: 0px",
+      "screen": "02_rankings"
+    },
+    {
+      "filename": "02_rankings_scroll1_2026-01-26T03-21-15-489Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\02_rankings_scroll1_2026-01-26T03-21-15-489Z.png",
+      "description": "Scroll position: 500px",
+      "screen": "02_rankings"
+    },
+    {
+      "filename": "03_teams_2026-01-26T03-21-23-285Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\03_teams_2026-01-26T03-21-23-285Z.png",
+      "description": "Scroll position: 0px",
+      "screen": "03_teams"
+    },
+    {
+      "filename": "04_matches_scroll0_2026-01-26T03-21-30-322Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\04_matches_scroll0_2026-01-26T03-21-30-322Z.png",
+      "description": "Scroll position: 0px",
+      "screen": "04_matches"
+    },
+    {
+      "filename": "04_matches_scroll1_2026-01-26T03-21-31-006Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\04_matches_scroll1_2026-01-26T03-21-31-006Z.png",
+      "description": "Scroll position: 500px",
+      "screen": "04_matches"
+    },
+    {
+      "filename": "05_team_detail_scroll0_2026-01-26T03-21-37-559Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\05_team_detail_scroll0_2026-01-26T03-21-37-559Z.png",
+      "description": "Scroll position: 0px",
+      "screen": "05_team_detail"
+    },
+    {
+      "filename": "05_team_detail_scroll1_2026-01-26T03-21-38-242Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\05_team_detail_scroll1_2026-01-26T03-21-38-242Z.png",
+      "description": "Scroll position: 500px",
+      "screen": "05_team_detail"
+    },
+    {
+      "filename": "05_team_detail_scroll2_2026-01-26T03-21-38-893Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\05_team_detail_scroll2_2026-01-26T03-21-38-893Z.png",
+      "description": "Scroll position: 1000px",
+      "screen": "05_team_detail"
+    },
+    {
+      "filename": "06_league_standings_scroll0_2026-01-26T03-21-51-415Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\06_league_standings_scroll0_2026-01-26T03-21-51-415Z.png",
+      "description": "Scroll position: 0px",
+      "screen": "06_league_standings"
+    },
+    {
+      "filename": "06_league_standings_scroll1_2026-01-26T03-21-52-083Z.png",
+      "filepath": "c:\\Users\\MathieuMiles\\Projects\\soccerview\\screenshots\\qc\\06_league_standings_scroll1_2026-01-26T03-21-52-083Z.png",
+      "description": "Scroll position: 500px",
+      "screen": "06_league_standings"
+    }
+  ],
+  "dataChecks": {
+    "home": [
+      {
+        "name": "stats_cards",
+        "selector": "[data-testid=\"stats-card\"]",
+        "expected": 2,
+        "found": 0,
+        "passed": false
+      },
+      {
+        "name": "match_cards",
+        "selector": "[data-testid=\"match-card\"]",
+        "expected": 1,
+        "found": 0,
+        "passed": false
+      },
+      {
+        "name": "top_teams",
+        "selector": "[data-testid=\"team-row\"]",
+        "expected": 1,
+        "found": 0,
+        "passed": false
+      }
+    ],
+    "rankings": [
+      {
+        "name": "team_rows",
+        "selector": "[data-testid=\"ranking-row\"]",
+        "expected": 10,
+        "found": 0,
+        "passed": false
+      }
+    ],
+    "teams": [
+      {
+        "name": "team_count",
+        "selector": "[data-testid=\"team-count\"]",
+        "expected": 1,
+        "found": 0,
+        "passed": false
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "screen": "home",
+      "issue": "Missing elements: stats_cards, match_cards, top_teams",
+      "details": [
+        {
+          "name": "stats_cards",
+          "selector": "[data-testid=\"stats-card\"]",
+          "expected": 2,
+          "found": 0,
+          "passed": false
+        },
+        {
+          "name": "match_cards",
+          "selector": "[data-testid=\"match-card\"]",
+          "expected": 1,
+          "found": 0,
+          "passed": false
+        },
+        {
+          "name": "top_teams",
+          "selector": "[data-testid=\"team-row\"]",
+          "expected": 1,
+          "found": 0,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "screen": "rankings",
+      "issue": "Missing elements: team_rows",
+      "details": [
+        {
+          "name": "team_rows",
+          "selector": "[data-testid=\"ranking-row\"]",
+          "expected": 10,
+          "found": 0,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "screen": "teams",
+      "issue": "Missing elements: team_count",
+      "details": [
+        {
+          "name": "team_count",
+          "selector": "[data-testid=\"team-count\"]",
+          "expected": 1,
+          "found": 0,
+          "passed": false
+        }
+      ]
+    }
+  ]
+}

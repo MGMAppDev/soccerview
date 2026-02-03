@@ -55,13 +55,28 @@ export default function RootLayout() {
 
     const inOnboarding = segments[0] === "onboarding";
 
-    if (!hasCompletedOnboarding && !inOnboarding) {
-      // User hasn't completed onboarding, redirect to onboarding
-      router.replace("/onboarding");
-    } else if (hasCompletedOnboarding && inOnboarding) {
-      // User completed onboarding but somehow on onboarding screen, go to tabs
-      router.replace("/(tabs)");
-    }
+    // Re-check AsyncStorage when leaving onboarding to catch fresh completion
+    const handleRouteChange = async () => {
+      if (!hasCompletedOnboarding && !inOnboarding) {
+        // Before redirecting, re-check AsyncStorage in case onboarding just completed
+        try {
+          const value = await AsyncStorage.getItem(ONBOARDING_KEY);
+          if (value === "true") {
+            setHasCompletedOnboarding(true);
+            return; // Don't redirect, onboarding was just completed
+          }
+        } catch (error) {
+          console.error("Error re-checking onboarding status:", error);
+        }
+        // User hasn't completed onboarding, redirect to onboarding
+        router.replace("/onboarding");
+      } else if (hasCompletedOnboarding && inOnboarding) {
+        // User completed onboarding but somehow on onboarding screen, go to tabs
+        router.replace("/(tabs)");
+      }
+    };
+
+    handleRouteChange();
   }, [isLoading, hasCompletedOnboarding, segments]);
 
   const checkOnboardingStatus = async () => {

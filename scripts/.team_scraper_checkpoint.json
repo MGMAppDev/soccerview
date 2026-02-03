@@ -1,10 +1,10 @@
 {
-  "offset": 79200,
-  "lastTeamId": "bc2d47c2-63d4-4779-b382-e59a74e38334",
-  "lastRun": "2026-01-20T04:01:15.089Z",
+  "offset": 80700,
+  "lastTeamId": "bfdcd1fb-238c-414b-8219-692234132258",
+  "lastRun": "2026-01-20T04:35:43.461Z",
   "stats": {
     "startTime": 1768878612723,
-    "teamsProcessed": 1500,
+    "teamsProcessed": 3000,
     "teamsSkipped": 0,
     "teamsFailed": 0,
     "eventsDiscovered": 0,
@@ -12,8 +12,8 @@
     "scheduledMatchesFound": 0,
     "scheduledMatchesInserted": 0,
     "pastMatchesFound": 0,
-    "requestsMade": 3010,
-    "retriesPerformed": 10,
+    "requestsMade": 6016,
+    "retriesPerformed": 16,
     "rateLimitsHit": 0
   }
 }

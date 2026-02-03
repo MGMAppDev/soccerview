@@ -1,6 +1,15 @@
 // app/_explore.tsx
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../lib/supabase";
 
@@ -20,6 +29,8 @@ type MatchRow = {
   competition_name?: string | null;
   home_team_name?: string | null;
   away_team_name?: string | null;
+  age_group?: string | null;
+  gender?: string | null;
 
   // Fallbacks if your view still exposes older fields
   match_date?: string | null;
@@ -28,25 +39,16 @@ type MatchRow = {
   away_team?: { name: string | null } | null;
 };
 
-function formatDate(value: string | null) {
-  if (!value) return "TBD";
-  // handle both ISO date and datetime
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) {
-    // if it's YYYY-MM-DD only
-    const parts = value.split("-");
-    if (parts.length === 3) {
-      const [y, m, day] = parts.map(Number);
-      if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(day)) return `${m}/${day}/${y}`;
-    }
-    return "TBD";
+// Format date as badge (e.g., "Jan 17")
+function formatDateBadge(value: string | null): string {
+  if (!value) return "";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return "";
   }
-  return d.toLocaleDateString();
-}
-
-function scoreText(home: number | null, away: number | null) {
-  if (home === null || away === null) return "—";
-  return `${home} - ${away}`;
 }
 
 export default function ExploreScreen() {
@@ -56,9 +58,9 @@ export default function ExploreScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const subtitle = useMemo(() => {
-    if (loading) return "Loading…";
+    if (loading) return "Loading...";
     if (error) return "Error loading matches";
-    return `Matches loaded: ${rows.length}`;
+    return `${rows.length} matches loaded`;
   }, [loading, error, rows.length]);
 
   async function loadMatches(isRefresh = false, isMountedRef?: { current: boolean }) {
@@ -79,10 +81,13 @@ export default function ExploreScreen() {
           away_score,
           competition_name,
           home_team_name,
-          away_team_name
+          away_team_name,
+          age_group,
+          gender
         `
         )
-        .order("played_at", { ascending: false });
+        .order("played_at", { ascending: false })
+        .limit(50);
 
       if (qErr) throw qErr;
 
@@ -109,136 +114,250 @@ export default function ExploreScreen() {
     };
   }, []);
 
+  // Render match card - Standard style matching Home/Matches tabs
+  const renderMatchCard = ({ item }: { item: MatchRow }) => {
+    // Prefer competition-aware fields; fall back gracefully
+    const homeName = item.home_team_name ?? item.home_team?.name ?? "Home";
+    const awayName = item.away_team_name ?? item.away_team?.name ?? "Away";
+    const eventName = item.competition_name ?? item.leagues?.name ?? null;
+
+    const dateBadge = formatDateBadge(item.played_at ?? item.match_date ?? null);
+    const hasScore = item.home_score !== null && item.away_score !== null;
+
+    // Build division text (age_group + gender)
+    const divisionParts: string[] = [];
+    if (item.age_group) divisionParts.push(item.age_group);
+    if (item.gender) divisionParts.push(item.gender);
+    const divisionStr = divisionParts.join(" · ");
+
+    return (
+      <TouchableOpacity
+        style={styles.matchCard}
+        activeOpacity={0.7}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push(`/match/${item.id}`);
+        }}
+      >
+        {/* Header row: Date badge + Division */}
+        <View style={styles.matchHeaderRow}>
+          {dateBadge ? (
+            <View style={styles.dateBadge}>
+              <Text style={styles.dateBadgeText}>{dateBadge}</Text>
+            </View>
+          ) : null}
+          {divisionStr ? (
+            <Text style={styles.divisionText}>{divisionStr}</Text>
+          ) : null}
+        </View>
+
+        {/* Event name if available - filter out "GotSport" branding */}
+        {eventName && eventName !== "GotSport" && (
+          <Text style={styles.eventName} numberOfLines={1}>
+            {eventName}
+          </Text>
+        )}
+
+        {/* Main content row: Teams + Score */}
+        <View style={styles.matchTeamsRow}>
+          {/* Teams column - vertical layout */}
+          <View style={styles.matchTeamsContainer}>
+            <Text style={styles.teamName}>{homeName}</Text>
+            <Text style={styles.vsText}>vs</Text>
+            <Text style={styles.teamName}>{awayName}</Text>
+          </View>
+
+          {/* Score */}
+          {hasScore && (
+            <Text style={styles.scoreText}>
+              {item.home_score} - {item.away_score}
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   if (loading) {
     return (
-      <View style={{ flex: 1, padding: 16, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator />
-        <Text style={{ marginTop: 10, opacity: 0.7 }}>Loading matches…</Text>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+        <Text style={styles.loadingText}>Loading matches...</Text>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+    <View style={styles.container}>
       <FlatList
-        contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+        contentContainerStyle={styles.listContent}
         data={rows}
         keyExtractor={(item) => item.id}
         onRefresh={() => loadMatches(true)}
         refreshing={refreshing}
         ListHeaderComponent={
-          <View>
-            <Text style={{ fontSize: 22, fontWeight: "900" }}>Matches</Text>
-            <Text style={{ marginTop: 6, fontSize: 14, opacity: 0.7 }}>
-              Latest match results and fixtures.
-            </Text>
-
-            <View
-              style={{
-                marginTop: 12,
-                padding: 12,
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: "rgba(0,0,0,0.10)",
-              }}
-            >
-              <Text style={{ fontSize: 12, opacity: 0.65 }}>Status</Text>
-              <Text style={{ marginTop: 6, fontSize: 16, fontWeight: "900" }}>{subtitle}</Text>
-            </View>
+          <View style={styles.header}>
+            <Text style={styles.title}>Explore</Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
 
             {error ? (
-              <View
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: "rgba(0,0,0,0.12)",
-                }}
-              >
-                <Text style={{ fontWeight: "900" }}>Load error</Text>
-                <Text style={{ marginTop: 8, opacity: 0.75, lineHeight: 18 }}>{error}</Text>
-
-                <Pressable
+              <View style={styles.errorCard}>
+                <Ionicons name="cloud-offline-outline" size={24} color="#EF4444" />
+                <Text style={styles.errorText}>{error}</Text>
+                <TouchableOpacity
+                  style={styles.retryButton}
                   onPress={() => loadMatches(false)}
-                  style={{
-                    marginTop: 10,
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    borderRadius: 10,
-                    borderWidth: 1,
-                    borderColor: "rgba(0,0,0,0.12)",
-                    alignSelf: "flex-start",
-                  }}
                 >
-                  <Text style={{ fontWeight: "900" }}>Retry</Text>
-                </Pressable>
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
-
-            <View style={{ height: 14 }} />
           </View>
         }
         ListEmptyComponent={
           !error ? (
-            <View
-              style={{
-                padding: 14,
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: "rgba(0,0,0,0.10)",
-              }}
-            >
-              <Text style={{ fontWeight: "900" }}>No matches yet</Text>
-              <Text style={{ marginTop: 6, opacity: 0.7 }}>
-                Your view returned 0 rows. Add match data (or confirm RLS policies) and pull-to-refresh.
-              </Text>
+            <View style={styles.emptyContainer}>
+              <Ionicons name="football-outline" size={48} color="#374151" />
+              <Text style={styles.emptyText}>No matches found</Text>
             </View>
           ) : null
         }
-        renderItem={({ item }) => {
-          // prefer competition-aware fields; fall back gracefully
-          const leagueName = item.competition_name ?? item.leagues?.name ?? "Competition";
-          const homeName = item.home_team_name ?? item.home_team?.name ?? "Home";
-          const awayName = item.away_team_name ?? item.away_team?.name ?? "Away";
-
-          const date = formatDate(item.played_at ?? item.match_date ?? null);
-          const score = scoreText(item.home_score, item.away_score);
-          const status = (item.status ?? "").toUpperCase() || "—";
-
-          return (
-            <Pressable
-              onPress={() => router.push(`/match/${item.id}`)}
-              style={{
-                paddingVertical: 14,
-                paddingHorizontal: 14,
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: "rgba(0,0,0,0.10)",
-                marginBottom: 10,
-              }}
-            >
-              <Text style={{ fontSize: 12, opacity: 0.65 }} numberOfLines={1}>
-                {leagueName}
-              </Text>
-
-              <Text style={{ marginTop: 6, fontSize: 18, fontWeight: "900" }} numberOfLines={2}>
-                {homeName} vs {awayName}
-              </Text>
-
-              <View style={{ marginTop: 10, flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ opacity: 0.8 }}>{date}</Text>
-                <Text style={{ fontWeight: "900" }}>{score}</Text>
-              </View>
-
-              <View style={{ marginTop: 6, flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ opacity: 0.65 }}>{item.season ?? "—"}</Text>
-                <Text style={{ opacity: 0.65 }}>{status}</Text>
-              </View>
-            </Pressable>
-          );
-        }}
+        renderItem={renderMatchCard}
+        showsVerticalScrollIndicator={false}
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#000",
+    gap: 12,
+  },
+  loadingText: {
+    color: "#9ca3af",
+    fontSize: 14,
+  },
+  listContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  header: {
+    marginBottom: 16,
+  },
+  title: {
+    color: "#fff",
+    fontSize: 32,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  subtitle: {
+    color: "#9ca3af",
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  errorCard: {
+    backgroundColor: "#111",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  retryButton: {
+    backgroundColor: "#1F2937",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    color: "#3B82F6",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  emptyContainer: {
+    alignItems: "center",
+    paddingVertical: 48,
+    gap: 12,
+  },
+  emptyText: {
+    color: "#6b7280",
+    fontSize: 16,
+  },
+
+  // Standard Match Card - Matching Home/Matches tabs
+  matchCard: {
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: "#111",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
+  },
+  matchHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 10,
+  },
+  dateBadge: {
+    backgroundColor: "rgba(59, 130, 246, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  dateBadgeText: {
+    color: "#3B82F6",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  divisionText: {
+    color: "#9ca3af",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  eventName: {
+    color: "#9ca3af",
+    fontSize: 11,
+    marginBottom: 8,
+    fontStyle: "italic",
+  },
+  matchTeamsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  matchTeamsContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  teamName: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  vsText: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginVertical: 2,
+  },
+  scoreText: {
+    color: "#3B82F6",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+});

@@ -14,28 +14,39 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 
 // ============================================================
-// TYPES - Updated for match_results table
+// TYPES - Uses v2 app_matches_feed view with embedded team data
+// Per No Fallback Policy: v2 schema is THE architecture
 // ============================================================
+
+type EmbeddedTeam = {
+  id: string;
+  name: string;
+  display_name: string;
+  club_name: string | null;
+  elo_rating: number;
+  national_rank: number | null;
+  state: string;
+};
+
+type EmbeddedEvent = {
+  id: string;
+  name: string;
+  type: 'league' | 'tournament';
+};
 
 type MatchRow = {
   id: string;
-  event_id: string | null;
-  event_name: string | null;
-  match_number: string | null;
-  match_date: string | null;
+  match_date: string;
   match_time: string | null;
-  home_team_name: string | null;
-  home_team_id: string | null;
-  home_score: number | null;
-  away_team_name: string | null;
-  away_team_id: string | null;
-  away_score: number | null;
-  status: string | null;
-  age_group: string | null;
-  gender: string | null;
-  location: string | null;
-  source_type: string | null;
-  source_platform: string | null;
+  home_score: number;
+  away_score: number;
+  home_team: EmbeddedTeam;
+  away_team: EmbeddedTeam;
+  event: EmbeddedEvent;
+  gender: string;
+  birth_year: number;
+  age_group: string;
+  state: string;
 };
 
 type TeamInfo = {
@@ -110,16 +121,14 @@ function getMatchStatus(match: MatchRow): "completed" | "upcoming" | "live" {
   // If we have scores, match is completed
   if (hasScore) return "completed";
 
-  // Check date
+  // Check date - v2 schema doesn't have status field, determine from date
   if (match.match_date) {
     const matchDate = new Date(match.match_date);
     const now = new Date();
     if (matchDate > now) return "upcoming";
+    // Past date without scores = completed (no scores recorded)
+    return "completed";
   }
-
-  // Default based on status field
-  if (match.status === "scheduled") return "upcoming";
-  if (match.status === "live") return "live";
 
   return "upcoming";
 }
@@ -164,9 +173,9 @@ export default function MatchDetailScreen() {
         setLoading(true);
         setError(null);
 
-        // Query match_results table
+        // Query v2 app_matches_feed view (has embedded team data)
         const { data, error: qErr } = await supabase
-          .from("match_results")
+          .from("app_matches_feed")
           .select("*")
           .eq("id", id)
           .single();
@@ -174,82 +183,35 @@ export default function MatchDetailScreen() {
         if (qErr) throw qErr;
         setMatch(data as MatchRow);
 
-        // Try to get home team info - first by FK, then by name search
-        if (data?.home_team_id) {
-          // Direct FK lookup
-          const { data: homeData } = await supabase
-            .from("team_elo")
-            .select(
-              "id, team_name, elo_rating, national_rank, wins, losses, draws, goals_for, goals_against",
-            )
-            .eq("id", data.home_team_id)
-            .single();
-          if (homeData) setHomeTeamInfo(homeData as TeamInfo);
-        } else if (data?.home_team_name) {
-          // Fallback: search by team name (exact match first)
-          let { data: homeData } = await supabase
-            .from("team_elo")
-            .select(
-              "id, team_name, elo_rating, national_rank, wins, losses, draws, goals_for, goals_against",
-            )
-            .ilike("team_name", data.home_team_name)
-            .limit(1)
-            .maybeSingle();
-
-          // If no exact match, try partial match with first 20 chars
-          if (!homeData && data.home_team_name.length > 10) {
-            const searchTerm = data.home_team_name.substring(0, 20);
-            const { data: partialMatch } = await supabase
-              .from("team_elo")
-              .select(
-                "id, team_name, elo_rating, national_rank, wins, losses, draws, goals_for, goals_against",
-              )
-              .ilike("team_name", `${searchTerm}%`)
-              .limit(1)
-              .maybeSingle();
-            homeData = partialMatch;
-          }
-
-          if (homeData) setHomeTeamInfo(homeData as TeamInfo);
+        // Extract team info from embedded JSONB objects
+        if (data?.home_team) {
+          const ht = data.home_team as EmbeddedTeam;
+          setHomeTeamInfo({
+            id: ht.id,
+            team_name: ht.display_name || ht.name,
+            elo_rating: ht.elo_rating,
+            national_rank: ht.national_rank,
+            wins: null, // Not in embedded data
+            losses: null,
+            draws: null,
+            goals_for: null,
+            goals_against: null,
+          });
         }
 
-        // Try to get away team info - first by FK, then by name search
-        if (data?.away_team_id) {
-          // Direct FK lookup
-          const { data: awayData } = await supabase
-            .from("team_elo")
-            .select(
-              "id, team_name, elo_rating, national_rank, wins, losses, draws, goals_for, goals_against",
-            )
-            .eq("id", data.away_team_id)
-            .single();
-          if (awayData) setAwayTeamInfo(awayData as TeamInfo);
-        } else if (data?.away_team_name) {
-          // Fallback: search by team name (exact match first)
-          let { data: awayData } = await supabase
-            .from("team_elo")
-            .select(
-              "id, team_name, elo_rating, national_rank, wins, losses, draws, goals_for, goals_against",
-            )
-            .ilike("team_name", data.away_team_name)
-            .limit(1)
-            .maybeSingle();
-
-          // If no exact match, try partial match with first 20 chars
-          if (!awayData && data.away_team_name.length > 10) {
-            const searchTerm = data.away_team_name.substring(0, 20);
-            const { data: partialMatch } = await supabase
-              .from("team_elo")
-              .select(
-                "id, team_name, elo_rating, national_rank, wins, losses, draws, goals_for, goals_against",
-              )
-              .ilike("team_name", `${searchTerm}%`)
-              .limit(1)
-              .maybeSingle();
-            awayData = partialMatch;
-          }
-
-          if (awayData) setAwayTeamInfo(awayData as TeamInfo);
+        if (data?.away_team) {
+          const at = data.away_team as EmbeddedTeam;
+          setAwayTeamInfo({
+            id: at.id,
+            team_name: at.display_name || at.name,
+            elo_rating: at.elo_rating,
+            national_rank: at.national_rank,
+            wins: null,
+            losses: null,
+            draws: null,
+            goals_for: null,
+            goals_against: null,
+          });
         }
       } catch (e: any) {
         console.error("Error loading match:", e);
@@ -314,18 +276,18 @@ export default function MatchDetailScreen() {
     );
   }
 
-  // Extract data from match_results schema
-  const homeName = match.home_team_name ?? "Home Team";
-  const awayName = match.away_team_name ?? "Away Team";
+  // Extract data from v2 app_matches_feed schema (embedded objects)
+  const homeName = match.home_team?.display_name || match.home_team?.name || "Home Team";
+  const awayName = match.away_team?.display_name || match.away_team?.name || "Away Team";
   const homeScore = match.home_score;
   const awayScore = match.away_score;
   const hasScore = homeScore !== null && awayScore !== null;
 
-  // FIXED: Better date handling - use actual date if available
+  // Date and time handling
   const dateStr = formatDate(match.match_date);
   const timeStr = formatTime(match.match_time);
-  const location = match.location;
-  const matchTypeBadge = getMatchTypeBadge(match.source_type);
+  const location = null; // v2 has venue object, but full location not available
+  const matchTypeBadge = getMatchTypeBadge(match.event?.type);
 
   // FIXED: Determine actual status based on scores/date, not just status field
   const matchStatus = getMatchStatus(match);

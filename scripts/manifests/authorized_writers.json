@@ -1,0 +1,176 @@
+{
+  "_comment": "Script Authorization Manifest - Session 79 V2 Architecture Enforcement",
+  "_updated": "2026-02-02",
+  "_description": "Documents all scripts that write to protected tables (teams_v2, matches_v2) and their authorization status",
+
+  "protected_tables": [
+    "teams_v2",
+    "matches_v2"
+  ],
+
+  "unprotected_tables": [
+    "staging_games",
+    "staging_rejected",
+    "canonical_teams",
+    "canonical_events",
+    "canonical_clubs",
+    "learned_patterns",
+    "rank_history_v2",
+    "leagues",
+    "tournaments",
+    "clubs"
+  ],
+
+  "core_pipeline": {
+    "_description": "Critical scripts that run in the nightly pipeline",
+    "scripts": {
+      "scripts/universal/dataQualityEngine.js": {
+        "status": "authorized",
+        "writes_to": ["teams_v2", "matches_v2"],
+        "authorization": "import { authorizePipelineWrite } from './pipelineAuth.js'"
+      },
+      "scripts/daily/recalculate_elo_v2.js": {
+        "status": "authorized",
+        "writes_to": ["teams_v2"],
+        "authorization": "import { authorizePipelineWrite } from '../universal/pipelineAuth.js'"
+      },
+      "scripts/maintenance/inferEventLinkage.js": {
+        "status": "authorized",
+        "writes_to": ["matches_v2"],
+        "authorization": "import { authorizePipelineWrite } from '../universal/pipelineAuth.js'"
+      },
+      "scripts/daily/captureRankSnapshot.js": {
+        "status": "no_auth_needed",
+        "writes_to": ["rank_history_v2"],
+        "note": "rank_history_v2 is not protected by triggers"
+      }
+    }
+  },
+
+  "maintenance_cjs": {
+    "_description": "CommonJS maintenance scripts using pipelineAuthCJS.cjs",
+    "scripts": {
+      "scripts/maintenance/populateCanonicalTeams.cjs": {
+        "status": "authorized",
+        "writes_to": ["canonical_teams"],
+        "authorization": "require('../universal/pipelineAuthCJS.cjs')",
+        "note": "canonical_teams not protected, but auth added for consistency"
+      },
+      "scripts/maintenance/fixNullMetadataAndMerge.cjs": {
+        "status": "authorized",
+        "writes_to": ["teams_v2", "matches_v2"],
+        "authorization": "require('../universal/pipelineAuthCJS.cjs')"
+      },
+      "scripts/maintenance/mergeOrphansByNormalizedName.cjs": {
+        "status": "authorized",
+        "writes_to": ["teams_v2", "matches_v2"],
+        "authorization": "require('../universal/pipelineAuthCJS.cjs')"
+      },
+      "scripts/maintenance/fixDataDisconnect.cjs": {
+        "status": "authorized",
+        "writes_to": ["teams_v2"],
+        "authorization": "require('../universal/pipelineAuthCJS.cjs')"
+      },
+      "scripts/maintenance/recalculateHistoricalRanks.cjs": {
+        "status": "authorized",
+        "writes_to": ["rank_history_v2"],
+        "authorization": "require('../universal/pipelineAuthCJS.cjs')",
+        "note": "rank_history_v2 not protected, but auth added for consistency"
+      },
+      "scripts/maintenance/fixBirthYearFromNames.cjs": {
+        "status": "authorized",
+        "writes_to": ["teams_v2"],
+        "authorization": "require('../universal/pipelineAuthCJS.cjs')"
+      }
+    }
+  },
+
+  "maintenance_esm": {
+    "_description": "ES Module maintenance scripts using pipelineAuth.js",
+    "scripts": {
+      "scripts/maintenance/mergeTeams.js": {
+        "status": "authorized",
+        "writes_to": ["teams_v2", "matches_v2"],
+        "authorization": "import { authorizePipelineWrite } from '../universal/pipelineAuth.js'"
+      },
+      "scripts/maintenance/mergeEvents.js": {
+        "status": "authorized",
+        "writes_to": ["matches_v2", "leagues", "tournaments"],
+        "authorization": "import { authorizePipelineWrite } from '../universal/pipelineAuth.js'"
+      },
+      "scripts/maintenance/cleanupGarbageMatches.js": {
+        "status": "authorized",
+        "writes_to": ["matches_v2"],
+        "authorization": "import { authorizePipelineWrite } from '../universal/pipelineAuth.js'"
+      }
+    }
+  },
+
+  "deduplication": {
+    "_description": "Deduplication scripts",
+    "scripts": {
+      "scripts/universal/deduplication/teamDedup.js": {
+        "status": "authorized",
+        "writes_to": ["teams_v2", "matches_v2"],
+        "authorization": "import { authorizePipelineWrite } from '../pipelineAuth.js'"
+      },
+      "scripts/universal/deduplication/matchDedup.js": {
+        "status": "authorized",
+        "writes_to": ["matches_v2"],
+        "authorization": "import { authorizePipelineWrite } from '../pipelineAuth.js'"
+      },
+      "scripts/universal/deduplication/eventDedup.js": {
+        "status": "authorized",
+        "writes_to": ["matches_v2", "leagues", "tournaments"],
+        "authorization": "import { authorizePipelineWrite } from '../pipelineAuth.js'"
+      }
+    }
+  },
+
+  "scrapers_adapters": {
+    "_description": "Scrapers only write to staging tables (not protected)",
+    "scripts": {
+      "scripts/universal/coreScraper.js": {
+        "status": "no_auth_needed",
+        "writes_to": ["staging_games"],
+        "note": "staging_games is not protected"
+      },
+      "scripts/adapters/*.js": {
+        "status": "no_auth_needed",
+        "writes_to": [],
+        "note": "Adapters return data, coreScraper handles writes"
+      }
+    }
+  },
+
+  "intake_validation": {
+    "_description": "Pre-staging validation (not protected)",
+    "scripts": {
+      "scripts/universal/intakeValidator.js": {
+        "status": "no_auth_needed",
+        "writes_to": ["staging_games", "staging_rejected"],
+        "note": "staging tables are not protected"
+      }
+    }
+  },
+
+  "debug_scripts": {
+    "_description": "Debug scripts - most are read-only, some may need auth for fixes",
+    "_warning": "These should NOT run in production without review",
+    "scripts": {
+      "scripts/_debug/*.cjs": {
+        "status": "review_required",
+        "note": "Debug scripts may write to protected tables - review before use"
+      }
+    }
+  },
+
+  "emergency_override": {
+    "_description": "How to disable write protection in emergencies",
+    "sql_commands": [
+      "SELECT disable_write_protection();  -- Disables triggers globally",
+      "SELECT enable_write_protection();   -- Re-enables triggers"
+    ],
+    "warning": "ONLY use in emergencies. All scripts should use authorization instead."
+  }
+}

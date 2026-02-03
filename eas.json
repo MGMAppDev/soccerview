@@ -14,7 +14,9 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pmcpyivphlrrfohsuelt.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_L7fcy_jFYLbaTDun_Ly9yg_BT14FSGY"
       }
     }
   },

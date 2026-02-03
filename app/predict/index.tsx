@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -27,6 +27,7 @@ import {
   TeamData,
 } from "../../lib/predictions";
 import { supabase } from "../../lib/supabase";
+import { GENDER_DISPLAY, GENDER_FROM_DISPLAY, GenderType } from "../../lib/supabase.types";
 
 const AGE_GROUPS = [
   "All",
@@ -44,49 +45,31 @@ const AGE_GROUPS = [
   "U19",
 ];
 const GENDERS = ["All", "Boys", "Girls"];
-const STATES = [
-  "All",
-  "CA",
-  "TX",
-  "FL",
-  "NY",
-  "PA",
-  "IL",
-  "OH",
-  "GA",
-  "NC",
-  "MI",
-  "NJ",
-  "VA",
-  "WA",
-  "AZ",
-  "MA",
-  "TN",
-  "IN",
-  "MO",
-  "MD",
-  "WI",
-  "CO",
-  "MN",
-  "KS",
+// Full US states list (same as Rankings tab)
+const US_STATES = [
+  "AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL",
+  "GA", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA",
+  "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE",
+  "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI",
+  "SC", "SD", "TN", "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY",
 ];
 
 // ============================================================
-// FACTOR HELP TEXT - Explains what each analytical factor means
+// FACTOR HELP TEXT - Must match actual factors from lib/predictions.ts
 // ============================================================
 const FACTOR_HELP: Record<string, string> = {
   "ELO Rating":
-    "Team's overall strength rating. Higher = stronger team historically.",
+    "Team's overall strength rating based on match results. Higher = stronger team. (40% weight)",
   "Goal Diff":
-    "Average goal differential per match. Positive means team scores more than they concede.",
+    "Total goals scored minus goals conceded this season. Shows offensive vs defensive balance. (20% weight)",
   "Win Rate":
-    "Percentage of matches won. Higher win rate = more consistent winner.",
+    "Percentage of matches won (draws count as half). Higher = more consistent winner. (15% weight)",
+  Awards:
+    "Tournament championships and awards won. Indicates proven ability to perform in high-stakes matches. (10% weight)",
   "Head-to-Head":
-    "Historical performance when these two teams have played each other.",
-  Strength: "Combined measure of offensive and defensive capabilities.",
-  Form: "Recent performance trend over last 5-10 matches.",
-  "Home Advantage":
-    "Boost for playing at home venue (typically 3-5% advantage).",
+    "Comparison of national rankings. Lower rank = stronger position in the overall standings. (10% weight)",
+  Strength:
+    "Number of matches played this season. More matches = more reliable data and experience. (5% weight)",
 };
 
 type TeamSelectorModalProps = {
@@ -119,13 +102,20 @@ function TeamSelectorModal({
   const [selectedGender, setSelectedGender] = useState(
     suggestedGender || "All",
   );
-  const [selectedState, setSelectedState] = useState(suggestedState || "All");
+  // State filter - array for multi-select with type-ahead (matching Rankings tab)
+  const [selectedStates, setSelectedStates] = useState<string[]>(
+    suggestedState ? [suggestedState] : []
+  );
+  const [stateSearchQuery, setStateSearchQuery] = useState("");
+  const [showStateSuggestions, setShowStateSuggestions] = useState(false);
+  const stateInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) {
       setSelectedAgeGroup(suggestedAgeGroup || "All");
       setSelectedGender(suggestedGender || "All");
-      setSelectedState(suggestedState || "All");
+      setSelectedStates(suggestedState ? [suggestedState] : []);
+      setStateSearchQuery("");
       setSearchQuery("");
       setResults([]);
     }
@@ -139,20 +129,31 @@ function TeamSelectorModal({
     setLoading(true);
     try {
       let dbQuery = supabase
-        .from("team_elo")
-        .select("*")
-        .ilike("team_name", `%${query}%`)
+        .from("app_rankings")
+        .select("id, name, display_name, club_name, birth_year, gender, age_group, state, elo_rating, national_rank, state_rank, gotsport_points, matches_played, wins, losses, draws, has_matches")
+        .ilike("display_name", `%${query}%`)
         .order("elo_rating", { ascending: false })
         .limit(50);
       if (selectedAgeGroup !== "All")
         dbQuery = dbQuery.eq("age_group", selectedAgeGroup);
-      if (selectedGender !== "All")
-        dbQuery = dbQuery.eq("gender", selectedGender);
-      if (selectedState !== "All") dbQuery = dbQuery.eq("state", selectedState);
+      // Convert display gender ('Boys', 'Girls') to database enum ('M', 'F')
+      if (selectedGender !== "All") {
+        const dbGender = GENDER_FROM_DISPLAY[selectedGender];
+        if (dbGender) dbQuery = dbQuery.eq("gender", dbGender);
+      }
+      // Support multiple selected states
+      if (selectedStates.length > 0) dbQuery = dbQuery.in("state", selectedStates);
       if (excludeTeamId) dbQuery = dbQuery.neq("id", excludeTeamId);
       const { data, error } = await dbQuery;
       if (error) throw error;
-      setResults((data as TeamData[]) || []);
+      // Transform data to include team_name from display_name
+      const transformed = (data || []).map((row: any) => ({
+        ...row,
+        team_name: row.display_name,
+        // Convert gender to display format
+        gender: GENDER_DISPLAY[row.gender as GenderType] ?? row.gender,
+      }));
+      setResults(transformed as TeamData[]);
     } catch (err) {
       console.error("Search error:", err);
       setResults([]);
@@ -164,12 +165,35 @@ function TeamSelectorModal({
   useEffect(() => {
     const timer = setTimeout(() => searchTeams(searchQuery), 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, selectedAgeGroup, selectedGender, selectedState]);
+  }, [searchQuery, selectedAgeGroup, selectedGender, selectedStates]);
 
   const clearFilters = () => {
     setSelectedAgeGroup("All");
     setSelectedGender("All");
-    setSelectedState("All");
+    setSelectedStates([]);
+    setStateSearchQuery("");
+  };
+
+  // Type-ahead state filter helpers (matching Rankings tab pattern)
+  const filteredStates = useMemo(() => {
+    if (!stateSearchQuery.trim()) return [];
+    const query = stateSearchQuery.toUpperCase().trim();
+    return US_STATES.filter(
+      (state) =>
+        state.includes(query) && !selectedStates.includes(state)
+    ).slice(0, 5); // Max 5 suggestions
+  }, [stateSearchQuery, selectedStates]);
+
+  const addState = (state: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedStates((prev) => [...prev, state]);
+    setStateSearchQuery("");
+    setShowStateSuggestions(false);
+  };
+
+  const removeState = (state: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedStates((prev) => prev.filter((s) => s !== state));
   };
 
   const renderTeamItem = ({ item }: { item: TeamData }) => (
@@ -309,34 +333,63 @@ function TeamSelectorModal({
                 ))}
               </ScrollView>
             </View>
+            {/* State Filter - Type-ahead with chips (matching Rankings tab) */}
             <View style={styles.filterRow}>
               <Text style={styles.filterLabel}>State</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.filterScroll}
-                keyboardShouldPersistTaps="handled"
-              >
-                {STATES.map((s) => (
+              <View style={styles.stateRow}>
+                {/* Selected state chips */}
+                {selectedStates.map((state) => (
                   <TouchableOpacity
-                    key={s}
-                    style={[
-                      styles.filterChip,
-                      selectedState === s && styles.filterChipActive,
-                    ]}
-                    onPress={() => setSelectedState(s)}
+                    key={state}
+                    style={styles.stateChip}
+                    onPress={() => removeState(state)}
                   >
-                    <Text
-                      style={[
-                        styles.filterChipText,
-                        selectedState === s && styles.filterChipTextActive,
-                      ]}
-                    >
-                      {s}
-                    </Text>
+                    <Text style={styles.stateChipText}>{state}</Text>
+                    <Ionicons name="close" size={14} color="#3B82F6" />
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+
+                {/* Type-ahead input */}
+                <TextInput
+                  ref={stateInputRef}
+                  style={styles.stateInput}
+                  placeholder={selectedStates.length === 0 ? "All" : "+"}
+                  placeholderTextColor="#6B7280"
+                  value={stateSearchQuery}
+                  onChangeText={(text) => {
+                    setStateSearchQuery(text.toUpperCase());
+                    setShowStateSuggestions(text.length > 0);
+                  }}
+                  onFocus={() => setShowStateSuggestions(stateSearchQuery.length > 0)}
+                  onBlur={() => {
+                    setTimeout(() => setShowStateSuggestions(false), 150);
+                  }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={2}
+                />
+
+                {/* Horizontal scrollable suggestions */}
+                {showStateSuggestions && filteredStates.length > 0 && (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.stateSuggestionsScroll}
+                    contentContainerStyle={styles.stateSuggestionsContent}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    {filteredStates.map((state) => (
+                      <TouchableOpacity
+                        key={state}
+                        style={styles.stateSuggestionChip}
+                        onPress={() => addState(state)}
+                      >
+                        <Text style={styles.stateSuggestionText}>{state}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
             </View>
             <TouchableOpacity
               style={styles.clearFiltersButton}
@@ -400,6 +453,7 @@ export default function PredictScreen() {
   const [userPredictionSubmitted, setUserPredictionSubmitted] = useState(false);
 
   // Help modals
+  const [showPredictionHelp, setShowPredictionHelp] = useState(false);
   const [showFactorsHelp, setShowFactorsHelp] = useState(false);
   const [showWhatIfHelp, setShowWhatIfHelp] = useState(false);
 
@@ -409,12 +463,18 @@ export default function PredictScreen() {
       if (params.teamId && typeof params.teamId === "string") {
         try {
           const { data, error } = await supabase
-            .from("team_elo")
-            .select("*")
+            .from("app_rankings")
+            .select("id, name, display_name, club_name, birth_year, gender, age_group, state, elo_rating, national_rank, state_rank, gotsport_points, matches_played, wins, losses, draws, has_matches")
             .eq("id", params.teamId)
             .single();
           if (!error && data) {
-            setHomeTeam(data as TeamData);
+            // Transform to include team_name from display_name
+            const transformed = {
+              ...data,
+              team_name: data.display_name,
+              // Keep gender in DB format for now - will convert for display
+            };
+            setHomeTeam(transformed as TeamData);
           }
         } catch (err) {
           console.error("Error loading team:", err);
@@ -475,7 +535,7 @@ export default function PredictScreen() {
       const timer = setTimeout(() => runWhatIfPrediction(), 300);
       return () => clearTimeout(timer);
     }
-  }, [whatIfHomeBoost, whatIfAwayBoost]);
+  }, [showWhatIf, homeTeam, awayTeam, whatIfHomeBoost, whatIfAwayBoost]);
 
   const resetPrediction = () => {
     setHomeTeam(null);
@@ -491,7 +551,51 @@ export default function PredictScreen() {
 
   const sharePrediction = async () => {
     if (!prediction || !homeTeam || !awayTeam) return;
-    const message = `⚽ Match Prediction\n\n${homeTeam.team_name}\nvs\n${awayTeam.team_name}\n\n🎯 Predicted Score: ${prediction.predictedHomeScore} - ${prediction.predictedAwayScore}\n\n${prediction.homeWinProbability > prediction.awayWinProbability ? homeTeam.team_name : awayTeam.team_name} favored (${Math.round(Math.max(prediction.homeWinProbability, prediction.awayWinProbability) * 100)}%)\nDraw: ${Math.round(prediction.drawProbability * 100)}%\n\nConfidence: ${prediction.confidence}\n\n— SoccerView App`;
+
+    // Use club_name if available, otherwise trim team_name for readability
+    const getShortName = (team: TeamData) => {
+      if (team.club_name) return team.club_name;
+      // Take first 20 chars max for share readability
+      const name = team.team_name || "";
+      return name.length > 20 ? name.substring(0, 19) + "…" : name;
+    };
+
+    const homeName = getShortName(homeTeam);
+    const awayName = getShortName(awayTeam);
+    const homeScore = prediction.predictedHomeScore;
+    const awayScore = prediction.predictedAwayScore;
+
+    const homeWin = Math.round(prediction.homeWinProbability * 100);
+    const draw = Math.round(prediction.drawProbability * 100);
+    const awayWin = Math.round(prediction.awayWinProbability * 100);
+
+    // Winner text based on score (now aligned with probabilities)
+    let winnerText: string;
+    if (homeScore > awayScore) {
+      winnerText = `${homeName} wins`;
+    } else if (awayScore > homeScore) {
+      winnerText = `${awayName} wins`;
+    } else {
+      winnerText = "Draw";
+    }
+
+    // Clean, consistent prediction - score and probabilities now aligned
+    const message = `⚽ VS Battle
+
+${homeName} vs ${awayName}
+
+🎯 Predicted: ${homeScore}-${awayScore}
+${winnerText} (${Math.max(homeWin, awayWin, draw)}%)
+
+📊 Win Chances
+${homeName}: ${homeWin}%
+Draw: ${draw}%
+${awayName}: ${awayWin}%
+
+Confidence: ${prediction.confidence}
+
+— SoccerView App`;
+
     try {
       await Share.share({ message });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -508,10 +612,6 @@ export default function PredictScreen() {
   const handleUserPredictionSubmitted = () => {
     setUserPredictionSubmitted(true);
   };
-
-  // Longer team name for display (20 chars)
-  const getDisplayTeamName = (name: string, maxLen = 20) =>
-    name.length <= maxLen ? name : name.substring(0, maxLen - 1) + "…";
 
   const getConfidenceColor = (c: string) => {
     switch (c) {
@@ -577,11 +677,12 @@ export default function PredictScreen() {
           >
             {homeTeam ? (
               <>
-                <Text style={styles.teamCardName} numberOfLines={2}>
+                {/* CLAUDE.md Principle 4: Team names NEVER truncate */}
+                <Text style={styles.teamCardName}>
                   {homeTeam.team_name}
                 </Text>
                 <Text style={styles.teamCardMeta}>
-                  {homeTeam.age_group} {homeTeam.gender}
+                  {homeTeam.age_group} · {GENDER_DISPLAY[homeTeam.gender as GenderType] ?? homeTeam.gender}{homeTeam.state ? ` · ${homeTeam.state}` : ""}
                 </Text>
                 <Text style={styles.teamCardElo}>
                   {Math.round(homeTeam.elo_rating || 1500)} ELO
@@ -603,11 +704,12 @@ export default function PredictScreen() {
           >
             {awayTeam ? (
               <>
-                <Text style={styles.teamCardName} numberOfLines={2}>
+                {/* CLAUDE.md Principle 4: Team names NEVER truncate */}
+                <Text style={styles.teamCardName}>
                   {awayTeam.team_name}
                 </Text>
                 <Text style={styles.teamCardMeta}>
-                  {awayTeam.age_group} {awayTeam.gender}
+                  {awayTeam.age_group} · {GENDER_DISPLAY[awayTeam.gender as GenderType] ?? awayTeam.gender}{awayTeam.state ? ` · ${awayTeam.state}` : ""}
                 </Text>
                 <Text style={styles.teamCardElo}>
                   {Math.round(awayTeam.elo_rating || 1500)} ELO
@@ -648,19 +750,32 @@ export default function PredictScreen() {
               },
             ]}
           >
-            {/* Predicted Score */}
+            {/* Predicted Score - shows What-If label when adjustments are active */}
             <View style={styles.scoreContainer}>
-              <Text style={styles.scoreLabel}>Predicted Score</Text>
+              <View style={styles.scoreLabelRow}>
+                <Text style={styles.scoreLabel}>
+                  {(whatIfHomeBoost !== 0 || whatIfAwayBoost !== 0)
+                    ? "🎲 What-If Score"
+                    : "Predicted Score"}
+                </Text>
+                <TouchableOpacity
+                  style={styles.scoreLabelHelp}
+                  onPress={() => setShowPredictionHelp(true)}
+                >
+                  <Ionicons name="help-circle-outline" size={20} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              {/* CLAUDE.md Principle 4: Team names NEVER truncate */}
               <View style={styles.scoreRow}>
-                <Text style={styles.scoreTeam} numberOfLines={1}>
-                  {getDisplayTeamName(homeTeam?.team_name || "", 12)}
+                <Text style={styles.scoreTeam}>
+                  {homeTeam?.team_name || ""}
                 </Text>
                 <Text style={styles.scoreValue}>
                   {prediction.predictedHomeScore} -{" "}
                   {prediction.predictedAwayScore}
                 </Text>
-                <Text style={styles.scoreTeam} numberOfLines={1}>
-                  {getDisplayTeamName(awayTeam?.team_name || "", 12)}
+                <Text style={styles.scoreTeam}>
+                  {awayTeam?.team_name || ""}
                 </Text>
               </View>
             </View>
@@ -764,6 +879,23 @@ export default function PredictScreen() {
             {/* FIXED: Analytical Factors with wider percentage column */}
             {showFactors && (
               <View style={styles.factorsContainer}>
+                {/* Legend row showing which team each color represents */}
+                {/* CLAUDE.md Principle 4: Team names NEVER truncate */}
+                <View style={styles.factorsLegend}>
+                  <View style={styles.factorsLegendItem}>
+                    <View style={[styles.factorsLegendDot, { backgroundColor: "#22c55e" }]} />
+                    <Text style={styles.factorsLegendText}>
+                      {homeTeam?.team_name || "Team A"}
+                    </Text>
+                  </View>
+                  <View style={styles.factorsLegendDivider} />
+                  <View style={styles.factorsLegendItem}>
+                    <View style={[styles.factorsLegendDot, { backgroundColor: "#ef4444" }]} />
+                    <Text style={styles.factorsLegendText}>
+                      {awayTeam?.team_name || "Team B"}
+                    </Text>
+                  </View>
+                </View>
                 {getDisplayFactors().map((f, i) => (
                   <View key={i} style={styles.factorRow}>
                     <Text style={styles.factorName}>{f.name}</Text>
@@ -831,7 +963,8 @@ export default function PredictScreen() {
                         { backgroundColor: "#22c55e" },
                       ]}
                     />
-                    <Text style={styles.sliderTeamName} numberOfLines={1}>
+                    {/* CLAUDE.md Principle 4: Team names NEVER truncate */}
+                    <Text style={styles.sliderTeamName}>
                       {homeTeam?.team_name || "Team A"}
                     </Text>
                   </View>
@@ -871,7 +1004,8 @@ export default function PredictScreen() {
                         { backgroundColor: "#3B82F6" },
                       ]}
                     />
-                    <Text style={styles.sliderTeamName} numberOfLines={1}>
+                    {/* CLAUDE.md Principle 4: Team names NEVER truncate */}
+                    <Text style={styles.sliderTeamName}>
                       {awayTeam?.team_name || "Team B"}
                     </Text>
                   </View>
@@ -925,20 +1059,9 @@ export default function PredictScreen() {
                       Your Prediction Locked In!
                     </Text>
                     <Text style={styles.predictionSubmittedSubtitle}>
-                      Earn points when results come in
+                      We'll track this matchup for you
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => router.push("/leaderboard")}
-                    style={styles.viewLeaderboardLink}
-                  >
-                    <Text style={styles.viewLeaderboardText}>Leaderboard</Text>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={16}
-                      color="#3B82F6"
-                    />
-                  </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity
@@ -952,7 +1075,7 @@ export default function PredictScreen() {
                         Make YOUR Prediction
                       </Text>
                       <Text style={styles.makeMyPredictionSubtitle}>
-                        Guess the score & earn points on the leaderboard
+                      Lock in your predicted score before the match
                       </Text>
                     </View>
                   </View>
@@ -995,7 +1118,8 @@ export default function PredictScreen() {
         excludeTeamId={awayTeam?.id}
         title="Select Team A"
         suggestedAgeGroup={awayTeam?.age_group ?? undefined}
-        suggestedGender={awayTeam?.gender ?? undefined}
+        // Convert gender from DB format (M/F) to display format (Boys/Girls)
+        suggestedGender={awayTeam?.gender ? (GENDER_DISPLAY[awayTeam.gender as GenderType] ?? awayTeam.gender) : undefined}
         suggestedState={awayTeam?.state ?? undefined}
       />
       <TeamSelectorModal
@@ -1005,7 +1129,8 @@ export default function PredictScreen() {
         excludeTeamId={homeTeam?.id}
         title="Select Opponent"
         suggestedAgeGroup={homeTeam?.age_group ?? undefined}
-        suggestedGender={homeTeam?.gender ?? undefined}
+        // Convert gender from DB format (M/F) to display format (Boys/Girls)
+        suggestedGender={homeTeam?.gender ? (GENDER_DISPLAY[homeTeam.gender as GenderType] ?? homeTeam.gender) : undefined}
         suggestedState={homeTeam?.state ?? undefined}
       />
 
@@ -1029,6 +1154,91 @@ export default function PredictScreen() {
           onPredictionSubmitted={handleUserPredictionSubmitted}
         />
       )}
+
+      {/* Prediction Help Modal - Explains how the prediction is calculated */}
+      <Modal
+        visible={showPredictionHelp}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPredictionHelp(false)}
+      >
+        <View style={styles.helpModalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowPredictionHelp(false)}
+          />
+          <View
+            style={[
+              styles.helpModalContent,
+              { height: Dimensions.get("window").height * 0.7 },
+            ]}
+          >
+            <View style={styles.helpModalHeader}>
+              <Text style={styles.helpModalTitle}>🎯 How Predictions Work</Text>
+              <TouchableOpacity onPress={() => setShowPredictionHelp(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 32,
+              }}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+            >
+              <Text style={styles.helpModalDescription}>
+                Our prediction engine uses a unified algorithm that analyzes multiple
+                factors to generate both the win probability and predicted score.
+              </Text>
+
+              <View style={styles.helpFactorItem}>
+                <Text style={styles.helpFactorName}>📊 Win Probability</Text>
+                <Text style={styles.helpFactorDesc}>
+                  The percentage chance each team has to win, based on weighted
+                  analysis of ELO rating, goal differential, win rate, and other factors.
+                </Text>
+              </View>
+
+              <View style={styles.helpFactorItem}>
+                <Text style={styles.helpFactorName}>🎯 Predicted Score</Text>
+                <Text style={styles.helpFactorDesc}>
+                  The most likely scoreline if the match were played today. The
+                  predicted winner always matches the team with the highest win
+                  probability.
+                </Text>
+              </View>
+
+              <View style={styles.helpFactorItem}>
+                <Text style={styles.helpFactorName}>⚖️ Factor Weights</Text>
+                <Text style={styles.helpFactorDesc}>
+                  ELO Rating (40%) • Goal Diff (20%) • Win Rate (15%) • Awards (10%)
+                  • Rankings (10%) • Experience (5%)
+                </Text>
+              </View>
+
+              <View style={styles.helpFactorItem}>
+                <Text style={styles.helpFactorName}>🏠 Home Advantage</Text>
+                <Text style={styles.helpFactorDesc}>
+                  A 3% boost is applied to the first team selected (Team A) to
+                  account for typical home-field advantage.
+                </Text>
+              </View>
+
+              <View style={styles.helpFactorItem}>
+                <Text style={styles.helpFactorName}>📈 Confidence Level</Text>
+                <Text style={styles.helpFactorDesc}>
+                  Based on data quality: teams with more matches played, known
+                  rankings, and complete stats produce higher confidence predictions.
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* FIXED: Analytical Factors Help Modal - Restructured for proper scrolling */}
       <Modal
@@ -1233,15 +1443,22 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.1)",
   },
   scoreContainer: { alignItems: "center", marginBottom: 24 },
-  scoreLabel: { color: "#9ca3af", fontSize: 14, marginBottom: 8 },
+  scoreLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  scoreLabel: { color: "#9ca3af", fontSize: 14 },
+  scoreLabelHelp: { marginLeft: 6, padding: 2 },
   scoreRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     width: "100%",
   },
-  scoreTeam: { color: "#9ca3af", fontSize: 12, flex: 1, textAlign: "center" },
-  scoreValue: { color: "#fff", fontSize: 36, fontWeight: "bold" },
+  scoreTeam: { color: "#9ca3af", fontSize: 12, flex: 1, textAlign: "center", paddingHorizontal: 8 },
+  scoreValue: { color: "#fff", fontSize: 36, fontWeight: "bold", marginHorizontal: 12 },
   probabilityContainer: { marginBottom: 20 },
   probabilityLabel: {
     color: "#9ca3af",
@@ -1315,6 +1532,45 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.1)",
   },
+  // Legend showing which team each bar color represents
+  // CLAUDE.md Principle 4: Team names NEVER truncate - legend wraps vertically if needed
+  factorsLegend: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    marginBottom: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 8,
+    flexWrap: "wrap",
+  },
+  factorsLegendItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    flex: 1,
+    minWidth: 100,
+  },
+  factorsLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
+    marginTop: 3,
+  },
+  factorsLegendText: {
+    color: "#d1d5db",
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+  factorsLegendDivider: {
+    width: 1,
+    alignSelf: "stretch",
+    minHeight: 16,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginHorizontal: 12,
+  },
   factorRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   factorName: { color: "#9ca3af", fontSize: 12, width: 90 },
   factorBarContainer: {
@@ -1328,19 +1584,26 @@ const styles = StyleSheet.create({
   // FIXED: Wider width for percentage to prevent wrapping
   factorValue: { color: "#fff", fontSize: 12, width: 50, textAlign: "right" },
 
+  // J-4 FIX: Improved What-If section styling
   whatIfContainer: {
     marginTop: 12,
-    paddingTop: 12,
+    paddingTop: 16,
+    paddingHorizontal: 4,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.1)",
+    borderTopColor: "rgba(245, 158, 11, 0.2)",
+    backgroundColor: "rgba(245, 158, 11, 0.03)",
+    borderRadius: 12,
+    marginHorizontal: -4,
+    paddingBottom: 12,
   },
   whatIfDescription: {
-    color: "#9ca3af",
-    fontSize: 12,
+    color: "#d1d5db",
+    fontSize: 13,
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 20,
+    lineHeight: 18,
   },
-  sliderContainer: { marginBottom: 20 },
+  sliderContainer: { marginBottom: 24 },
   sliderLabelRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1372,8 +1635,17 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginLeft: 8,
   },
-  resetWhatIfButton: { alignItems: "center", paddingVertical: 8 },
-  resetWhatIfText: { color: "#6b7280", fontSize: 13 },
+  // J-4 FIX: Better reset button styling
+  resetWhatIfButton: { 
+    alignItems: "center", 
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(107, 114, 128, 0.15)",
+    borderRadius: 8,
+    alignSelf: "center",
+    marginTop: 8,
+  },
+  resetWhatIfText: { color: "#9ca3af", fontSize: 13, fontWeight: "500" },
 
   // User Prediction Section
   userPredictionSection: {
@@ -1439,16 +1711,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  viewLeaderboardLink: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  viewLeaderboardText: {
-    color: "#3B82F6",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
   newPredictionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1576,9 +1838,71 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  filterRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  filterLabel: { color: "#9ca3af", fontSize: 12, width: 50 },
+  filterRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 8 },
+  // Fixed width to prevent label wrapping (Gender was wrapping to "Gende r")
+  filterLabel: { color: "#fff", fontSize: 13, width: 60, fontWeight: "600", paddingTop: 6 },
   filterScroll: { flex: 1, marginLeft: 8 },
+
+  // State filter - type-ahead with chips (matching Rankings tab)
+  stateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    flex: 1,
+    marginLeft: 8,
+    gap: 6,
+    rowGap: 6,
+  },
+  stateChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(59, 130, 246, 0.15)",
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingLeft: 10,
+    paddingRight: 6,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: "rgba(59, 130, 246, 0.3)",
+  },
+  stateChipText: {
+    color: "#3B82F6",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  stateInput: {
+    backgroundColor: "#1F2937",
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    color: "#fff",
+    fontSize: 13,
+    width: 44,
+    textAlign: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  stateSuggestionsScroll: {
+    flexShrink: 1,
+    flexGrow: 1,
+  },
+  stateSuggestionsContent: {
+    gap: 6,
+    paddingRight: 8,
+  },
+  stateSuggestionChip: {
+    backgroundColor: "#374151",
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  stateSuggestionText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "500",
+  },
   filterChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -1589,8 +1913,18 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: "#3B82F6" },
   filterChipText: { color: "#9ca3af", fontSize: 12 },
   filterChipTextActive: { color: "#fff" },
-  clearFiltersButton: { alignSelf: "flex-end", paddingVertical: 4 },
-  clearFiltersText: { color: "#ef4444", fontSize: 12 },
+  // F-3 FIX: Consistent Clear Filters button styling
+  clearFiltersButton: { 
+    alignSelf: "flex-end", 
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+    marginTop: 4,
+  },
+  clearFiltersText: { color: "#ef4444", fontSize: 13, fontWeight: "600" },
   loadingContainer: { padding: 40, alignItems: "center" },
   resultsList: { flex: 1, paddingHorizontal: 16 },
   teamResultItem: {

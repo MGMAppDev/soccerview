@@ -1,15 +1,21 @@
 /**
- * captureRankSnapshot.js - v3.0 V2 ARCHITECTURE
+ * captureRankSnapshot.js - v3.1 V2 ARCHITECTURE
  *
  * Captures a daily snapshot of all team rankings for the "Ranking Journey" feature.
  * Called by GitHub Actions cron job daily at 6 AM UTC.
  *
+ * UNIVERSAL: Captures rank data from ANY source - no source-specific logic.
+ * All rank columns are captured if available, NULL if not.
+ *
+ * V3.1: Added SoccerView rank positions (elo_national_rank, elo_state_rank)
+ *   - REQUIRES: Migration 050_add_elo_rank_history_columns.sql
+ *   - Captures both GotSport ranks AND SoccerView ELO-based ranks
+ *
  * V3.0: Updated for V2 architecture
  *   - Uses teams_v2 instead of team_elo view
  *   - Writes to rank_history_v2 instead of rank_history
- *   - Captures both GotSport ranks and ELO ranks
  *
- * @version 3.0.0
+ * @version 3.1.0
  * @date January 2026
  */
 
@@ -66,7 +72,7 @@ async function captureRankSnapshot() {
       // Capture teams with either GotSport rank OR matches played (have ELO)
       const { data: teams, error: fetchError } = await supabase
         .from("teams_v2")
-        .select("id, national_rank, state_rank, elo_rating")
+        .select("id, national_rank, state_rank, elo_rating, elo_national_rank, elo_state_rank")
         .or("national_rank.not.is.null,matches_played.gt.0")
         .order("id", { ascending: true })
         .range(offset, offset + CONFIG.PAGE_SIZE - 1);
@@ -82,14 +88,15 @@ async function captureRankSnapshot() {
       }
 
       // Transform to rank_history_v2 records
-      // Note: rank_history_v2 stores elo_rating, national_rank, state_rank
-      // ELO ranks can be derived from elo_rating if needed
+      // Captures both GotSport ranks AND SoccerView ELO-based ranks
       const snapshots = teams.map(team => ({
         team_id: team.id,
         snapshot_date: today,
-        national_rank: team.national_rank,
-        state_rank: team.state_rank,
-        elo_rating: team.elo_rating,
+        national_rank: team.national_rank,           // GotSport national rank
+        state_rank: team.state_rank,                 // GotSport state rank
+        elo_rating: team.elo_rating,                 // SoccerView ELO rating
+        elo_national_rank: team.elo_national_rank,   // SoccerView national rank
+        elo_state_rank: team.elo_state_rank,         // SoccerView state rank
       }));
 
       // Insert batch to rank_history_v2
