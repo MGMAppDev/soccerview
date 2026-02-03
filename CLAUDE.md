@@ -1,8 +1,14 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 7.7** | Last Updated: January 31, 2026 | Session 67 Complete
+> **Version 8.9** | Last Updated: February 2, 2026 | Session 79 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
+
+---
+
+## 🚨 READ FIRST: [GUARDRAILS](docs/1.1-GUARDRAILS_v2.md)
+
+**MANDATORY pre-flight checklist before ANY action.** Contains absolute rules, universal patterns, and common mistakes to avoid.
 
 ---
 
@@ -10,16 +16,17 @@
 
 | Document | Purpose |
 |----------|---------|
-| [docs/UNIVERSAL_DATA_QUALITY_SPEC.md](docs/UNIVERSAL_DATA_QUALITY_SPEC.md) | **ACTIVE** Data quality system spec |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | V2 database architecture (3-layer design) |
-| [docs/DATA_SCRAPING_PLAYBOOK.md](docs/DATA_SCRAPING_PLAYBOOK.md) | How to add new data sources |
-| [docs/DATA_EXPANSION_ROADMAP.md](docs/DATA_EXPANSION_ROADMAP.md) | Priority queue for expansion |
-| [docs/PHASE1_AUDIT_REPORT.md](docs/PHASE1_AUDIT_REPORT.md) | Universal Pipeline audit (135+ scripts) |
-| [docs/PHASE2_FRAMEWORK_DESIGN.md](docs/PHASE2_FRAMEWORK_DESIGN.md) | Universal Pipeline architecture |
-| [docs/UI_PATTERNS.md](docs/UI_PATTERNS.md) | Mandatory UI patterns |
-| [docs/SESSION_HISTORY.md](docs/SESSION_HISTORY.md) | All past session summaries |
+| [docs/1.1-GUARDRAILS_v2.md](docs/1.1-GUARDRAILS_v2.md) | **🚨 MANDATORY** Pre-flight checklist & absolute rules |
+| [docs/1.2-ARCHITECTURE.md](docs/1.2-ARCHITECTURE.md) | V2 database architecture (3-layer design) |
+| [docs/1.3-SESSION_HISTORY.md](docs/1.3-SESSION_HISTORY.md) | All past session summaries |
+| [docs/2-UNIVERSAL_DATA_QUALITY_SPEC.md](docs/2-UNIVERSAL_DATA_QUALITY_SPEC.md) | **ACTIVE** Data quality system spec |
+| [docs/2-RANKING_METHODOLOGY.md](docs/2-RANKING_METHODOLOGY.md) | ELO ranking calculation methodology |
+| [docs/3-DATA_SCRAPING_PLAYBOOK.md](docs/3-DATA_SCRAPING_PLAYBOOK.md) | How to add new data sources |
+| [docs/3-DATA_EXPANSION_ROADMAP.md](docs/3-DATA_EXPANSION_ROADMAP.md) | Priority queue for expansion |
+| [docs/3-UI_PATTERNS.md](docs/3-UI_PATTERNS.md) | Mandatory UI patterns |
+| [docs/3-UI_PROTECTION_PROTOCOL.md](docs/3-UI_PROTECTION_PROTOCOL.md) | UI backup/recovery procedures |
+| [docs/4-LAUNCH_PLAN.md](docs/4-LAUNCH_PLAN.md) | Marketing messages & launch checklist |
 | [docs/_archive/](docs/_archive/) | Completed project documents |
-| [docs/LAUNCH_PLAN.md](docs/LAUNCH_PLAN.md) | Marketing messages & launch checklist |
 
 ---
 
@@ -70,7 +77,7 @@ Scrapers → SoccerView DB → ELO Calculation → App
 Scrapers → staging_games → validationPipeline.js → matches_v2 → app_views → App
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
+See [docs/1-ARCHITECTURE.md](docs/1-ARCHITECTURE.md) for full details.
 
 ### 4. Team Names Never Truncate
 
@@ -104,13 +111,46 @@ Every data decision must pass this test:
 
 ### 6. Scheduled Matches Are Critical
 
-**Scheduled/future matches (0-0 scores) are NOT garbage.** They populate:
+**Scheduled/future matches (NULL scores) are NOT garbage.** They populate:
 - **Team Details "Upcoming" section** - Parents want to see next games
 - **app_upcoming_schedule view** - Powers the upcoming matches feature
 
-**NEVER delete a match just because it has 0-0 score.** Only delete if:
+**NEVER delete a match just because it has no scores.** Only delete if:
 - Match date is impossibly far in future (2027+)
 - Match is clearly invalid (U1/U2 age groups, etc.)
+
+### 6b. NULL Scores vs 0-0 Scores (Session 72)
+
+**CRITICAL:** Scheduled matches MUST have NULL scores, not 0-0.
+
+| Match Type | home_score | away_score | App Behavior |
+|------------|------------|------------|--------------|
+| Scheduled | `NULL` | `NULL` | Shows in "Upcoming" section |
+| Played (0-0 tie) | `0` | `0` | Shows in "Recent" section |
+| Played (with goals) | `3` | `1` | Shows in "Recent" section |
+
+**Why this matters:**
+The app determines upcoming vs recent matches using this logic:
+```javascript
+const hasScores = match.home_score !== null && match.away_score !== null &&
+                  (match.home_score > 0 || match.away_score > 0);
+if (hasScores || matchDate < now) {
+  recent.push(match);  // Played match
+} else {
+  upcoming.push(match);  // Scheduled match (NULL scores + future date)
+}
+```
+
+**Bug fixed in Session 72:**
+- `validationPipeline.js` and `dataQualityEngine.js` were converting NULL to 0
+- This made 9,210 scheduled matches appear as played 0-0 games
+- Fix: Remove `?? 0` fallback, preserve NULL for scheduled matches
+
+**Pipeline requirements:**
+1. Scrapers/adapters: Return NULL for matches without scores
+2. Validation pipeline: NEVER convert NULL to 0
+3. Database schema: `home_score` and `away_score` columns allow NULL
+4. App: Use NULL check to distinguish scheduled from played
 
 ### 7. Upcoming Section Data Integrity
 
@@ -198,7 +238,7 @@ This applies to:
 - Source-specific normalizer functions
 - Any code that "works for now" but won't scale
 
-See [docs/UNIVERSAL_DATA_QUALITY_SPEC.md](docs/UNIVERSAL_DATA_QUALITY_SPEC.md) for full specification.
+See [docs/2-UNIVERSAL_DATA_QUALITY_SPEC.md](docs/2-UNIVERSAL_DATA_QUALITY_SPEC.md) for full specification.
 
 ### 12. Optimize for Speed and Accuracy
 
@@ -332,7 +372,7 @@ const matchQuery = `
 ```
 
 **Before ANY database query in app code, verify:**
-1. Table/view exists in V2 schema (check `docs/ARCHITECTURE.md`)
+1. Table/view exists in V2 schema (check `docs/1-ARCHITECTURE.md`)
 2. Column names match V2 schema (not V1)
 3. Use proper Supabase joins for related data
 
@@ -343,44 +383,319 @@ const matchQuery = `
 
 ### 17. UI Protection Protocol (Session 67)
 
-**CRITICAL:** UI files are PROTECTED ARTIFACTS. They require mandatory backups before any modification.
+**UI files are PROTECTED ARTIFACTS.** Always backup before editing.
 
-**LOCKED UI COMPONENTS:**
-
-| Component | File | Golden Archive |
-|-----------|------|----------------|
-| Team Details | `app/team/[id].tsx` | `ui-archives/team-details/v1.0_golden_2026-01-31.tsx` |
-| Rankings | `app/(tabs)/rankings.tsx` | `ui-archives/rankings/v1.0_golden_2026-01-31.tsx` |
-| Matches | `app/(tabs)/matches.tsx` | `ui-archives/matches/v1.0_golden_2026-01-31.tsx` |
-| Teams | `app/(tabs)/teams.tsx` | `ui-archives/teams/v1.0_golden_2026-01-31.tsx` |
-| Home | `app/(tabs)/index.tsx` | `ui-archives/home/v1.0_golden_2026-01-31.tsx` |
-
-**MANDATORY PRE-EDIT PROTOCOL:**
-
-Before touching ANY file in `/app/` or `/components/`:
-
-1. **CREATE BACKUP**: `node scripts/ui-backup.js app/team/[id].tsx`
-2. **READ FULL FILE**: Understand existing structure before changes
-3. **MINIMAL CHANGES ONLY**: Fix specific issue, do NOT refactor
-4. **TEST**: Verify UI renders correctly after each change
-
-**FORBIDDEN OPERATIONS:**
-- ❌ `git checkout HEAD -- app/**/*.tsx` (WIPES UNCOMMITTED WORK)
-- ❌ `git reset` on UI files
-- ❌ Rewriting entire components
-- ❌ Changing data types/interfaces without mapping
-- ❌ Removing features to "simplify"
-
-**DISASTER RECOVERY:**
 ```bash
-# List available versions
-node scripts/ui-restore.js team-details
-
-# Restore golden version
-node scripts/ui-restore.js team-details golden
+node scripts/ui-backup.js app/team/[id].tsx  # Before ANY edit
+node scripts/ui-restore.js team-details golden  # Disaster recovery
 ```
 
-**Archive Location:** `ui-archives/ARCHIVE_INDEX.md`
+See [docs/3-UI_PROTECTION_PROTOCOL.md](docs/3-UI_PROTECTION_PROTOCOL.md) for full protocol, locked files list, and recovery procedures.
+
+### 18. Rank Calculation - Consistent Baseline (Session 70)
+
+**Historical ranks MUST use a CONSISTENT BASELINE.**
+
+| Approach | Problem | Correct |
+|----------|---------|---------|
+| Pool-relative | Early season = few teams = artificially high ranks | ❌ |
+| Consistent baseline | Rank each ELO against TODAY's full pool | ✅ |
+
+**Why:** A team's rank should reflect their strength relative to ALL teams, not just teams that happened to have data on that date.
+
+**Implementation:**
+```sql
+-- For each historical ELO value, count teams with higher ELO in current pool
+SELECT COUNT(*) + 1 as rank
+FROM teams_v2
+WHERE birth_year = $1 AND gender = $2
+  AND matches_played > 0
+  AND elo_rating > $historical_elo
+```
+
+**Result:** Rankings are meaningful and comparable across time.
+- ELO 1558 → #304 (top 7% of 4,405 teams)
+- ELO 1469 → #3,551 (bottom 20%)
+
+**Script:** `scripts/maintenance/recalculateHistoricalRanks.cjs`
+
+### 19. Library Selection - Switch When Failing (Session 71)
+
+**When extensive debugging fails, switch libraries.**
+
+| Situation | Action |
+|-----------|--------|
+| 2+ hours debugging library issues | Consider alternatives |
+| GitHub issues show known problems | Use different library |
+| Working code exists for similar task | Adapt existing pattern |
+
+**Example (Session 71):**
+- `react-native-gifted-charts` multi-line overlay: 10+ hours of failures
+- `react-native-chart-kit` same task: Working in 30 minutes
+
+**Chart Library Selection:**
+
+| Use Case | Library |
+|----------|---------|
+| Single line chart | `react-native-gifted-charts` |
+| Multi-line compare/overlay | `react-native-chart-kit` |
+| Inverted Y-axis (rank charts) | Custom SVG |
+
+**Anti-patterns:**
+- ❌ Spending 10+ hours making a library do something it struggles with
+- ❌ Ignoring GitHub issues documenting known problems
+- ❌ Not checking if another library is already imported and working
+
+### 20. Division Detection Regex - Universal Pattern (Session 74)
+
+**Problem:** HTGSports scraper only found 1 division when 38 existed because the regex required a dash (`U-11`) but the site used format without dash (`U11`).
+
+**Root Cause:** Regex `/U-\d+|2017|2016.../` required hyphen. Many sources use `U11`, `U09` (no dash).
+
+**Universal Pattern:**
+```javascript
+// ❌ WRONG - Only matches "U-11" with required dash
+divisionPattern: /U-\d+|2017|2016|2015|2014|2013|2012|2011|2010/i
+
+// ✅ CORRECT - Matches both "U11" AND "U-11" with optional dash
+divisionPattern: /U-?\d{1,2}\b|20[01]\d/i
+```
+
+**Pattern breakdown:**
+- `U-?` - "U" followed by optional dash
+- `\d{1,2}` - One or two digits (U9 through U19)
+- `\b` - Word boundary (prevents matching "U115" in a team name)
+- `20[01]\d` - Birth years 2000-2019
+
+**Impact:** Scraper now finds all 38 divisions instead of 1. This is a universal fix for ANY source.
+
+**Prevention:**
+1. Always use `?` for optional characters in division patterns
+2. Use `\b` word boundary to avoid partial matches
+3. Test regex against real page content before deployment
+
+### 21. Checkpoint Logic - Only Mark Processed When Data Found (Session 74)
+
+**Problem:** Scraper marked events as "processed" even when 0 matches were found, causing them to be skipped on future runs.
+
+**Root Cause:** Checkpoint update happened unconditionally after scraping each event, regardless of whether matches were found.
+
+**Universal Fix:**
+```javascript
+// ❌ WRONG - Marks processed even with no data
+await scrapeEvent(eventId);
+checkpoint.processedEvents.push(eventId);  // Always marks processed
+
+// ✅ CORRECT - Only mark processed when data found
+const matches = await scrapeEvent(eventId);
+if (matches.length > 0) {
+  checkpoint.processedEvents.push(eventId);  // Only if data exists
+}
+```
+
+**Why this matters:**
+- Network issues may cause temporary empty results
+- Page structure changes may cause scraper to find 0 matches
+- Incorrect checkpoint = event never scraped again = permanent data loss
+
+**Prevention:**
+1. Checkpoint updates MUST be conditional on `matches.length > 0`
+2. Log when 0 matches found for investigation
+3. Consider retry logic before skipping events
+
+### 22. Team Name Variations - Same Team, Different Names (Session 74)
+
+**Problem:** Same team appears with different names across events:
+- Tournament: "SBV Pre-NAL 15" (abbreviated)
+- League: "Sporting Blue Valley SPORTING BV Pre-NAL 15 (U11 Boys)" (full)
+
+**Impact:** Creates duplicate team entries with fragmented match history, causing incorrect rankings.
+
+**Detection:**
+When investigating missing matches, check for name variations:
+```javascript
+// Look for partial matches
+await supabase.from('teams_v2')
+  .select('id, display_name')
+  .ilike('display_name', '%SBV%Pre-NAL%15%');
+```
+
+**Resolution:**
+Use `scripts/maintenance/mergeTeams.js`:
+```bash
+node scripts/maintenance/mergeTeams.js --find "SBV Pre-NAL 15"
+# Shows both entries with match counts
+node scripts/maintenance/mergeTeams.js --keep <canonical-id> --merge <duplicate-id> --execute
+```
+
+**Prevention:**
+1. Canonical registry should store aliases for known variations
+2. Fuzzy matching should catch common abbreviations
+3. After tournament scrapes, run deduplication check
+
+**Common Abbreviation Patterns:**
+- "Sporting Blue Valley" → "SBV"
+- "Kansas City" → "KC"
+- "FC" sometimes omitted or added
+
+### 23. Real-Time Data for Team Details - Never Trust Pre-Computed Values (Session 75)
+
+**Problem:** Team Details page showed inconsistent data because different sections used different data sources:
+- Season Stats: Used pre-computed `teams_v2.matches_played/wins/losses/draws` (batch-computed)
+- Match History: Queried `matches_v2` directly (real-time)
+- Power Rating: Used `app_team_profile` view (depends on view refresh)
+
+**Impact:** When ELO script or view refresh hasn't run, users see different numbers in different sections.
+
+**Example:**
+- Season Stats: 14 matches (6W-7L-1D) - STALE
+- Match History: 19 matches (10W-7L-2D) - REAL-TIME
+- Power Rating: ELO 1,469, #3,689 - STALE (should be 1,528, #859)
+
+**Root Cause:** App relied on batch-computed values and materialized views instead of querying source tables.
+
+**Universal Fix - Layer 3 (Presentation):**
+All data that can be stale must be fetched directly from source tables:
+
+```typescript
+// ✅ Season Stats - Query matches_v2 directly
+const { data: homeStats } = await supabase
+  .from("matches_v2")
+  .select("home_score, away_score")
+  .eq("home_team_id", id)
+  .not("home_score", "is", null)
+  .gte("match_date", seasonStart);
+
+// Calculate W-L-D from real match data
+homeStats.forEach(m => {
+  if (m.home_score > m.away_score) statsWins++;
+  else if (m.home_score < m.away_score) statsLosses++;
+  else statsDraws++;
+});
+
+// ✅ Power Rating - Query teams_v2 directly (bypass stale view)
+const { data: eloData } = await supabase
+  .from("teams_v2")
+  .select("elo_rating, elo_national_rank, elo_state_rank")
+  .eq("id", id)
+  .single();
+
+if (eloData) {
+  setTeam(prev => ({ ...prev, ...eloData }));
+}
+```
+
+**Three-Layer Verification:**
+
+| Layer | Component | Status |
+|-------|-----------|--------|
+| Layer 1 (Intake) | Scrapers | ✅ Correctly insert to staging |
+| Layer 2 (Processing) | ELO Script | ✅ Runs nightly, updates teams_v2 |
+| Layer 3 (Presentation) | App | ✅ **FIXED** - Queries source tables directly |
+
+**Why This Is Universal:**
+1. Works for ANY team from ANY data source
+2. Always reflects current database state
+3. Bypasses materialized views that can be stale
+4. No dependency on view refresh timing
+5. Lightweight queries (no joins) for performance
+
+**Files Modified:**
+- [app/team/[id].tsx](app/team/[id].tsx) - Real-time queries for Season Stats + Power Rating
+
+### 24. Orphans Are Coverage Gaps - NOT Duplicates (Session 78)
+
+**CRITICAL:** Teams with GotSport points but 0 matches are almost always playing in leagues we don't scrape - NOT duplicates of existing teams.
+
+**The Wrong Assumption:**
+```
+"Team has GotSport points but 0 matches"
+→ "Must be a duplicate of a team we DO have matches for"
+→ "Use fuzzy matching to merge them"
+❌ WRONG - This merges DIFFERENT teams with DIFFERENT birth years!
+```
+
+**The Reality:**
+```
+"Team has GotSport points but 0 matches"
+→ "Team plays in a league/tournament we don't scrape"
+→ "No amount of merging will fix this"
+✅ CORRECT - Need to expand data coverage to that league
+```
+
+**Evidence (Session 78 Analysis):**
+
+| State | Teams with Matches | Orphans | Coverage |
+|-------|-------------------|---------|----------|
+| TX | 4,891 | 765 | 86.5% |
+| KS | 879 | 175 | 83.4% |
+| GA | 1,034 | 4,107 | **20.2%** |
+| SC | 405 | 1,511 | **21.2%** |
+| NC | 591 | 2,057 | **22.3%** |
+
+States with low coverage contribute the most orphans. Merging won't fix this.
+
+**Birth Year CANNOT Be Ignored:**
+```javascript
+// ❌ WRONG - These look similar but are DIFFERENT TEAMS
+"Sporting BV Pre-NAL 2014B" → birth_year: 2014 → U12
+"Sporting BV Pre-NAL 15"    → birth_year: 2015 → U11
+
+// They play in DIFFERENT AGE GROUPS - never merge them!
+```
+
+**Correct Approach:**
+1. **Fix birth_year inconsistencies** - Ensure team metadata is accurate
+2. **Expand data coverage** - Scrape leagues in low-coverage states
+3. **Accept some orphans** - Until coverage improves, some teams will remain orphans
+
+**Anti-patterns to reject:**
+- ❌ Fuzzy matching that ignores birth_year differences
+- ❌ "Aggressive" merging based only on club name similarity
+- ❌ Assuming all orphans have duplicates in the database
+- ❌ One-time fixes instead of systemic coverage expansion
+
+**Files Created:**
+- `scripts/_debug/analyze_orphan_root_cause.cjs` - Diagnostic showing coverage gaps
+- `scripts/maintenance/fixBirthYearFromNames.cjs` - Safe birth_year fix with conflict detection
+
+### 25. ONE Pipeline, ONE Path - No Alternatives (Session 79)
+
+**CRITICAL:** ALL data MUST flow through the same pipeline. No exceptions. No bypasses.
+
+**The V2 Architecture Enforcement:**
+```
+Scrapers → staging_games → intakeValidator → dataQualityEngine → production
+              ↓ (garbage)
+         staging_rejected
+```
+
+**There is NO alternative path:**
+- ❌ No direct writes to teams_v2/matches_v2
+- ❌ No fallback to validationPipeline.js (archived)
+- ❌ No emergency batchProcessStaging.js (archived)
+- ❌ No "quick fix" scripts that bypass normalizers
+
+**Enforcement Points:**
+1. **Intake Validation Gate** - `intakeValidator.js` rejects garbage BEFORE staging
+2. **Single Processor** - `dataQualityEngine.js` is THE ONLY staging→production path
+3. **Integrity Verification** - `verifyDataIntegrity.js` catches issues AUTOMATICALLY
+
+**Why This Matters (Session 76 Root Cause):**
+The GotSport rankings scraper wrote directly to teams_v2, bypassing:
+- Normalizers (didn't remove duplicate prefixes like "One FC One FC")
+- Canonical registries (didn't register teams for deduplication)
+- Result: 57,532 orphaned teams with GS rank but no matches
+
+**Prevention:**
+- ALL imports must go through staging → dataQualityEngine → production
+- Database triggers can block unauthorized direct writes (Phase 3)
+- Integrity verification catches issues before users report them
+
+**Files for Pipeline Enforcement:**
+- `scripts/universal/intakeValidator.js` - Pre-staging validation
+- `scripts/universal/dataQualityEngine.js` - THE processor
+- `scripts/daily/verifyDataIntegrity.js` - Post-processing checks
 
 ---
 
@@ -390,16 +705,17 @@ node scripts/ui-restore.js team-details golden
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 147,794 | Team records (100% have club_id) |
-| `matches_v2` | 304,624 | Match results |
+| `teams_v2` | 148,391 | Team records (Session 77: -1,710 merged) |
+| `matches_v2` | 314,852 | Match results |
 | `clubs` | 124,650 | Club organizations |
 | `leagues` | 280 | League metadata (38 with state) |
 | `tournaments` | 1,728 | Tournament metadata |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
-| `canonical_teams` | 19,271 | Canonical team registry (Session 62) |
+| `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
 | `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
-| `staging_games` | 41,095 | Staging area (0 unprocessed) |
+| `staging_games` | 86,491 | Staging area (7,940 unprocessed) |
+| `staging_rejected` | 1 | Rejected intake data (Session 79) |
 | `seasons` | 3 | Season definitions |
 
 ### Materialized Views (App Queries)
@@ -528,10 +844,12 @@ DATABASE_URL
 | Script | Purpose |
 |--------|---------|
 | `syncActiveEvents.js` | GotSport data collection |
-| `validationPipeline.js` | Staging → Production |
+| `verifyDataIntegrity.js` | **NEW (Session 79)** Post-processing checks |
 | `recalculate_elo_v2.js` | ELO calculation |
 | `scorePredictions.js` | Score user predictions |
 | `captureRankSnapshot.js` | Daily rank history |
+
+**Archived (Session 79):** `validationPipeline.js` - replaced by dataQualityEngine.js
 
 ### Scrapers (`scripts/scrapers/`)
 
@@ -571,16 +889,22 @@ node scripts/universal/adaptiveLearning.js --classify "KC Spring Classic 2026"
 
 ### Universal Data Quality System (`scripts/universal/`)
 
-**NEW in Session 60** - Complete data quality pipeline. Core engine + pure-function normalizers.
+**Sessions 60-79** - Complete data quality pipeline with intake validation, core engine, and normalizers.
 
-**Core Engine:**
+**Core Components:**
 | Script | Purpose |
 |--------|---------|
-| `dataQualityEngine.js` | **Main orchestrator** (680+ lines) - 4-step pipeline: Normalize → Resolve → Deduplicate → Promote |
+| `intakeValidator.js` | **NEW (Session 79)** Pre-staging validation gate |
+| `dataQualityEngine.js` | **THE orchestrator** - Normalize → Resolve → Deduplicate → Promote |
 | `testDataQualityEngine.js` | Integration test for full pipeline |
 
 **Usage:**
 ```bash
+# Intake validation (run BEFORE dataQualityEngine)
+node scripts/universal/intakeValidator.js --report
+node scripts/universal/intakeValidator.js --clean-staging
+
+# Main processing (THE ONLY path from staging to production)
 node scripts/universal/dataQualityEngine.js --process-staging
 node scripts/universal/dataQualityEngine.js --process-staging --dry-run --limit 1000
 node scripts/universal/dataQualityEngine.js --audit-report --days 30
@@ -619,6 +943,8 @@ Diagnostics, audits, and utilities.
 
 | Script | Purpose |
 |--------|---------|
+| `ensureViewIndexes.js` | **NIGHTLY** Universal index maintenance for all views (Session 69) |
+| `recalculateHistoricalRanks.cjs` | Recalculate rank_history with consistent baseline (Session 70) |
 | `completeBirthYearCleanup.js` | Merge duplicates, fix birth_year mismatches |
 | `linkUnlinkedMatches.js` | Link matches via exact source_match_key |
 | `linkByEventPattern.js` | Link HTGSports/Heartland by event ID pattern |
@@ -634,6 +960,7 @@ Rarely-run scripts for bootstrapping or one-time data operations.
 | Script | Purpose |
 |--------|---------|
 | `backfillEloHistory.js` | Replay ELO from matches → populate rank_history_v2 (Session 65) |
+| `backfillRankHistory.js` | Calculate historical rank positions from ELO data (Session 68) |
 | `seedCanonicalRegistries.js` | Bulk SQL bootstrap of canonical registries (Session 62) |
 | `populateClubs.js` | Create clubs from team names (Session 60) |
 | `rebuildLeagues.js` | Normalize league metadata (Session 60) |
@@ -656,9 +983,29 @@ See `scripts/_archive/` for deprecated V1 scripts.
 
 ### Tool Usage
 
-- **Web research:** Use `web_search` directly
-- **Database queries:** Use Supabase MCP
-- **File operations:** Use filesystem MCP
+- **Web research:** Use `WebSearch` or `WebFetch` tools
+- **Database queries:** Use node scripts with `pg` Pool (direct SQL via `DATABASE_URL`)
+- **Database reads:** Use Supabase JS client for simple queries
+- **File operations:** Use Read, Edit, Write, Glob, Grep tools
+
+**Direct Database Access Pattern:**
+```javascript
+// For direct SQL (bulk operations, DDL, complex queries)
+require('dotenv').config();
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const { rows } = await pool.query('SELECT * FROM teams_v2 LIMIT 10');
+
+// For simple CRUD (app-style queries)
+const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const { data } = await supabase.from('teams_v2').select('*').limit(10);
+```
+
+**Available Environment Variables (.env):**
+- `DATABASE_URL` - PostgreSQL connection string (for pg Pool)
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - Admin access key
 
 ### Code Management
 
@@ -719,6 +1066,833 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 79 - V2 Architecture Enforcement (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Build a scalable, repeatable system that enforces ONE entry point and ONE processing path for all data.
+
+**Problem Statement:**
+- 48+ scripts write to the database
+- Multiple paths to production (validationPipeline, dataQualityEngine, batchProcessStaging, direct writes)
+- No intake validation (garbage data enters staging)
+- No integrity verification (issues caught by users, not system)
+
+**Completed Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | Create Intake Validation Gate | ✅ COMPLETE |
+| Phase 2 | Consolidate to ONE Processor | ✅ COMPLETE |
+| Phase 3 | Block Direct Writes | ✅ COMPLETE |
+| Phase 4 | Create Integrity Verification | ✅ COMPLETE |
+
+**Phase 1: Intake Validation Gate**
+Created `scripts/universal/intakeValidator.js`:
+- Validates data BEFORE it enters staging_games
+- Auto-fixes malformed source_match_keys (1,695 fixed)
+- Rejects truly invalid data (EMPTY_TEAM_NAME, INVALID_DATE, INVALID_BIRTH_YEAR, etc.)
+- Rejected data goes to `staging_rejected` table with reason
+
+```bash
+node scripts/universal/intakeValidator.js --report           # Data quality report
+node scripts/universal/intakeValidator.js --clean-staging    # Move invalid to rejected
+```
+
+**Phase 2: Consolidate to ONE Processor**
+- Archived `validationPipeline.js` → `scripts/_archive/`
+- Archived `batchProcessStaging.js` → `scripts/_archive/`
+- Archived `fastBulkProcess.js` → `scripts/_archive/`
+- Updated GitHub Actions to use `dataQualityEngine.js` ONLY (no fallback)
+- Updated workflow: intakeValidator → dataQualityEngine (single path)
+
+**Phase 3: Block Direct Writes (Database Triggers)**
+Created database triggers that block unauthorized writes to `teams_v2` and `matches_v2`:
+- Trigger checks for session variable `app.pipeline_authorized`
+- Authorized scripts call `SELECT authorize_pipeline_write()` before writes
+- Emergency override: `SELECT disable_write_protection()` / `SELECT enable_write_protection()`
+
+**Files Created:**
+- `scripts/migrations/070_create_write_protection_triggers.sql` - Trigger definitions
+- `scripts/migrations/run_migration_070.js` - Migration runner
+- `scripts/migrations/test_write_protection.js` - Test script
+- `scripts/universal/pipelineAuth.js` - Authorization helper module
+
+**Scripts Updated with Authorization:**
+- `dataQualityEngine.js` - Pipeline authorization added
+- `recalculate_elo_v2.js` - Pipeline authorization added
+- `mergeTeams.js` - Pipeline authorization added
+- `mergeEvents.js` - Pipeline authorization added
+- `inferEventLinkage.js` - Converted from Supabase to pg Pool + authorization
+- `teamDedup.js`, `matchDedup.js`, `eventDedup.js` - Authorization added
+
+**Usage:**
+```bash
+# Apply migration (required before triggers are active)
+node scripts/migrations/run_migration_070.js
+
+# Test the triggers
+node scripts/migrations/test_write_protection.js
+
+# In authorized scripts - call before writes
+await pool.query('SELECT authorize_pipeline_write()');
+
+# Emergency: Disable protection temporarily
+await pool.query('SELECT disable_write_protection()');
+await pool.query('SELECT enable_write_protection()');
+```
+
+**Phase 4: Integrity Verification System**
+Created `scripts/daily/verifyDataIntegrity.js`:
+- Runs after EVERY processing cycle
+- Checks: Team stats consistency, duplicate source_match_keys, canonical registry coverage, birth year validity, orphan rate, staging backlog
+- Added to GitHub Actions pipeline as Phase 2.75
+
+**Updated Pipeline Flow:**
+```
+Phase 1:   Scrapers → staging_games
+Phase 1.5: intakeValidator.js (reject garbage, fix malformed)
+Phase 2:   dataQualityEngine.js (normalize, resolve, promote)
+Phase 2.75: verifyDataIntegrity.js (automated checks)
+Phase 3:   recalculate_elo_v2.js
+Phase 4:   score_predictions.js
+Phase 5:   refresh_app_views()
+```
+
+**Files Created:**
+- [scripts/universal/intakeValidator.js](scripts/universal/intakeValidator.js) - Pre-staging validation
+- [scripts/daily/verifyDataIntegrity.js](scripts/daily/verifyDataIntegrity.js) - Post-processing checks
+- [scripts/migrations/060_create_staging_rejected.sql](scripts/migrations/060_create_staging_rejected.sql) - Rejected data table
+- [scripts/migrations/070_create_write_protection_triggers.sql](scripts/migrations/070_create_write_protection_triggers.sql) - Write protection triggers
+- [scripts/migrations/run_migration_070.js](scripts/migrations/run_migration_070.js) - Migration runner
+- [scripts/migrations/test_write_protection.js](scripts/migrations/test_write_protection.js) - Trigger test script
+- [scripts/universal/pipelineAuth.js](scripts/universal/pipelineAuth.js) - Authorization helper module
+
+**Files Archived:**
+- `validationPipeline.js` - Replaced by dataQualityEngine.js
+- `batchProcessStaging.js` - Emergency tool, no longer needed
+- `fastBulkProcess.js` - Emergency tool, no longer needed
+
+**Key Metrics:**
+- Malformed keys fixed: 1,695
+- Records rejected: 1
+- Unprocessed staging: 7,940 (clean, ready for dataQualityEngine)
+- Write protection triggers: 6 (INSERT/UPDATE/DELETE on teams_v2 and matches_v2)
+
+---
+
+### Session 78 - Orphan Root Cause Analysis (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Universal fix for 16,823 orphan teams showing 0W-0L-0D.
+
+**Initial Approach (WRONG - Abandoned):**
+Attempted aggressive fuzzy matching to merge orphans with teams that have matches. This was **critically flawed** because:
+- "2014B" = birth year 2014 = U12 in 2026
+- "15" = birth year 2015 = U11 in 2026
+- These are DIFFERENT TEAMS, not duplicates!
+
+**Root Cause Analysis (Correct):**
+
+The 16,823 orphans are NOT duplicates - they're teams playing in leagues we don't scrape.
+
+| State | Coverage Rate | Orphan Rate |
+|-------|---------------|-------------|
+| Georgia | 20.2% | 80% orphans |
+| South Carolina | 21.2% | 79% orphans |
+| North Carolina | 22.3% | 78% orphans |
+| Washington | 33.7% | 66% orphans |
+| Michigan | 43.0% | 57% orphans |
+
+**Kansas Specific Orphans:**
+- "SOUTHWEST KANSAS GREAT BEND PANTHERS 15B" - 0 matches for ANY similar teams
+- "SOUTHWEST KANSAS HALCONES LIBERAL 13B" - 0 matches for ANY similar teams
+- These teams play in Southwest Kansas leagues we don't scrape
+
+**Birth Year Inconsistencies (Secondary Issue):**
+- 17,701 teams have conflicting birth year indicators in names
+- Example: "2014B SDL ACADEMY (U11 Boys)" - name says 2014 but suffix says U11=2015
+- This is GotSport data inconsistency, NOT something we can automatically fix
+- Only 5% of orphans have this issue - not the root cause
+
+**Key Findings:**
+
+| Finding | Impact |
+|---------|--------|
+| Only 1 orphan has NULL birth_year | Birth_year fix won't help orphans |
+| 95% of orphans are data coverage gaps | Need to scrape more leagues |
+| Aggressive merging is DANGEROUS | Could merge different teams |
+
+**New Principle Identified (Principle 24):**
+
+### 24. Orphans Are Coverage Gaps - NOT Duplicates (Session 78)
+
+**CRITICAL:** Teams with GotSport points but 0 matches are almost always playing in leagues we don't scrape - NOT duplicates of existing teams.
+
+**DO NOT:**
+- Aggressively merge orphans based on similar names
+- Assume "2014B" and "15" are the same team (different birth years!)
+- Trust database birth_year alone - verify against team name
+
+**DO:**
+- Expand data coverage to scrape more leagues (GA, SC, NC, WA priority)
+- Keep orphan teams as-is until we have their match data
+- Check internal name consistency before any merge (e.g., "2014B" should not have "(U11 Boys)")
+
+**Correct Fix Strategy:**
+1. **Expand coverage** - Add scrapers for states with <50% coverage
+2. **Fix birth_year inconsistencies** - Only where name is internally consistent
+3. **Orphans will resolve naturally** as we add data sources
+
+**Scripts Created:**
+- `scripts/_debug/analyze_orphan_root_cause.cjs` - Comprehensive coverage gap analysis
+- `scripts/maintenance/fixBirthYearFromNames.cjs` - Safe birth_year fix with conflict detection
+
+**Files Deleted:**
+- `scripts/maintenance/aggressiveOrphanMerge.cjs` - Dangerous, could merge different teams
+
+---
+
+### Session 77 - NULL Metadata & Orphan Merge Fix (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Fix teams with GotSport points still showing 0W-0L-0D after Session 76 fixes.
+
+**Root Causes Identified:**
+1. **NULL Metadata:** Teams with matches had NULL birth_year/gender, preventing deduplication matching
+2. **Multiple Duplicate Entries:** Same team existed under different names/states
+3. **Suffix Mismatch:** Orphan names had "(U11 Boys)" suffix, match-having teams didn't
+
+**User's Specific Case (Sporting BV Pre-MLS Next 15):**
+- Had 4 separate team entries: 1 orphan (GS points), 3 with matches (NULL metadata)
+- Merging algorithm couldn't match because of NULL gender and different canonical names
+
+**Fixes Applied:**
+
+| Phase | Action | Result |
+|-------|--------|--------|
+| Phase 1 | Fix NULL birth_year/gender using V2 normalizer | 10,571 teams fixed |
+| Phase 2 | Merge orphans with match-having counterparts | 1,707 orphans merged |
+| Phase 3 | Recalculate team stats | 16 teams updated |
+| Manual | Merge Sporting BV 4 entries into 1 | Fixed specific case |
+
+**Final Data State:**
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Total teams | 150,101 | **148,391** | -1,710 |
+| NULL birth_year | 17,182 | **3,288** | -13,894 |
+| NULL gender | 15,703 | **6,320** | -9,383 |
+| Orphans (GS pts, no matches) | 18,531 | **16,823** | -1,708 |
+
+**User's Team Fixed:**
+- **Sporting BV Pre-MLS Next 15 (U11 Boys)**: GS pts 2169, MP 12, W-L-D 9-3-0 ✅
+
+**Key Script Created:**
+- `scripts/maintenance/fixNullMetadataAndMerge.cjs` - 3-phase fix: normalize → merge → stats
+
+**New Principle Identified:**
+Teams with NULL metadata can't be matched during deduplication. Phase 1 (fix NULL metadata) must complete BEFORE Phase 2 (merge orphans).
+
+**Remaining Orphans (16,823):**
+- Data coverage gaps - matches from leagues/tournaments we don't scrape yet
+- Different team name patterns requiring more sophisticated matching
+- Can be reduced incrementally as more data sources are added
+
+---
+
+### Session 76 - Data Integrity Fix: GotSport Rankings Bypass (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Fix teams appearing in rankings with 0 matches, 0W-0L-0D (user-reported issue).
+
+**Root Cause Identified:**
+GotSport rankings scraper (`scripts/_archive/scrape_gotsport_rankings.js`) wrote DIRECTLY to `teams_v2`, bypassing:
+1. Staging tables
+2. V2 normalizers (didn't remove duplicate prefixes like "One FC One FC")
+3. Canonical registries (didn't register teams for deduplication)
+
+This created 57,532 orphaned teams with GS rank but no matches.
+
+**Fixes Applied (Using V2 Architecture):**
+
+| Phase | Fix | Count | Speed |
+|-------|-----|-------|-------|
+| 1 | Team stats recalculated from matches_v2 | 42,674 | 1,215/sec |
+| 2 | Birth year mismatches fixed | 25,659 | 1,271/sec |
+| 3 | Exact-name duplicates merged | 11 | — |
+| 4 | Canonical teams registry populated | **+118,977** | **11,000/sec** |
+| 5 | Orphans merged via normalizer logic | **3,751** | 38/sec |
+| Prior | Fuzzy-match merges | 1,756 | — |
+
+**Final Data State:**
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Total teams | 155,608 | **150,101** | -5,507 |
+| GS-ranked WITH matches | 63,556 | **64,874** | +1,318 |
+| Orphaned (GS rank, no matches) | 57,532 | **52,025** | -5,507 |
+| Canonical teams registry | 19,275 | **138,252** | +118,977 |
+
+**Key Scripts Created:**
+- `scripts/maintenance/populateCanonicalTeams.cjs` - Seed canonical registry (11K/sec)
+- `scripts/maintenance/mergeOrphansByNormalizedName.cjs` - Merge via normalizer logic
+- `scripts/maintenance/fixDataDisconnect.cjs` - Stats recalculation + birth_year fixes
+
+**New Guardrails Added:**
+- Created [GUARDRAILS](docs/1.1-GUARDRAILS_v2.md) v1.1 with Session 76 learnings
+- Added canonical registry health check requirement
+- Added speed optimization patterns with benchmarks
+- Added duplicate prefix detection SQL patterns
+
+**User-Reported Team Fixed:**
+**Sporting Wichita 2015 Academy (U11 Girls)**: Now shows 7 matches, 5-0-2, ELO 1543 ✅
+
+**Files Modified:**
+- [GUARDRAILS](docs/1.1-GUARDRAILS_v2.md) - Added Session 76 learnings
+- [CLAUDE.md](CLAUDE.md) - Added GUARDRAILS reference, Session 76 entry
+- New maintenance scripts in `scripts/maintenance/`
+
+---
+
+### Session 75 - Real-Time Data Consistency Fix (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Fix Season Stats and Power Rating not matching actual database values on Team Details page.
+
+**Problems Identified:**
+1. Season Stats (14 matches, 6W-7L-1D) didn't match Match History (19 matches, 10W-7L-2D)
+2. Power Rating showed stale ELO (1,469, #3,689) instead of current (1,528, #859)
+
+**Root Cause Analysis:**
+
+| Component | Data Source | Issue |
+|-----------|-------------|-------|
+| Season Stats | `teams_v2.matches_played` | Pre-computed by ELO script (STALE) |
+| Match History | `matches_v2` direct query | Real-time (CURRENT) |
+| Power Rating | `app_team_profile` view | Depends on view refresh (STALE) |
+
+The ELO script (`recalculate_elo_v2.js`) hadn't run since Jan 30, with 269K+ matches added since.
+
+**Impact:**
+- 100+ teams with stats discrepancies
+- Power Rating didn't reflect actual team performance
+- Users see inconsistent data, lose trust in the app
+
+**Universal Fix (Layer 3 - Presentation):**
+
+Changed `app/team/[id].tsx` to query source tables directly:
+
+```typescript
+// ✅ Season Stats - Query matches_v2 directly
+const { data: homeStats } = await supabase
+  .from("matches_v2")
+  .select("home_score, away_score")
+  .eq("home_team_id", id)
+  .not("home_score", "is", null)
+  .gte("match_date", seasonStart);
+
+// ✅ Power Rating - Query teams_v2 directly (bypass view)
+const { data: eloData } = await supabase
+  .from("teams_v2")
+  .select("elo_rating, elo_national_rank, elo_state_rank")
+  .eq("id", id)
+  .single();
+
+if (eloData) {
+  setTeam(prev => ({ ...prev, ...eloData }));
+}
+```
+
+**Three-Layer Verification:**
+
+| Layer | Component | Status |
+|-------|-----------|--------|
+| Layer 1 (Intake) | Scrapers | ✅ Correctly insert to staging |
+| Layer 2 (Processing) | ELO Script | ✅ Ran manually, updated teams_v2 |
+| Layer 3 (Presentation) | App | ✅ **FIXED** - Queries source tables |
+
+**Results:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Season Stats | 14mp, 6W-7L-1D | **19mp, 10W-7L-2D** |
+| ELO Rating | 1,469 | **1,528** |
+| National Rank | #3,689 | **#859** ⬆️ 2,830 spots |
+| State Rank | #57 | **#10** ⬆️ 47 spots |
+
+**New Principle Added:**
+- Principle 23: Real-Time Data for Team Details - Never Trust Pre-Computed Values
+
+**Files Modified:**
+- [app/team/[id].tsx](app/team/[id].tsx) - Real-time queries for Season Stats + Power Rating
+- [CLAUDE.md](CLAUDE.md) - Added Principle 23, Session 75 entry
+
+**Verification:**
+- ✅ Season Stats matches Match History (19mp, 10W-7L-2D)
+- ✅ Power Rating shows current ELO (1,528, #859 national)
+- ✅ All data from source tables (matches_v2, teams_v2)
+- ✅ Works for ANY team from ANY data source
+- ✅ No dependency on view refresh timing
+
+---
+
+### Session 74 - HTGSports Division Detection Fix (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Fix HTGSports scraper missing 37 of 38 divisions in Sporting Classic 2025 tournament.
+
+**Problem Identified:**
+User reported "Sporting BV Pre-NAL 15 (U11 Boys)" team was missing Sporting Classic 2025 tournament matches. Investigation revealed the HTGSports scraper was only finding 1 division when 38 existed.
+
+**Root Cause:**
+The `divisionPattern` regex in `scripts/adapters/htgsports.js` required a hyphen in age groups:
+```javascript
+// BUG: Regex required "U-11" but site used "U11"
+divisionPattern: /U-\d+|2017|2016|.../i
+```
+
+The HTGSports site uses formats like "Girls U09 Gold", "Boys U11 Gold" (no dash), but the regex only matched "U-11" (with dash).
+
+**Fix Applied:**
+```javascript
+// FIXED: Made dash optional with U-?
+divisionPattern: /U-?\d{1,2}\b|20[01]\d/i
+```
+
+Changed in 3 locations:
+- Line 77: Config `divisionPattern`
+- Line 345: `filter()` for division dropdown options
+- Line 375: `some()` check for identifying division dropdown
+
+**Results:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Divisions found | 1 | **38** |
+| Matches scraped | ~10 | **336** |
+| Matches processed | 0 | **335** |
+
+**Additional Fixes:**
+
+| Issue | Fix |
+|-------|-----|
+| Duplicate staging records | Deleted 4 duplicates causing batch insert failure |
+| Team name mismatch | Merged "SBV Pre-NAL 15" → canonical "Sporting BV Pre-NAL 15" |
+| Checkpoint logic | Only mark events processed when `matches.length > 0` |
+
+**New Principles Added:**
+- Principle 20: Division Detection Regex - Universal Pattern
+- Principle 21: Checkpoint Logic - Only Mark Processed When Data Found
+- Principle 22: Team Name Variations - Same Team, Different Names
+
+**Files Modified:**
+- [scripts/adapters/htgsports.js](scripts/adapters/htgsports.js) - Fixed division regex pattern (3 locations)
+- [scripts/adapters/_template.js](scripts/adapters/_template.js) - Updated template with correct pattern
+- [CLAUDE.md](CLAUDE.md) - Added Principles 20-22, Session 74 entry
+
+**Verification:**
+- ✅ Team "Sporting BV Pre-NAL 15" now shows 4 Sporting Classic matches
+- ✅ All 38 divisions scraped from tournament
+- ✅ Fix is universal - works for ANY source with "U11" or "U-11" format
+
+**Full Lifecycle Audit (All 3 Layers):**
+
+Audited the entire data architecture to ensure universal patterns flow correctly from scraping through presentation.
+
+| Layer | Component | Pattern Used | Status |
+|-------|-----------|--------------|--------|
+| **Layer 1** | htgsports.js | `/U-?\d{1,2}\b\|20[01]\d/i` | ✅ Fixed |
+| **Layer 1** | _template.js | `/U-?\d{1,2}\b\|20[01]\d/i` | ✅ Correct |
+| **Layer 1** | scrapeHTGSports.js | `/U-?\d{1,2}\b\|20[01]\d/i` | ✅ Fixed |
+| **Layer 1** | heartland.js | NULL score handling | ✅ Correct |
+| **Layer 2** | validationPipeline.js | `/\bU[-\s]?(\d+)\b/i` | ✅ Correct |
+| **Layer 2** | teamNormalizer.js | `/\bU[-\s]?(\d+)\b/i` (line 242) | ✅ Correct |
+| **Layer 2** | clubNormalizer.js | `/^U-?\d+$/i` (line 25) | ✅ Correct |
+| **Layer 2** | dataQualityEngine.js | Uses `birth_year` for matching | ✅ Correct |
+| **Layer 3** | SQL views | `'U' \|\| (season_year - birth_year)` | ✅ Dynamic |
+| **Layer 3** | App filters | Hardcoded U8-U19 (appropriate for UI) | ✅ Correct |
+
+**Key Findings:**
+1. All adapters and scrapers now use the universal optional-dash pattern
+2. Validation layer uses `birth_year` (integer) for team matching, not `age_group` (string)
+3. App views compute `age_group` dynamically from `birth_year + get_current_season_year()`
+4. No hardcoded year calculations anywhere in the pipeline
+5. Legacy scraper `scrapeHTGSports.js` was also fixed (fallback safety)
+
+**Architecture Verification:**
+```
+Layer 1: Scrapers extract raw team names + division strings
+    ↓ Uses regex: /U-?\d{1,2}\b|20[01]\d/i
+Layer 2: Normalizers extract birth_year from patterns
+    ↓ Uses regex: /\bU[-\s]?(\d+)\b/i
+Layer 3: SQL views compute age_group dynamically
+    ↓ Formula: 'U' || (get_current_season_year() - birth_year)
+App: Displays pre-computed age_group from views
+```
+
+---
+
+### Session 73 - VS Battle Page Fixes (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Fix multiple issues on the VS Battle (Predict) page reported via user screenshots.
+
+**Issues Fixed:**
+
+| Issue | Root Cause | Fix |
+|-------|------------|-----|
+| Team A card missing name | `loadTeamFromParams` didn't map `display_name` to `team_name` | Added `team_name: data.display_name` transformation |
+| Gender showing "M" instead of "Boys" | Raw DB value displayed | Added `GENDER_DISPLAY` conversion throughout page |
+| Search not returning results | Query used `team_name` but view has `display_name` | Changed to `.ilike("display_name", ...)` |
+| Gender filter not defaulting | Passed DB format to modal expecting display format | Convert with `GENDER_DISPLAY` in `suggestedGender` prop |
+| What If sliders not working | Incomplete useEffect dependency array | Added `showWhatIf, homeTeam, awayTeam` to dependencies |
+| Team names truncated | `numberOfLines={2}` on Text components | Removed all `numberOfLines` per Principle 4 |
+| State filter UX inconsistent | Different pattern than Rankings tab | Implemented type-ahead with chips (same as Rankings) |
+| Analytical Factors unclear | Red/green bars had no team indicator | Added legend row showing team colors |
+
+**Key Code Patterns:**
+
+```typescript
+// Gender conversion (universal pattern)
+import { GENDER_DISPLAY, GENDER_FROM_DISPLAY, GenderType } from "../../lib/supabase.types";
+
+// Display: DB format → UI format
+{GENDER_DISPLAY[team.gender as GenderType] ?? team.gender}
+
+// Query: UI format → DB format
+const dbGender = GENDER_FROM_DISPLAY[selectedGender];
+if (dbGender) dbQuery = dbQuery.eq("gender", dbGender);
+
+// Transform query results
+const transformed = (data || []).map((row: any) => ({
+  ...row,
+  team_name: row.display_name,
+  gender: GENDER_DISPLAY[row.gender as GenderType] ?? row.gender,
+}));
+```
+
+**Analytical Factors Legend:**
+```
+┌─────────────────────────────────────────┐
+│  🟢 Team A Name   │   🔴 Team B Name    │
+├─────────────────────────────────────────┤
+│  ELO Rating    [██████     ]     -27%   │
+│  Goal Diff     [           ]       0%   │
+│  ...                                    │
+└─────────────────────────────────────────┘
+```
+
+**Files Modified:**
+- [app/predict/index.tsx](app/predict/index.tsx) - All VS Battle fixes + Analytical Factors legend
+
+---
+
+### Session 72 - NULL Score Fix for Scheduled Matches (February 2, 2026) - COMPLETE ✅
+
+**Goal:** Fix the Upcoming section not showing scheduled matches for teams.
+
+**Problem Identified:**
+User reported "Sporting BV Pre-NAL 15 (U11 Boys)" showed 0 upcoming matches despite spring games being published. Investigation revealed a critical bug affecting ALL scheduled matches across the entire system.
+
+**Root Cause:**
+Both `validationPipeline.js` and `dataQualityEngine.js` were converting NULL scores to 0:
+```javascript
+// BUG (was in both files)
+home_score: game.home_score ?? 0,  // NULL → 0
+away_score: game.away_score ?? 0,  // NULL → 0
+```
+
+This made 9,210 scheduled matches appear as played 0-0 games, hiding them from the Upcoming section.
+
+**App Logic:**
+```javascript
+// app/team/[id].tsx determines upcoming vs recent:
+const hasScores = match.home_score !== null && match.away_score !== null &&
+                  (match.home_score > 0 || match.away_score > 0);
+// NULL scores + future date = upcoming
+// 0-0 scores = appears played (wrong for scheduled!)
+```
+
+**Fixes Applied:**
+
+| File | Fix |
+|------|-----|
+| `scripts/daily/validationPipeline.js` | Remove `?? 0` fallback, preserve NULL |
+| `scripts/universal/dataQualityEngine.js` | Remove `?? 0` fallback, preserve NULL |
+| `scripts/universal/dataQualityEngine.js` | Fix needsUpdate logic for score updates |
+| `scripts/adapters/heartland.js` | Return NULL for matches without scores |
+| Database schema | `ALTER TABLE matches_v2 ALTER COLUMN home_score DROP NOT NULL` |
+| Database data | Updated 9,210 future 0-0 matches to NULL scores |
+
+**Key Code Changes:**
+
+```javascript
+// validationPipeline.js lines 691-692 (FIXED)
+home_score: game.home_score,  // Keep NULL for scheduled matches
+away_score: game.away_score,  // Keep NULL for scheduled matches
+
+// dataQualityEngine.js needsUpdate logic (FIXED)
+const existingHasNoScores = existing.home_score === null || existing.away_score === null ||
+                            (existing.home_score === 0 && existing.away_score === 0);
+const newHasRealScores = (newHomeScore !== null && newHomeScore > 0) ||
+                         (newAwayScore !== null && newAwayScore > 0);
+```
+
+**Impact:**
+- 9,210 scheduled matches now correctly appear in Upcoming section
+- Future scheduled matches will be preserved with NULL scores
+- Teams now show their upcoming games properly
+
+**Documentation Added:**
+- New Principle 6b: "NULL Scores vs 0-0 Scores"
+- Updated Principle 6: Changed "0-0 scores" to "NULL scores"
+
+**Files Modified:**
+- [scripts/daily/validationPipeline.js](scripts/daily/validationPipeline.js) - NULL score preservation
+- [scripts/universal/dataQualityEngine.js](scripts/universal/dataQualityEngine.js) - NULL score preservation + update logic
+- [scripts/adapters/heartland.js](scripts/adapters/heartland.js) - Capture scheduled matches with NULL scores
+- [CLAUDE.md](CLAUDE.md) - Added Principle 6b documentation
+
+---
+
+### Session 71 - Compare Chart Fix (February 1, 2026) - COMPLETE ✅
+
+**Goal:** Fix the Compare chart in the Ranking Journey feature to properly overlay SoccerView and GotSport ranking data.
+
+**Problem:**
+- gifted-charts LineChart failed to reliably render two overlaid lines
+- 10+ hours of attempts with `dataSet`, `data`/`data2`, `interpolateMissingValues`, etc.
+- Issues: disconnected dots, gray area fills, incorrect rendering on State scope
+
+**Root Cause:**
+react-native-gifted-charts has documented issues with multi-line charts of different data lengths (GitHub issue #975, fixed in v1.4.56, but still had rendering problems with our use case).
+
+**Solution:**
+Use `react-native-chart-kit` (ChartKitLineChart) for Compare view ONLY:
+- SoccerView individual chart: Still uses gifted-charts ✅
+- GotSport individual chart: Still uses gifted-charts ✅
+- Compare chart: Uses chart-kit for reliable multi-line rendering ✅
+
+**Key Implementation Details:**
+```javascript
+// Compare view uses ChartKitLineChart
+<ChartKitLineChart
+  data={{
+    labels: dateLabels,  // ~7 sampled date labels
+    datasets: [
+      { data: svNormalizedData, color: () => "#3B82F6", strokeWidth: 2.5 },
+      { data: gsNormalizedData, color: () => "#f59e0b", strokeWidth: 3 },
+    ],
+  }}
+  bezier
+  withDots={true}
+  withShadow={false}
+  formatYLabel={formatCompareYLabel}
+/>
+```
+
+**Universal Design:**
+- Combines dates from ANY sources dynamically
+- Same normalization logic for all sources
+- Same forward-fill algorithm for any dataset
+- No source-specific conditionals
+- Easily extensible to N sources
+
+**Files Modified:**
+- [app/team/[id].tsx](app/team/[id].tsx) - Compare chart now uses chart-kit
+
+---
+
+### Session 70 - Ranking Journey Chart Fix + Rank Calculation Methodology (February 1, 2026) - COMPLETE ✅
+
+**Goal:** Fix Ranking Journey chart Y-axis issues and correct fundamental rank calculation methodology.
+
+**Problem Identified:**
+- Chart showed team at #1 rank when they were never #1
+- Historical ranks were calculated against CHANGING pool (early season = few teams = artificially high ranks)
+- Y-axis padding was based on range, causing #1 to appear when actual best was #304
+
+**Root Cause Analysis:**
+The historical rank backfill used pool-relative ranking: "rank among teams with snapshots on that date"
+- Early season: 100 teams had entries → team ranked #5
+- Current: 45,000 teams → same ELO ranks #3,551
+
+**Solution - GotSport-Inspired Consistent Baseline:**
+Adopted GotSport's approach: Use a CONSISTENT baseline for all historical ELO values.
+- For each historical ELO, calculate rank against TODAY's full team pool
+- This gives: "If your team had this ELO today, what rank would they be?"
+- Results are meaningful and comparable across time
+
+**Results (Sporting BV Pre-NAL 15):**
+
+| Date | ELO | Nat Rank | State | Notes |
+|------|-----|----------|-------|-------|
+| 2025-08-08 | 1484 | #2,967 | #44 | Season start |
+| 2025-10-04 | 1558 | **#304** | #6 | PEAK (top 7%) |
+| 2025-11-09 | 1501 | #1,879 | #28 | After losses |
+| 2026-02-01 | 1469 | #3,551 | #55 | Current |
+
+**Chart Y-Axis Fix:**
+```javascript
+// OLD: 10% of RANGE (huge padding for large ranges)
+const padding = Math.max(Math.ceil(range * 0.1), 1);
+
+// NEW: 10% of actual VALUES (proportional padding)
+const topPadding = Math.max(Math.ceil(minRank * 0.1), 1);
+const bottomPadding = Math.max(Math.ceil(maxRank * 0.1), 5);
+```
+
+**Performance:**
+- 193,399 rank records updated
+- Processing time: ~5 minutes (650 records/second)
+- Binary search + batch CASE updates
+
+**Universal Solution Created:**
+`scripts/maintenance/recalculateHistoricalRanks.cjs`
+- Works for ANY team from ANY source
+- Uses binary search (O(log n)) for fast rank lookup
+- Batch updates (5000 rows per query)
+- No hardcoded values or source-specific logic
+
+**Files Modified:**
+- [app/team/[id].tsx](app/team/[id].tsx) - Chart Y-axis padding fix
+- [scripts/maintenance/recalculateHistoricalRanks.cjs](scripts/maintenance/recalculateHistoricalRanks.cjs) - Universal rank recalculation
+
+---
+
+### Session 69 - Home Tab Timeout Fix + Staging Backlog Clear (February 1, 2026) - COMPLETE ✅
+
+**Issues Fixed:**
+
+**1. Home Tab Timeout (PostgreSQL 57014)**
+- Root cause: 9 missing indexes on materialized views
+- Solution: `scripts/maintenance/ensureViewIndexes.js` - universal self-healing index maintenance
+- Added to nightly pipeline for automatic repair
+
+**2. Staging Backlog (31,421 unprocessed records)**
+- Root cause: `learned_patterns` table missing, validation pipeline stalled
+- Solution: Created table + bulk SQL processor
+
+**Backlog Processing Results (27 seconds):**
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Unprocessed staging | 31,421 | **0** | ✅ Cleared |
+| teams_v2 | 147,794 | **155,408** | +7,614 |
+| matches_v2 | 304,624 | **314,114** | +9,490 |
+
+**V1→V2 Migration Audit:**
+- V1 `match_results_deprecated`: 470,641 (archived)
+- V2 `matches_v2`: 314,114 (production)
+- Difference: 156K = intentional cleanup (duplicates, garbage dates, failed validation)
+
+**Universal Solutions Created:**
+
+| Script | Purpose | Speed |
+|--------|---------|-------|
+| `scripts/maintenance/ensureViewIndexes.js` | Self-healing index maintenance | <1 min |
+| `scripts/_debug/fastBulkProcess.js` | Clear staging backlogs | 23K/27s |
+| `scripts/migrations/040_create_learned_patterns.sql` | Adaptive learning table | — |
+
+**Index Audit Results:**
+| View | Expected | Before | After |
+|------|----------|--------|-------|
+| app_rankings | 5 | 2 | **5** |
+| app_team_profile | 7 | 1 | **7** |
+| Others | 9 | 9 | 9 |
+| **Total** | **21** | **12** | **21** |
+
+**Files Created/Modified:**
+- `scripts/maintenance/ensureViewIndexes.js` - Universal index maintenance
+- `scripts/_debug/fastBulkProcess.js` - Bulk staging processor (23K records in 27s)
+- `scripts/_debug/investigateStagingBacklog.js` - Diagnostic tool
+- `.github/workflows/daily-data-sync.yml` - Added index check to pipeline
+- All docs synced with accurate row counts
+
+---
+
+### Session 68 - Rating Journey Chart Redesign + QC (January 31 - February 1, 2026) - COMPLETE ✅
+
+**Goal:** Redesign Rating Journey widget with two-level filter system for world-class UX.
+
+**Features Implemented:**
+
+| Feature | Description |
+|---------|-------------|
+| Source Selector | Segmented control: SV \| GotSport \| Both (Compare) |
+| Scope Selector | Toggle: National \| State |
+| Gradient Fills | Subtle fills under chart lines (GotSport: amber 15%, Compare: green 10%) |
+| Dynamic Stats | Labels update to show "National" or "State" based on scope |
+| Normalized Compare | Both datasets scaled 0-100 for overlay comparison |
+
+**Source Selector UI:**
+- Clean segmented control (replaced cramped pills)
+- Short labels: "SV", "GotSport", "Both"
+- Icon + text layout with active state colors
+- SoccerView (blue), GotSport (amber), Both (green)
+
+**QC Session (February 1, 2026):**
+
+| Fix | Description |
+|-----|-------------|
+| Chart Y-Axis Alignment | Charts now show RANK values (#3,689) not ELO (1469) |
+| Vertical Scale Added | All charts display rank values on Y-axis with `formatYLabel` |
+| Inverted Charts | Up = better rank (#1 at top, not bottom) |
+| Compare Stats Simplified | Only "SoccerView" and "GotSport" labels in Compare mode |
+| Rank History Backfill | Re-ran backfillRankHistory.js - 389,846 records across 150 dates |
+| Today's Snapshot | Captured accurate rank snapshot (124,178 teams) |
+
+**Chart Y-Axis Solution:**
+```javascript
+// Invert ranks: lower rank (better) appears higher on chart
+const rawRanks = sampled.map((p) => getSVRank(p) || 1);
+const maxRank = Math.max(...rawRanks);
+const minRank = Math.min(...rawRanks);
+const data = rawRanks.map((r) => maxRank + minRank - r);
+
+// Format Y-axis to show actual rank values
+formatYLabel: (val) => `#${formatNumber(maxRank + minRank - Number(val))}`
+```
+
+**Data Verification (Sporting BV Pre-NAL 15):**
+- teams_v2: National #3,689, State #57 ✓
+- rank_history_v2 (Feb 1): National #3,689, State #57 ✓
+- Chart displays aligned with stats ✓
+
+**Files Modified:**
+- [app/team/[id].tsx](app/team/[id].tsx) - Rating Journey with QC fixes
+- [scripts/onetime/backfillRankHistory.js](scripts/onetime/backfillRankHistory.js) - Historical rank calculation
+- [scripts/daily/captureRankSnapshot.js](scripts/daily/captureRankSnapshot.js) - v3.1 with SoccerView ranks
+
+---
+
+### Session 67 - Team Details UI Refinements (January 31, 2026) - COMPLETE ✅
+
+**Goal:** Polish Team Details page UI based on user feedback and screenshots.
+
+**Changes Implemented:**
+
+| Component | Fix | Details |
+|-----------|-----|---------|
+| Season Stats | Fixed 4-box layout | `width: "23%"` + `justifyContent: "space-between"` - all on one row |
+| Gender display | M→Boys, F→Girls | Conversion logic in `getTeamMeta()` function |
+| GotSport Rankings card | Aligned headers | Both sections use identical `gotsportHeader` style |
+| Ranking Journey icon | Custom bar chart | Gold outlined 3-bar icon with glow effect |
+| Help icons | Standardized size | All help icons now `size={18}` across page |
+| Icon containers | Fixed alignment | 28x24 container ensures icons align left-to-right |
+
+**Custom Bar Chart Icon:**
+```javascript
+barChartIcon: {
+  flexDirection: "row", alignItems: "flex-end", gap: 2,
+  width: 22, height: 22, justifyContent: "center",
+  shadowColor: "#f59e0b", shadowOpacity: 0.6, shadowRadius: 4,
+},
+barChartBar: {
+  width: 6, backgroundColor: "transparent",
+  borderWidth: 1.5, borderColor: "#f59e0b", borderRadius: 2,
+},
+```
+
+**Files Modified:**
+- [app/team/[id].tsx](app/team/[id].tsx) - All UI refinements
+
+**UI Protection Protocol:** Backups created before all modifications per Principle 17.
+
+---
 
 ### Session 66 - V1→V2 UI Migration Fix (January 31, 2026) - COMPLETE ✅
 
@@ -1044,7 +2218,7 @@ node scripts/universal/deduplication/teamDedup.js --review-candidates
 
 ### Session 60 - Universal Data Quality System (January 30, 2026) - COMPLETE ✅
 
-**Goal:** Implement Universal Data Quality System per `docs/UNIVERSAL_DATA_QUALITY_SPEC.md`
+**Goal:** Implement Universal Data Quality System per `docs/2-UNIVERSAL_DATA_QUALITY_SPEC.md`
 
 **Constraint:** Backend only - NO changes to /app/ or /components/
 
@@ -1129,13 +2303,13 @@ Phase 5: Refresh Views (refresh_app_views())
 **Database State (Final - Verified):**
 | Table | Rows | Notes |
 |-------|------|-------|
-| teams_v2 | 147,706 | 100% have club_id |
-| matches_v2 | 304,293 | All linked |
+| teams_v2 | 147,794 | 100% have club_id |
+| matches_v2 | 304,624 | All linked |
 | clubs | 124,650 | — |
 | leagues | 280 | 38 with state metadata |
-| tournaments | 1,727 | — |
-| canonical_events | 4 | Heartland mappings |
-| staging_games | 41,095 | 0 unprocessed |
+| tournaments | 1,728 | — |
+| canonical_events | 1,795 | Event registry |
+| staging_games | 75,215 | 31,421 unprocessed |
 
 **Universal Data Quality System - FULLY OPERATIONAL**
 
@@ -1472,7 +2646,7 @@ soccerview/
 | Success | Green | #10B981 |
 | Error | Red | #EF4444 |
 
-See [docs/UI_PATTERNS.md](docs/UI_PATTERNS.md) for all patterns.
+See [docs/3-UI_PATTERNS.md](docs/3-UI_PATTERNS.md) for all patterns.
 
 ---
 

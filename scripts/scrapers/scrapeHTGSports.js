@@ -53,6 +53,7 @@ const CONFIG = {
     { id: 13514, name: "2026 Border Battle Soccer Tournament", year: 2026, type: "tournament" },
     { id: 13444, name: "KC Fall Finale 2025", year: 2025, type: "tournament" },
     { id: 13437, name: "Challenger Sports Invitational 2025", year: 2025, type: "tournament" },
+    { id: 13418, name: "Sporting Classic 2025", year: 2025, type: "tournament" },
     { id: 13371, name: "2025 Sporting Iowa Fall Cup", year: 2025, type: "tournament" },
     { id: 13014, name: "2025 Heartland Invitational - Boys", year: 2025, type: "tournament" },
     { id: 13008, name: "2025 Heartland Open Cup", year: 2025, type: "tournament" },
@@ -209,9 +210,10 @@ async function scrapeEventSchedule(browser, eventId, eventName) {
       const selects = document.querySelectorAll("select.form-control");
       for (const select of selects) {
         const options = Array.from(select.querySelectorAll("option"));
-        // Find the dropdown with division names (contains "U-" patterns)
+        // Find the dropdown with division names (U9/U-9/U11/U-11 etc + birth years)
+        // UNIVERSAL PATTERN: Optional dash after U, matches both "U11" and "U-11"
         const divisionOptions = options.filter(opt =>
-          opt.textContent.match(/U-\d+|2017|2016|2015|2014|2013|2012|2011|2010|2009|2008|2007|2006/i)
+          opt.textContent.match(/U-?\d{1,2}\b|20[01]\d/i)
         );
         if (divisionOptions.length > 0) {
           return divisionOptions.map(opt => ({
@@ -240,8 +242,9 @@ async function scrapeEventSchedule(browser, eventId, eventName) {
           const selects = document.querySelectorAll("select.form-control");
           for (const select of selects) {
             const options = Array.from(select.querySelectorAll("option"));
+            // UNIVERSAL PATTERN: Optional dash after U, matches both "U11" and "U-11"
             const hasDiv = options.some(opt =>
-              opt.textContent.match(/U-\d+|2017|2016|2015|2014|2013|2012|2011|2010|2009|2008|2007|2006/i)
+              opt.textContent.match(/U-?\d{1,2}\b|20[01]\d/i)
             );
             if (hasDiv) {
               select.value = divValue;

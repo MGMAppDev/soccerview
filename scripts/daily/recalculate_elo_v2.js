@@ -1,5 +1,5 @@
 /**
- * ELO Recalculation v2 - Uses match_results table with team IDs
+ * ELO Recalculation v2.1 - Uses matches_v2 table with team IDs
  *
  * IMPORTANT: Only uses CURRENT SEASON data to align with GotSport rankings.
  * GotSport resets rankings each season, so we must do the same for
@@ -7,18 +7,58 @@
  *
  * Youth soccer season typically runs Aug 1 - Jul 31.
  *
+ * Updated: January 28, 2026 (Session 53)
+ * - Now reads season boundaries from `seasons` table (single source of truth)
+ * - No more hardcoded dates - season rollover is one DB update
+ *
  * Usage: node scripts/recalculate_elo_v2.js
  */
 
 import "dotenv/config";
 import pg from "pg";
+import { authorizePipelineWrite } from "../universal/pipelineAuth.js";
 
 // ============================================================
-// SEASON CONFIGURATION - Update annually
+// SEASON CONFIGURATION - NOW DYNAMIC FROM DATABASE
 // ============================================================
-// Youth soccer season runs Aug 1 - Jul 31
-// Current season: 2025-2026 (Aug 1, 2025 onwards)
-const CURRENT_SEASON_START = '2025-08-01';
+
+/**
+ * Get current season boundaries from the seasons table
+ * Fallback to calculated dates if table is empty
+ *
+ * @param {pg.Client} client - PostgreSQL client
+ * @returns {Object} { start_date, end_date, year }
+ */
+async function getSeasonBoundaries(client) {
+  try {
+    const result = await client.query(`
+      SELECT
+        start_date::text as start_date,
+        end_date::text as end_date,
+        year
+      FROM seasons
+      WHERE is_current = true
+      LIMIT 1
+    `);
+
+    if (result.rows.length > 0) {
+      return result.rows[0];
+    }
+  } catch (e) {
+    console.warn('⚠️ Failed to query seasons table:', e.message);
+  }
+
+  // Fallback calculation if seasons table is empty
+  const now = new Date();
+  const startYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  console.log('⚠️ No current season in DB, using fallback calculation');
+
+  return {
+    start_date: `${startYear}-08-01`,
+    end_date: `${startYear + 1}-07-31`,
+    year: startYear + 1
+  };
+}
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -29,7 +69,7 @@ if (!DATABASE_URL) {
 
 async function main() {
   console.log("=".repeat(60));
-  console.log("🔢 ELO RECALCULATION v2 - Using match_results");
+  console.log("🔢 ELO RECALCULATION v2.1 - Dynamic Season from DB");
   console.log("=".repeat(60));
   console.log(`Started at: ${new Date().toISOString()}\n`);
 
@@ -43,17 +83,24 @@ async function main() {
     await client.connect();
     console.log("✅ Connected to PostgreSQL\n");
 
-    // Count eligible matches (CURRENT SEASON ONLY)
-    console.log(`📅 Season filter: matches from ${CURRENT_SEASON_START} onwards\n`);
+    // V2 ARCHITECTURE ENFORCEMENT: Authorize pipeline writes (Session 79)
+    await authorizePipelineWrite(client);
 
+    // Get current season from database (single source of truth)
+    const season = await getSeasonBoundaries(client);
+    const CURRENT_SEASON_START = season.start_date;
+
+    console.log(`📅 Season: ${season.year} (${season.start_date} to ${season.end_date})`);
+    console.log(`   Season start filter: matches from ${CURRENT_SEASON_START} onwards\n`);
+
+    // Count eligible matches (CURRENT SEASON ONLY)
     const matchCount = await client.query(`
       SELECT COUNT(*) as cnt
-      FROM match_results
+      FROM matches_v2
       WHERE home_team_id IS NOT NULL
         AND away_team_id IS NOT NULL
         AND home_score IS NOT NULL
         AND away_score IS NOT NULL
-        AND status = 'completed'
         AND match_date >= '${CURRENT_SEASON_START}'
     `);
     const totalMatches = parseInt(matchCount.rows[0].cnt);
@@ -65,13 +112,12 @@ async function main() {
     // ============================================================
     console.log("🔄 Step 1: Resetting team stats...");
     await client.query(`
-      UPDATE team_elo SET 
+      UPDATE teams_v2 SET
         elo_rating = 1500,
-        matches_played = 0, 
-        wins = 0, 
-        losses = 0, 
-        draws = 0,
-        last_match_date = NULL
+        matches_played = 0,
+        wins = 0,
+        losses = 0,
+        draws = 0
     `);
     console.log("   ✅ All teams reset to 1500 ELO\n");
 
@@ -87,12 +133,11 @@ async function main() {
         home_score,
         away_score,
         match_date
-      FROM match_results
+      FROM matches_v2
       WHERE home_team_id IS NOT NULL
         AND away_team_id IS NOT NULL
         AND home_score IS NOT NULL
         AND away_score IS NOT NULL
-        AND status = 'completed'
         AND match_date >= '${CURRENT_SEASON_START}'
       ORDER BY match_date ASC NULLS LAST, id ASC
     `);
@@ -124,9 +169,9 @@ async function main() {
     // Build in-memory ELO cache for speed
     const eloCache = new Map();
     const statsCache = new Map(); // {wins, losses, draws, matches_played, last_match_date}
-    
+
     // Initialize cache from database
-    const teams = await client.query(`SELECT id, elo_rating FROM team_elo`);
+    const teams = await client.query(`SELECT id, elo_rating FROM teams_v2`);
     for (const team of teams.rows) {
       eloCache.set(team.id, 1500); // Reset to 1500
       statsCache.set(team.id, { wins: 0, losses: 0, draws: 0, matches_played: 0, last_match_date: null });
@@ -225,39 +270,34 @@ async function main() {
       
       // Build bulk UPDATE query using CASE statements
       const ids = batch.map(u => `'${u.teamId}'`).join(',');
-      
+
       let eloCase = 'CASE id ';
       let mpCase = 'CASE id ';
       let winsCase = 'CASE id ';
       let lossesCase = 'CASE id ';
       let drawsCase = 'CASE id ';
-      let dateCase = 'CASE id ';
-      
+
       for (const u of batch) {
-        const safeDate = formatDateForSQL(u.last_match_date);
         eloCase += `WHEN '${u.teamId}' THEN ${u.elo} `;
         mpCase += `WHEN '${u.teamId}' THEN ${u.matches_played} `;
         winsCase += `WHEN '${u.teamId}' THEN ${u.wins} `;
         lossesCase += `WHEN '${u.teamId}' THEN ${u.losses} `;
         drawsCase += `WHEN '${u.teamId}' THEN ${u.draws} `;
-        dateCase += `WHEN '${u.teamId}' THEN ${safeDate ? `'${safeDate}'` : 'NULL'} `;
       }
-      
+
       eloCase += 'END';
       mpCase += 'END';
       winsCase += 'END';
       lossesCase += 'END';
       drawsCase += 'END';
-      dateCase += 'END';
       
       await client.query(`
-        UPDATE team_elo SET 
+        UPDATE teams_v2 SET
           elo_rating = ${eloCase},
           matches_played = ${mpCase},
           wins = ${winsCase},
           losses = ${lossesCase},
-          draws = ${drawsCase},
-          last_match_date = ${dateCase}::date
+          draws = ${drawsCase}
         WHERE id IN (${ids})
       `);
       
@@ -271,37 +311,37 @@ async function main() {
     // STEP 5: Update ELO-based National & State Ranks
     // ============================================================
     console.log("🏆 Step 5: Calculating ELO-based ranks...");
-    
-    // National ranks by age_group + gender
+
+    // National ranks by birth_year + gender
     await client.query(`
       WITH ranked AS (
         SELECT id,
           ROW_NUMBER() OVER (
-            PARTITION BY age_group, gender 
+            PARTITION BY birth_year, gender
             ORDER BY elo_rating DESC NULLS LAST
           ) as nat_rank
-        FROM team_elo
+        FROM teams_v2
         WHERE matches_played > 0
       )
-      UPDATE team_elo t
+      UPDATE teams_v2 t
       SET elo_national_rank = r.nat_rank
       FROM ranked r
       WHERE t.id = r.id
     `);
     console.log("   ✅ National ranks updated");
-    
-    // State ranks by state + age_group + gender
+
+    // State ranks by state + birth_year + gender
     await client.query(`
       WITH ranked AS (
         SELECT id,
           ROW_NUMBER() OVER (
-            PARTITION BY state, age_group, gender 
+            PARTITION BY state, birth_year, gender
             ORDER BY elo_rating DESC NULLS LAST
           ) as st_rank
-        FROM team_elo
+        FROM teams_v2
         WHERE matches_played > 0 AND state IS NOT NULL
       )
-      UPDATE team_elo t
+      UPDATE teams_v2 t
       SET elo_state_rank = r.st_rank
       FROM ranked r
       WHERE t.id = r.id
@@ -312,13 +352,13 @@ async function main() {
     // STEP 6: Get final stats and top teams
     // ============================================================
     const afterStats = await client.query(`
-      SELECT 
+      SELECT
         COUNT(*) as total_teams,
         ROUND(AVG(elo_rating)::numeric, 1) as avg_elo,
         ROUND(MIN(elo_rating)::numeric, 0) as min_elo,
         ROUND(MAX(elo_rating)::numeric, 0) as max_elo,
         COUNT(*) FILTER (WHERE matches_played > 0) as teams_with_matches
-      FROM team_elo
+      FROM teams_v2
     `);
 
     console.log("=".repeat(60));
@@ -333,8 +373,8 @@ async function main() {
 
     // Top 15 teams
     const topTeams = await client.query(`
-      SELECT team_name, elo_rating, wins, losses, draws, matches_played
-      FROM team_elo
+      SELECT display_name as team_name, elo_rating, wins, losses, draws, matches_played
+      FROM teams_v2
       WHERE matches_played >= 5
       ORDER BY elo_rating DESC
       LIMIT 15
