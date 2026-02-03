@@ -819,6 +819,58 @@ DATABASE_URL
 | Icons | `@expo/vector-icons` |
 | Haptics | `expo-haptics` |
 
+### Project Tools & Integrations (Session 80)
+
+**External Services:**
+
+| Service | Purpose | Access |
+|---------|---------|--------|
+| **Supabase** | PostgreSQL database + Auth + Storage | [Dashboard](https://supabase.com/dashboard) - Project: soccerview |
+| **GitHub** | Version control + CI/CD | [Repo](https://github.com/MGMAppDev/soccerview) - Branch: main |
+| **GitHub Actions** | Daily data sync pipeline | Workflow: `daily-data-sync.yml` |
+| **GitHub CLI** | Direct repo access from terminal | `gh` command - configured |
+| **Sentry** | Error tracking + performance monitoring | @sentry/react-native in app |
+| **EAS Build** | iOS/Android app builds | `eas build --platform [ios|android]` |
+| **Expo Go** | Development testing on device | `npx expo start` |
+
+**Development Tools:**
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| **VS Code** | Primary IDE | Extensions for TypeScript, React Native |
+| **Claude Code** | AI development assistant | This assistant - follows CLAUDE.md |
+| **TypeScript** | Type checking | v5.9.2 |
+| **ESLint** | Code linting | expo-config-expo |
+
+**Data Pipeline Tools:**
+
+| Tool | Package | Purpose |
+|------|---------|---------|
+| **Puppeteer** | `puppeteer` | Browser automation for SPA scraping (GotSport, HTGSports) |
+| **Cheerio** | `cheerio` | HTML parsing for server-rendered pages (Heartland CGI) |
+| **pg Pool** | `pg` | Direct PostgreSQL for bulk operations |
+| **Supabase JS** | `@supabase/supabase-js` | Simple CRUD queries from app |
+| **dotenv** | `dotenv` | Environment variable management |
+| **p-limit** | `p-limit` | Concurrency control for parallel operations |
+
+**Monitoring Commands:**
+
+```bash
+# Check GitHub Actions workflow status
+gh run list --repo MGMAppDev/soccerview --limit 5
+gh run view <run-id> --repo MGMAppDev/soccerview
+
+# Check Supabase database directly
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM teams_v2;"
+
+# Start development server
+npx expo start
+
+# Build for production
+eas build --platform ios
+eas build --platform android
+```
+
 ---
 
 ## App Structure
