@@ -64,9 +64,16 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  max: 10,           // Max connections in pool
+  max: 10,                        // Max connections in pool
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
+  statement_timeout: 600000,      // 10 min statement timeout (for view refresh)
+});
+
+// Handle pool-level errors to prevent crashes from unhandled events
+pool.on('error', (err) => {
+  console.error('❌ Pool error (handled):', err.message);
+  // Don't exit - let the operation retry or handle gracefully
 });
 
 // ===========================================
@@ -161,6 +168,64 @@ async function flushAuditLogs(client = null) {
     stats.errors.push({ phase: 'audit', error: error.message });
   } finally {
     if (!client) conn.release();
+  }
+}
+
+// ===========================================
+// VIEW REFRESH WITH RETRY
+// ===========================================
+
+/**
+ * Refresh materialized views with retry logic and exponential backoff.
+ * This is critical for 100% reliability - view refresh can fail due to:
+ * - Connection timeouts during long-running refresh
+ * - Cloudflare/Supabase rate limiting
+ * - Network hiccups
+ *
+ * Solution: Use a fresh connection for each retry with exponential backoff.
+ */
+async function refreshViewsWithRetry() {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS = [5000, 15000, 30000]; // 5s, 15s, 30s
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    // Use a fresh connection for reliability (not the batch processing client)
+    const client = await pool.connect();
+
+    try {
+      // Set a statement timeout for this specific operation
+      await client.query('SET statement_timeout = 300000'); // 5 minutes
+
+      console.log(`   Attempt ${attempt}/${MAX_RETRIES}...`);
+      await client.query('SELECT refresh_app_views()');
+      console.log('   ✅ Views refreshed successfully');
+
+      client.release();
+      return; // Success - exit
+
+    } catch (error) {
+      client.release();
+
+      const isRetryable = error.message.includes('Connection terminated') ||
+                          error.message.includes('timeout') ||
+                          error.message.includes('ECONNRESET') ||
+                          error.code === '57014'; // query_canceled
+
+      if (attempt < MAX_RETRIES && isRetryable) {
+        const delay = RETRY_DELAYS[attempt - 1];
+        console.log(`   ⚠️ Attempt ${attempt} failed: ${error.message}`);
+        console.log(`   🔄 Retrying in ${delay / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        // Final failure - log but don't crash
+        console.error(`   ❌ View refresh failed after ${attempt} attempts: ${error.message}`);
+        stats.errors.push({ phase: 'view_refresh', error: error.message });
+
+        // Views will be refreshed by the separate refresh_views_manual.js step in the workflow
+        console.log('   ℹ️  Views will be refreshed by the next pipeline step');
+        return;
+      }
+    }
   }
 }
 
@@ -1159,12 +1224,7 @@ async function processStaging(options = {}) {
     // Refresh materialized views if we made changes
     if (!dryRun && (stats.matchesInserted > 0 || stats.matchesUpdated > 0)) {
       console.log('\n🔄 Refreshing materialized views...');
-      try {
-        await client.query('SELECT refresh_app_views()');
-        console.log('   ✅ Views refreshed successfully');
-      } catch (error) {
-        console.error(`   ⚠️ View refresh failed: ${error.message}`);
-      }
+      await refreshViewsWithRetry(client);
     }
 
   } finally {

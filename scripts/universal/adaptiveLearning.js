@@ -24,32 +24,96 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ===========================================
+// CIRCUIT BREAKER FOR PATTERN STORAGE
+// Prevents cascading failures when Supabase has issues
+// ===========================================
+
+const circuitBreaker = {
+  failures: 0,
+  lastFailure: null,
+  isOpen: false,
+  FAILURE_THRESHOLD: 5,     // Open circuit after 5 failures
+  RESET_TIMEOUT: 60000,     // Try again after 1 minute
+  errorLogged: false,       // Only log circuit open once
+};
+
+function checkCircuitBreaker() {
+  if (!circuitBreaker.isOpen) return true;
+
+  // Check if enough time has passed to try again
+  const timeSinceFailure = Date.now() - circuitBreaker.lastFailure;
+  if (timeSinceFailure >= circuitBreaker.RESET_TIMEOUT) {
+    circuitBreaker.isOpen = false;
+    circuitBreaker.failures = 0;
+    circuitBreaker.errorLogged = false;
+    console.log('🔄 Adaptive learning circuit breaker reset - resuming pattern storage');
+    return true;
+  }
+
+  return false;
+}
+
+function recordCircuitFailure() {
+  circuitBreaker.failures++;
+  circuitBreaker.lastFailure = Date.now();
+
+  if (circuitBreaker.failures >= circuitBreaker.FAILURE_THRESHOLD && !circuitBreaker.isOpen) {
+    circuitBreaker.isOpen = true;
+    if (!circuitBreaker.errorLogged) {
+      console.log('⚠️ Adaptive learning circuit breaker OPEN - skipping pattern storage for 60s');
+      circuitBreaker.errorLogged = true;
+    }
+  }
+}
+
+// ===========================================
 // PATTERN STORAGE
 // ===========================================
 
 /**
  * Store a learned pattern in the database
+ * Uses circuit breaker to prevent cascading failures
+ *
  * @param {string} patternType - 'team_name' | 'event_name' | 'match_key' | 'selector'
  * @param {string} source - Adapter ID (gotsport, htgsports, heartland, etc.)
  * @param {object} pattern - The learned pattern data
  * @param {number} confidence - 0.0 to 1.0
  */
 async function storeLearnedPattern(patternType, source, pattern, confidence) {
-  const { error } = await supabase
-    .from("learned_patterns")
-    .upsert({
-      pattern_type: patternType,
-      source: source,
-      pattern_data: pattern,
-      confidence: confidence,
-      learned_at: new Date().toISOString(),
-      usage_count: 1,
-    }, {
-      onConflict: "pattern_type,source,pattern_data",
-    });
+  // Check circuit breaker - skip if open
+  if (!checkCircuitBreaker()) {
+    return; // Silently skip when circuit is open
+  }
 
-  if (error) {
-    console.error("Failed to store pattern:", error.message);
+  try {
+    const { error } = await supabase
+      .from("learned_patterns")
+      .upsert({
+        pattern_type: patternType,
+        source: source,
+        pattern_data: pattern,
+        confidence: confidence,
+        learned_at: new Date().toISOString(),
+        usage_count: 1,
+      }, {
+        onConflict: "pattern_type,source,pattern_data",
+      });
+
+    if (error) {
+      recordCircuitFailure();
+      // Only log first few failures to avoid spam
+      if (circuitBreaker.failures <= 3) {
+        console.error("Failed to store pattern:", error.message);
+      }
+    } else {
+      // Success - reset failure count
+      circuitBreaker.failures = 0;
+    }
+  } catch (err) {
+    recordCircuitFailure();
+    if (circuitBreaker.failures <= 3) {
+      console.error("Failed to store pattern:", err.message);
+    }
   }
 }
 
