@@ -698,6 +698,34 @@ The GotSport rankings scraper wrote directly to teams_v2, bypassing:
 - `scripts/universal/dataQualityEngine.js` - THE processor
 - `scripts/daily/verifyDataIntegrity.js` - Post-processing checks
 
+### 26. Git Hygiene - Commit Early, Commit Often (Session 80)
+
+**Problem:** 280+ files accumulated over 30 sessions without being committed, creating risk of lost work and mismatch between local code and git history.
+
+**Rule:** Claude MUST proactively manage git commits without waiting to be asked.
+
+| Trigger | Action |
+|---------|--------|
+| Task completed | Commit with descriptive message |
+| 10+ uncommitted files | Warn user, offer to commit |
+| End of session | ALWAYS commit and push |
+| Start of session | Check `git status` for uncommitted work |
+
+**Claude should ask:** "I've completed [task]. Should I commit these changes now?"
+
+**Never:**
+- End a session with uncommitted work
+- Let uncommitted files accumulate across sessions
+- Wait for user to ask about commits
+- Commit .env or other secrets
+
+**Start of Session Check:**
+```bash
+git status  # Check for uncommitted work from previous sessions
+```
+
+If uncommitted changes exist, address them FIRST before starting new work.
+
 ---
 
 ## Quick Reference
