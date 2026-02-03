@@ -150,8 +150,27 @@ The orphan COUNT increased because V1 data brought in more teams with GotSport n
 > **Note:** Only proceed after Phase 1 is verified successful
 
 ### Step 2.1: Analyze Remaining Orphans
-- [ ] Check how many orphans remain after V1 migration
-- [ ] Identify if they play in events we could scrape
+- [x] Check how many orphans remain after V1 migration: 51,826
+- [x] Identify if they play in events we could scrape:
+  - ECNL: 3,910 orphans
+  - Premier League: 2,800 orphans
+  - MLS NEXT: 744 orphans
+  - Other/Local: 40,232 orphans (coverage gap)
+
+### Step 2.2: Create Event Discovery Script
+**File:** `scripts/daily/discoverGotSportEvents.cjs`
+
+- [x] Script created
+- [x] Analyzes orphan patterns by event type
+- [x] Reports coverage metrics
+- [x] Framework for adding known events
+
+### Step 2.3: Update GitHub Actions
+**File:** `.github/workflows/daily-data-sync.yml`
+
+- [x] Added Phase 0: Event Discovery job
+- [x] Reports orphan count and coverage rate in summary
+- [x] Runs before data collection phase
 
 ### Step 2.2: Create Event Discovery Script
 **File:** `scripts/daily/discoverGotSportEvents.js`
@@ -195,6 +214,8 @@ If something goes wrong:
 2026-02-03 21:45 - Stats recalculated: 35,236 teams fixed (769/sec)
 2026-02-03 22:10 - Views refreshed successfully
 2026-02-03 22:15 - Health check: 93,984 new matches, 36,419 teams now linked to V1 data
+2026-02-03 22:45 - Phase 2: Created discoverGotSportEvents.cjs for daily orphan analysis
+2026-02-03 22:50 - Updated daily-data-sync.yml with Phase 0 event discovery job
 ```
 
 **Scripts Created This Session:**
@@ -202,13 +223,14 @@ If something goes wrong:
 - `scripts/maintenance/fastPromoteV1Staging.cjs` - Fast bulk promotion
 - `scripts/maintenance/fastV1MigrationComplete.cjs` - Complete fast migration
 - `scripts/maintenance/linkFromV1Archive.js` - V1 archive linking utility
+- `scripts/daily/discoverGotSportEvents.cjs` - Phase 2: Orphan analysis for daily sync
 
 ---
 
 ## Completion Checklist
 
 - [x] Phase 1 completed and verified
-- [ ] Phase 2 completed (if applicable) - **FUTURE: Add event discovery**
-- [ ] Documentation updated (CLAUDE.md session summary)
+- [x] Phase 2 completed - Event discovery added to daily sync
+- [x] Documentation updated (CLAUDE.md session summary)
 - [ ] Git committed and pushed
 - [x] Health check passing (except coverage gap)
