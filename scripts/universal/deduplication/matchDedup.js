@@ -2,12 +2,20 @@
  * Match Deduplication Module
  * ==========================
  *
- * Detects and resolves duplicate matches in matches_v2.
+ * Detects and resolves duplicate matches in matches_v2 using SEMANTIC grouping.
  *
- * Detection Methods (in priority order):
- * 1. Exact Key Match - Same source_match_key
- * 2. Strong Match - Same (date, home_team_id, away_team_id, home_score, away_score)
- * 3. Fuzzy Match - Same date + similar team names + same scores
+ * IMPORTANT (Session 85): Uses SoccerView Team IDs as uniqueness anchor.
+ * A match is uniquely identified by (match_date, home_team_id, away_team_id).
+ * Scores are NOT part of the uniqueness key - this aligns with the schedules table
+ * and the Universal SoccerView ID Architecture.
+ *
+ * Detection Method:
+ * - Semantic Match - Same (date, home_team_id, away_team_id) regardless of scores
+ *
+ * Resolution Priority:
+ * 1. Keep the one with actual scores (non-NULL) over scheduled (NULL)
+ * 2. Keep the one linked to an event (league_id or tournament_id)
+ * 3. Keep the earliest created one
  *
  * Usage:
  *   import { detectDuplicates, resolveDuplicates } from './matchDedup.js';
@@ -25,54 +33,80 @@ const { Pool } = pg;
 // ===========================================
 
 /**
- * Detect duplicate matches
+ * Detect duplicate matches using SEMANTIC grouping
  * Returns groups of duplicate match IDs
+ *
+ * Session 85: Uses (date, home_team_id, away_team_id) - WITHOUT scores
+ * This aligns with Universal SoccerView ID Architecture
  */
 export async function detectDuplicates(client, options = {}) {
-  const { limit = 1000, verbose = false } = options;
+  const { limit = 10000, verbose = false } = options;
   const duplicateGroups = [];
 
-  // Method 1: Strong Match (same date + teams + scores)
-  // This catches matches that were inserted with different source_match_keys
-  // but are actually the same match
-  if (verbose) console.log('  Checking strong matches (date + teams + scores)...');
+  // SEMANTIC MATCH: Same date + teams (SoccerView IDs)
+  // Scores are NOT part of uniqueness - this is the correct architecture
+  if (verbose) console.log('  Checking semantic matches (date + team IDs)...');
 
-  const { rows: strongMatches } = await client.query(`
+  const { rows: semanticMatches } = await client.query(`
     SELECT
       match_date,
       home_team_id,
       away_team_id,
-      home_score,
-      away_score,
       COUNT(*) as count,
-      array_agg(id ORDER BY created_at) as match_ids,
-      array_agg(source_match_key) as source_keys,
-      array_agg(league_id) as league_ids,
-      array_agg(tournament_id) as tournament_ids
+      array_agg(id ORDER BY
+        CASE WHEN home_score IS NOT NULL AND away_score IS NOT NULL THEN 0 ELSE 1 END,
+        CASE WHEN league_id IS NOT NULL OR tournament_id IS NOT NULL THEN 0 ELSE 1 END,
+        created_at
+      ) as match_ids,
+      array_agg(source_match_key ORDER BY
+        CASE WHEN home_score IS NOT NULL AND away_score IS NOT NULL THEN 0 ELSE 1 END,
+        CASE WHEN league_id IS NOT NULL OR tournament_id IS NOT NULL THEN 0 ELSE 1 END,
+        created_at
+      ) as source_keys,
+      array_agg(league_id ORDER BY
+        CASE WHEN home_score IS NOT NULL AND away_score IS NOT NULL THEN 0 ELSE 1 END,
+        CASE WHEN league_id IS NOT NULL OR tournament_id IS NOT NULL THEN 0 ELSE 1 END,
+        created_at
+      ) as league_ids,
+      array_agg(tournament_id ORDER BY
+        CASE WHEN home_score IS NOT NULL AND away_score IS NOT NULL THEN 0 ELSE 1 END,
+        CASE WHEN league_id IS NOT NULL OR tournament_id IS NOT NULL THEN 0 ELSE 1 END,
+        created_at
+      ) as tournament_ids,
+      array_agg(home_score ORDER BY
+        CASE WHEN home_score IS NOT NULL AND away_score IS NOT NULL THEN 0 ELSE 1 END,
+        CASE WHEN league_id IS NOT NULL OR tournament_id IS NOT NULL THEN 0 ELSE 1 END,
+        created_at
+      ) as home_scores,
+      array_agg(away_score ORDER BY
+        CASE WHEN home_score IS NOT NULL AND away_score IS NOT NULL THEN 0 ELSE 1 END,
+        CASE WHEN league_id IS NOT NULL OR tournament_id IS NOT NULL THEN 0 ELSE 1 END,
+        created_at
+      ) as away_scores
     FROM matches_v2
-    GROUP BY match_date, home_team_id, away_team_id, home_score, away_score
+    GROUP BY match_date, home_team_id, away_team_id
     HAVING COUNT(*) > 1
     ORDER BY count DESC
     LIMIT $1
   `, [limit]);
 
-  for (const row of strongMatches) {
+  for (const row of semanticMatches) {
     duplicateGroups.push({
-      type: 'strong_match',
+      type: 'semantic_match',
       match_date: row.match_date,
       home_team_id: row.home_team_id,
       away_team_id: row.away_team_id,
-      home_score: row.home_score,
-      away_score: row.away_score,
       count: parseInt(row.count),
       match_ids: row.match_ids,
       source_keys: row.source_keys,
       league_ids: row.league_ids,
       tournament_ids: row.tournament_ids,
+      home_scores: row.home_scores,
+      away_scores: row.away_scores,
     });
   }
 
-  if (verbose) console.log(`  Found ${strongMatches.length} strong match duplicate groups`);
+  if (verbose) console.log(`  Found ${semanticMatches.length} semantic duplicate groups`);
 
   return duplicateGroups;
 }
@@ -116,48 +150,38 @@ export async function detectPotentialDuplicates(client, options = {}) {
 
 /**
  * Choose which match to keep from a duplicate group
- * Priority:
- * 1. Keep the one linked to an event (league_id or tournament_id not null)
- * 2. Keep the one with more complete data
- * 3. Keep the earliest created one
+ *
+ * Session 85: Arrays are pre-sorted in the query by:
+ * 1. Has scores (non-NULL) - completed matches preferred over scheduled
+ * 2. Has event link (league_id or tournament_id) - linked matches preferred
+ * 3. Created date (earliest)
+ *
+ * So we always keep index 0 (the "best" match).
  */
 function chooseMatchToKeep(group) {
-  const { match_ids, league_ids, tournament_ids, source_keys } = group;
+  const { match_ids, league_ids, tournament_ids, home_scores, away_scores } = group;
 
-  // Find matches linked to events
-  const linkedIndices = [];
-  for (let i = 0; i < match_ids.length; i++) {
-    if (league_ids[i] || tournament_ids[i]) {
-      linkedIndices.push(i);
+  // First element is already the best (sorted in query)
+  const keepId = match_ids[0];
+  const deleteIds = match_ids.slice(1);
+
+  // Determine reason for logging
+  let reason = 'earliest_created';
+  if (home_scores && home_scores[0] !== null && away_scores && away_scores[0] !== null) {
+    if (league_ids[0] || tournament_ids[0]) {
+      reason = 'scored_and_linked';
+    } else {
+      reason = 'has_scores';
     }
+  } else if (league_ids[0] || tournament_ids[0]) {
+    reason = 'linked_to_event';
   }
 
-  // If only one is linked, keep it
-  if (linkedIndices.length === 1) {
-    return {
-      keepIndex: linkedIndices[0],
-      keepId: match_ids[linkedIndices[0]],
-      deleteIds: match_ids.filter((_, i) => i !== linkedIndices[0]),
-      reason: 'linked_to_event',
-    };
-  }
-
-  // If multiple are linked, keep the first (earliest)
-  if (linkedIndices.length > 1) {
-    return {
-      keepIndex: linkedIndices[0],
-      keepId: match_ids[linkedIndices[0]],
-      deleteIds: match_ids.filter((_, i) => i !== linkedIndices[0]),
-      reason: 'earliest_linked',
-    };
-  }
-
-  // None linked - keep the first (earliest created)
   return {
     keepIndex: 0,
-    keepId: match_ids[0],
-    deleteIds: match_ids.slice(1),
-    reason: 'earliest_created',
+    keepId,
+    deleteIds,
+    reason,
   };
 }
 
@@ -221,21 +245,20 @@ export async function resolveDuplicates(duplicateGroups, client, options = {}) {
 
 /**
  * Generate a report of duplicate matches
+ *
+ * Session 85: Uses semantic grouping (date + team IDs) as the standard.
+ * This aligns with Universal SoccerView ID Architecture.
  */
 export async function generateReport(client) {
-  const duplicates = await detectDuplicates(client, { verbose: false });
-  const potential = await detectPotentialDuplicates(client, { limit: 50 });
+  const duplicates = await detectDuplicates(client, { verbose: false, limit: 10000 });
 
   const report = {
     timestamp: new Date().toISOString(),
-    strongDuplicates: {
+    description: 'Semantic duplicates: same date + home_team_id + away_team_id',
+    semanticDuplicates: {
       count: duplicates.length,
       totalExtra: duplicates.reduce((sum, g) => sum + g.count - 1, 0),
       samples: duplicates.slice(0, 5),
-    },
-    potentialDuplicates: {
-      count: potential.length,
-      samples: potential.slice(0, 5),
     },
   };
 

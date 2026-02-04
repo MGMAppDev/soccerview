@@ -1031,15 +1031,31 @@ async function promoteRecords(records, client, dryRun) {
       ]);
 
       try {
+        // Session 85: Use semantic uniqueness (match_date, home_team_id, away_team_id)
+        // This aligns with Universal SoccerView ID Architecture
+        //
+        // Conflict resolution:
+        // - Scores: Prefer actual scores (non-NULL) over scheduled (NULL)
+        // - Event links: Keep existing if present, else use new
+        // - Source key: Keep existing (first source wins for audit trail)
         const { rowCount } = await client.query(`
           INSERT INTO matches_v2 (
             match_date, match_time, home_team_id, away_team_id,
             home_score, away_score, league_id, tournament_id, source_match_key
           )
           VALUES ${values}
-          ON CONFLICT (source_match_key) DO UPDATE SET
-            home_score = GREATEST(matches_v2.home_score, EXCLUDED.home_score),
-            away_score = GREATEST(matches_v2.away_score, EXCLUDED.away_score)
+          ON CONFLICT (match_date, home_team_id, away_team_id) DO UPDATE SET
+            home_score = CASE
+              WHEN matches_v2.home_score IS NOT NULL THEN matches_v2.home_score
+              ELSE EXCLUDED.home_score
+            END,
+            away_score = CASE
+              WHEN matches_v2.away_score IS NOT NULL THEN matches_v2.away_score
+              ELSE EXCLUDED.away_score
+            END,
+            league_id = COALESCE(matches_v2.league_id, EXCLUDED.league_id),
+            tournament_id = COALESCE(matches_v2.tournament_id, EXCLUDED.tournament_id),
+            source_match_key = COALESCE(matches_v2.source_match_key, EXCLUDED.source_match_key)
         `, params);
 
         stats.matchesInserted += rowCount;

@@ -809,6 +809,41 @@ Lesson: Check discrepancies, not just volume.
 - ❌ Including recreational teams in ELO calculations
 - ❌ Mixing competition levels in rankings
 
+### 29. Universal SoccerView ID Architecture (Session 85)
+
+**ALL entities uniquely identified by SoccerView-controlled IDs, not source-specific keys.**
+
+| Entity | Uniqueness Strategy | Uses SoccerView IDs? |
+|--------|--------------------|--------------------|
+| Teams | canonical_teams → team_v2_id | ✅ |
+| Clubs | canonical_clubs → club_id | ✅ |
+| Leagues | canonical_events → league_id | ✅ |
+| Tournaments | canonical_events → tournament_id | ✅ |
+| Schedules | (date, home_team_id, away_team_id) | ✅ |
+| **Matches** | **(date, home_team_id, away_team_id)** | ✅ |
+
+**Key Changes (Session 85):**
+- `matches_v2` constraint changed from `source_match_key` to semantic uniqueness
+- New constraint: `UNIQUE (match_date, home_team_id, away_team_id)`
+- `source_match_key` remains for audit/tracing, NOT uniqueness
+- Pipeline `ON CONFLICT` uses semantic key, not source-specific key
+
+**Why This Matters:**
+- Same match from different sources (V1 migration, GotSport, HTGSports) won't create duplicates
+- Team Details page shows ONE entry per match, not duplicates
+- Season Stats and ELO calculations are accurate (no inflated counts)
+
+**Files Modified:**
+- `scripts/migrations/085_add_semantic_match_constraint.sql` - Semantic constraint
+- `scripts/universal/dataQualityEngine.js` - ON CONFLICT clause updated
+- `scripts/universal/deduplication/matchDedup.js` - Semantic grouping
+- `scripts/daily/verifyDataIntegrity.js` - Semantic duplicate check
+
+**Anti-patterns:**
+- ❌ Using `source_match_key` as primary uniqueness constraint
+- ❌ ON CONFLICT clauses that don't use SoccerView Team IDs
+- ❌ Creating matches without resolving to canonical team IDs first
+
 ---
 
 ## Quick Reference

@@ -8,6 +8,7 @@
  * CHECKS:
  * 1. Team stats consistency - matches_played should match actual match count
  * 2. No duplicate source_match_keys
+ * 2b. No semantic duplicates (same date + team IDs) - Session 85 SoccerView ID Architecture
  * 3. Canonical registry completeness
  * 4. Birth year validity
  * 5. Orphan detection (GotSport ranked teams with 0 matches)
@@ -177,6 +178,45 @@ async function checkDuplicateSourceMatchKeys() {
   }
 
   return rows;
+}
+
+// ===========================================
+// CHECK 2b: Semantic Duplicates (Session 85)
+// ===========================================
+// A match is uniquely identified by (match_date, home_team_id, away_team_id)
+// using SoccerView Team IDs. This check ensures no semantic duplicates exist.
+
+async function checkSemanticDuplicates() {
+  console.log('\n--- Check 2b: Semantic Duplicates (SoccerView ID Architecture) ---');
+
+  const { rows } = await pool.query(`
+    SELECT COUNT(*) as duplicate_groups
+    FROM (
+      SELECT match_date, home_team_id, away_team_id
+      FROM matches_v2
+      GROUP BY match_date, home_team_id, away_team_id
+      HAVING COUNT(*) > 1
+    ) dups
+  `);
+
+  const dupeCount = parseInt(rows[0].duplicate_groups);
+
+  if (dupeCount === 0) {
+    addResult(
+      'Semantic Duplicates',
+      'pass',
+      'No semantic duplicates (same date + team IDs)'
+    );
+  } else {
+    addResult(
+      'Semantic Duplicates',
+      'critical',
+      `${dupeCount} semantic duplicate groups found`,
+      'Run: node scripts/universal/deduplication/matchDedup.js --execute'
+    );
+  }
+
+  return dupeCount;
 }
 
 // ===========================================
@@ -389,6 +429,7 @@ async function checkRejectedRecords() {
 
 async function runQuickChecks() {
   await checkDuplicateSourceMatchKeys();
+  await checkSemanticDuplicates();  // Session 85: SoccerView ID Architecture
   await checkStagingBacklog();
 }
 
@@ -399,6 +440,7 @@ async function runQuickChecks() {
 async function runFullChecks() {
   await checkTeamStatsConsistency();
   await checkDuplicateSourceMatchKeys();
+  await checkSemanticDuplicates();  // Session 85: SoccerView ID Architecture
   await checkCanonicalRegistryCompleteness();
   await checkBirthYearValidity();
   await checkOrphanRate();
