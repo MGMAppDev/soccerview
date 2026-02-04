@@ -44,8 +44,13 @@ const CONFIG = {
 // ===========================================
 
 /**
- * Detect teams with exact same (canonical_name, birth_year)
- * These are definite duplicates that differ only in gender/state
+ * Detect teams with exact same (canonical_name, birth_year, gender)
+ * These are definite duplicates - same team from different sources
+ *
+ * SESSION 87 FIX: Added gender to GROUP BY to prevent cross-gender merges.
+ * Previously grouped by (canonical_name, birth_year) only, which caused
+ * "Jackson SC 2015 Girls Gold" and "Jackson SC 2015 Boys Team 1" to be
+ * incorrectly grouped together as duplicates.
  */
 export async function detectExactDuplicates(client, options = {}) {
   const { limit = 500 } = options;
@@ -54,15 +59,17 @@ export async function detectExactDuplicates(client, options = {}) {
     SELECT
       canonical_name,
       birth_year,
+      gender,
       COUNT(*) as count,
       array_agg(id ORDER BY matches_played DESC, created_at) as team_ids,
-      array_agg(gender) as genders,
       array_agg(state) as states,
       array_agg(matches_played) as matches_played,
       array_agg(elo_rating) as elo_ratings
     FROM teams_v2
     WHERE canonical_name IS NOT NULL
-    GROUP BY canonical_name, birth_year
+      AND birth_year IS NOT NULL
+      AND gender IS NOT NULL
+    GROUP BY canonical_name, birth_year, gender
     HAVING COUNT(*) > 1
     ORDER BY count DESC
     LIMIT $1
@@ -72,9 +79,9 @@ export async function detectExactDuplicates(client, options = {}) {
     type: 'exact_match',
     canonical_name: r.canonical_name,
     birth_year: r.birth_year,
+    gender: r.gender,  // SESSION 87: Now grouped by gender, single value
     count: parseInt(r.count),
     team_ids: r.team_ids,
-    genders: r.genders,
     states: r.states,
     matches_played: r.matches_played,
     elo_ratings: r.elo_ratings,
@@ -127,6 +134,227 @@ export async function detectFuzzyDuplicates(client, options = {}) {
       matches_played: r.matches2,
     },
   }));
+}
+
+/**
+ * UNIVERSAL: Detect same-name teams with NULL metadata
+ *
+ * This catches duplicates that the strict fuzzy match misses because:
+ * - One team has birth_year/gender, the other has NULL
+ * - Teams have identical names but weren't matched due to NULL handling
+ *
+ * Strategy:
+ * 1. Find teams with very high similarity (>= 0.98) ignoring NULL metadata
+ * 2. Require at least one has non-NULL birth_year to avoid false positives
+ * 3. Prefer keeping the team with more complete metadata
+ */
+export async function detectSameNameDuplicates(client, options = {}) {
+  const { limit = 500, threshold = 0.98 } = options;
+
+  const { rows } = await client.query(`
+    SELECT
+      t1.id as id1,
+      t1.canonical_name as name1,
+      t1.display_name as display1,
+      t1.birth_year as birth_year1,
+      t1.gender as gender1,
+      t1.matches_played as matches1,
+      t2.id as id2,
+      t2.canonical_name as name2,
+      t2.display_name as display2,
+      t2.birth_year as birth_year2,
+      t2.gender as gender2,
+      t2.matches_played as matches2,
+      similarity(t1.canonical_name, t2.canonical_name) as sim
+    FROM teams_v2 t1
+    JOIN teams_v2 t2 ON t1.id < t2.id
+      AND similarity(t1.canonical_name, t2.canonical_name) >= $1
+      -- At least one must have birth_year to validate age group match
+      AND (t1.birth_year IS NOT NULL OR t2.birth_year IS NOT NULL)
+      -- If both have birth_year, they must match (or differ by 1 year max)
+      AND (t1.birth_year IS NULL OR t2.birth_year IS NULL OR ABS(t1.birth_year - t2.birth_year) <= 1)
+      -- Exclude teams with 0 matches that were already merged (have merged_into in audit_log)
+      AND t1.matches_played > 0
+      AND t2.matches_played > 0
+    ORDER BY sim DESC, (t1.matches_played + t2.matches_played) DESC
+    LIMIT $2
+  `, [threshold, limit]);
+
+  return rows.map(r => ({
+    type: 'same_name_null_metadata',
+    similarity: parseFloat(r.sim),
+    team1: {
+      id: r.id1,
+      name: r.name1,
+      display_name: r.display1,
+      birth_year: r.birth_year1,
+      gender: r.gender1,
+      matches_played: r.matches1,
+    },
+    team2: {
+      id: r.id2,
+      name: r.name2,
+      display_name: r.display2,
+      birth_year: r.birth_year2,
+      gender: r.gender2,
+      matches_played: r.matches2,
+    },
+  }));
+}
+
+/**
+ * Merge same-name duplicates with NULL metadata handling
+ *
+ * UNIVERSAL: Works for any data source, fixes NULL metadata during merge
+ */
+export async function mergeSameNameDuplicates(client, options = {}) {
+  const { dryRun = true, verbose = false, limit = 500 } = options;
+
+  console.log(`\n🔄 Merging same-name duplicates (NULL metadata handling)...`);
+
+  const duplicates = await detectSameNameDuplicates(client, { limit });
+  console.log(`   Found ${duplicates.length} same-name duplicate pairs`);
+
+  if (duplicates.length === 0) {
+    return { merged: 0, matchesMoved: 0, metadataFixed: 0 };
+  }
+
+  const stats = { merged: 0, matchesMoved: 0, metadataFixed: 0, errors: [] };
+
+  for (const dup of duplicates) {
+    const { team1, team2 } = dup;
+
+    // Decide which to keep:
+    // 1. Prefer team with more complete metadata (non-NULL birth_year + gender)
+    // 2. Then prefer team with more matches
+    // 3. Then prefer team with verbose name (contains "(U" for age group)
+
+    const meta1Score = (team1.birth_year ? 2 : 0) + (team1.gender ? 1 : 0);
+    const meta2Score = (team2.birth_year ? 2 : 0) + (team2.gender ? 1 : 0);
+
+    let keepTeam, mergeTeam;
+    if (meta1Score > meta2Score) {
+      keepTeam = team1;
+      mergeTeam = team2;
+    } else if (meta2Score > meta1Score) {
+      keepTeam = team2;
+      mergeTeam = team1;
+    } else if (team1.matches_played >= team2.matches_played) {
+      keepTeam = team1;
+      mergeTeam = team2;
+    } else {
+      keepTeam = team2;
+      mergeTeam = team1;
+    }
+
+    if (verbose) {
+      console.log(`\n   ${(dup.similarity * 100).toFixed(1)}% similar:`);
+      console.log(`     Keep:  "${keepTeam.name}" (BY:${keepTeam.birth_year}, G:${keepTeam.gender}, ${keepTeam.matches_played} matches)`);
+      console.log(`     Merge: "${mergeTeam.name}" (BY:${mergeTeam.birth_year}, G:${mergeTeam.gender}, ${mergeTeam.matches_played} matches)`);
+    }
+
+    if (dryRun) {
+      stats.merged++;
+      continue;
+    }
+
+    try {
+      await client.query('BEGIN');
+
+      // 1. First, fix NULL metadata on keep team if merge team has it
+      if (!keepTeam.birth_year && mergeTeam.birth_year) {
+        await client.query('UPDATE teams_v2 SET birth_year = $1 WHERE id = $2', [mergeTeam.birth_year, keepTeam.id]);
+        stats.metadataFixed++;
+      }
+      if (!keepTeam.gender && mergeTeam.gender) {
+        await client.query('UPDATE teams_v2 SET gender = $1 WHERE id = $2', [mergeTeam.gender, keepTeam.id]);
+        stats.metadataFixed++;
+      }
+
+      // 2. Update match references (mergeTeam -> keepTeam)
+      const { rowCount: home } = await client.query(
+        'UPDATE matches_v2 SET home_team_id = $1 WHERE home_team_id = $2',
+        [keepTeam.id, mergeTeam.id]
+      );
+      const { rowCount: away } = await client.query(
+        'UPDATE matches_v2 SET away_team_id = $1 WHERE away_team_id = $2',
+        [keepTeam.id, mergeTeam.id]
+      );
+
+      stats.matchesMoved += home + away;
+
+      // 3. Delete duplicate matches (same date + same teams after merge)
+      await client.query(`
+        WITH dupes AS (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY match_date, home_team_id, away_team_id
+                   ORDER BY created_at ASC
+                 ) as rn
+          FROM matches_v2
+          WHERE home_team_id = $1 OR away_team_id = $1
+        )
+        DELETE FROM matches_v2
+        WHERE id IN (SELECT id FROM dupes WHERE rn > 1)
+      `, [keepTeam.id]);
+
+      // 4. Update matches_played count on keep team
+      const { rows: count } = await client.query(
+        'SELECT COUNT(*) as total FROM matches_v2 WHERE home_team_id = $1 OR away_team_id = $1',
+        [keepTeam.id]
+      );
+      await client.query(
+        'UPDATE teams_v2 SET matches_played = $1 WHERE id = $2',
+        [parseInt(count[0].total), keepTeam.id]
+      );
+
+      // 5. Audit log
+      await client.query(`
+        INSERT INTO audit_log (table_name, record_id, action, old_data, new_data, changed_by, changed_at)
+        VALUES ('teams_v2', $1, 'SAME_NAME_MERGE', $2, $3, 'teamDedup-sameName', NOW())
+      `, [
+        mergeTeam.id,
+        JSON.stringify({ name: mergeTeam.name, birth_year: mergeTeam.birth_year, gender: mergeTeam.gender }),
+        JSON.stringify({ merged_into: keepTeam.id, similarity: dup.similarity }),
+      ]);
+
+      // 6. SESSION 87 FIX: Delete FK references BEFORE deleting team
+      await client.query('DELETE FROM canonical_teams WHERE team_v2_id = $1', [mergeTeam.id]);
+      await client.query('DELETE FROM rank_history_v2 WHERE team_id = $1', [mergeTeam.id]);
+
+      // 7. Hard delete merged team (now safe - no FK references)
+      await client.query('DELETE FROM teams_v2 WHERE id = $1', [mergeTeam.id]);
+
+      // 8. SELF-LEARNING: Update canonical registry for kept team
+      const { rows: existingCanonical } = await client.query(
+        'SELECT id, aliases FROM canonical_teams WHERE team_v2_id = $1',
+        [keepTeam.id]
+      );
+
+      if (existingCanonical.length > 0) {
+        const newAliases = [...new Set([...(existingCanonical[0].aliases || []), mergeTeam.name, mergeTeam.display_name].filter(Boolean))];
+        await client.query(
+          'UPDATE canonical_teams SET aliases = $1, updated_at = NOW() WHERE id = $2',
+          [newAliases, existingCanonical[0].id]
+        );
+      }
+
+      await client.query('COMMIT');
+      stats.merged++;
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      stats.errors.push({ keep: keepTeam.id, merge: mergeTeam.id, error: err.message });
+      if (verbose) console.error(`   ⚠️ Error: ${err.message}`);
+    }
+  }
+
+  console.log(`   ✅ Merged ${stats.merged} pairs, moved ${stats.matchesMoved} matches, fixed ${stats.metadataFixed} metadata`);
+  if (stats.errors.length > 0) {
+    console.log(`   ⚠️ ${stats.errors.length} errors`);
+  }
+
+  return stats;
 }
 
 /**
@@ -188,7 +416,7 @@ export async function mergeTeamGroup(group, client, options = {}) {
   const decision = chooseTeamToKeep(group);
 
   if (verbose) {
-    console.log(`  Merging: "${group.canonical_name}" (BY: ${group.birth_year})`);
+    console.log(`  Merging: "${group.canonical_name}" (BY:${group.birth_year} ${group.gender})`);
     console.log(`    Keep: ${decision.keepId} (${decision.reason})`);
     console.log(`    Delete: ${decision.deleteIds.length} teams`);
   }
@@ -205,18 +433,73 @@ export async function mergeTeamGroup(group, client, options = {}) {
   await client.query('BEGIN');
 
   try {
-    // 1. Update matches - change home_team_id references
-    const { rowCount: homeUpdated } = await client.query(`
+    // SESSION 87 FIX: Handle internal matches (both teams in merge group)
+    // These are intra-squad scrimmages where merging would violate different_teams_match constraint
+    const allGroupIds = [decision.keepId, ...decision.deleteIds];
+    const { rowCount: internalDeleted } = await client.query(`
       UPDATE matches_v2
-      SET home_team_id = $1
-      WHERE home_team_id = ANY($2)
+      SET deleted_at = NOW(),
+          deletion_reason = 'Intra-squad scrimmage - both teams merged to same entity'
+      WHERE home_team_id = ANY($1::uuid[])
+        AND away_team_id = ANY($1::uuid[])
+        AND home_team_id != away_team_id
+        AND deleted_at IS NULL
+    `, [allGroupIds]);
+    if (internalDeleted > 0 && verbose) {
+      console.log(`    Soft-deleted ${internalDeleted} intra-squad matches`);
+    }
+
+    // SESSION 87 FIX: Handle semantic duplicates that would arise from merge
+    // If match (date, keep_id, away) already exists, don't update match (date, delete_id, away)
+    // Soft-delete the duplicate instead
+    const { rowCount: dupeHomeDeleted } = await client.query(`
+      UPDATE matches_v2 m
+      SET deleted_at = NOW(),
+          deletion_reason = 'Semantic duplicate after team merge'
+      WHERE m.home_team_id = ANY($2::uuid[])
+        AND m.deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM matches_v2 existing
+          WHERE existing.match_date = m.match_date
+            AND existing.home_team_id = $1::uuid
+            AND existing.away_team_id = m.away_team_id
+            AND existing.deleted_at IS NULL
+        )
     `, [decision.keepId, decision.deleteIds]);
 
-    // 2. Update matches - change away_team_id references
+    const { rowCount: dupeAwayDeleted } = await client.query(`
+      UPDATE matches_v2 m
+      SET deleted_at = NOW(),
+          deletion_reason = 'Semantic duplicate after team merge'
+      WHERE m.away_team_id = ANY($2::uuid[])
+        AND m.deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM matches_v2 existing
+          WHERE existing.match_date = m.match_date
+            AND existing.home_team_id = m.home_team_id
+            AND existing.away_team_id = $1::uuid
+            AND existing.deleted_at IS NULL
+        )
+    `, [decision.keepId, decision.deleteIds]);
+
+    if ((dupeHomeDeleted + dupeAwayDeleted) > 0 && verbose) {
+      console.log(`    Soft-deleted ${dupeHomeDeleted + dupeAwayDeleted} semantic duplicates`);
+    }
+
+    // 1. Update matches - change home_team_id references (only non-duplicates)
+    const { rowCount: homeUpdated } = await client.query(`
+      UPDATE matches_v2
+      SET home_team_id = $1::uuid
+      WHERE home_team_id = ANY($2::uuid[])
+        AND deleted_at IS NULL
+    `, [decision.keepId, decision.deleteIds]);
+
+    // 2. Update matches - change away_team_id references (only non-duplicates)
     const { rowCount: awayUpdated } = await client.query(`
       UPDATE matches_v2
-      SET away_team_id = $1
-      WHERE away_team_id = ANY($2)
+      SET away_team_id = $1::uuid
+      WHERE away_team_id = ANY($2::uuid[])
+        AND deleted_at IS NULL
     `, [decision.keepId, decision.deleteIds]);
 
     // 3. Update kept team's matches_played count
@@ -231,32 +514,42 @@ export async function mergeTeamGroup(group, client, options = {}) {
       WHERE id = $2
     `, [parseInt(matchCount[0].total), decision.keepId]);
 
-    // 4. Log deletions to audit
+    // 4. Get deleted team names BEFORE deleting (for self-learning)
+    const { rows: deletedTeams } = await client.query(`
+      SELECT canonical_name, display_name FROM teams_v2 WHERE id = ANY($1::uuid[])
+    `, [decision.deleteIds]);
+    const mergedNames = deletedTeams.map(t => t.display_name || t.canonical_name);
+
+    // 5. Log deletions to audit (cast $1 to text for jsonb_build_object)
     await client.query(`
       INSERT INTO audit_log (table_name, record_id, action, old_data, new_data, changed_by, changed_at)
       SELECT 'teams_v2', id, 'MERGE_DELETE',
         row_to_json(teams_v2),
-        jsonb_build_object('merged_into', $1, 'reason', $2),
+        jsonb_build_object('merged_into', $1::text, 'reason', $2::text),
         'teamDedup', NOW()
       FROM teams_v2
-      WHERE id = ANY($3)
+      WHERE id = ANY($3::uuid[])
     `, [decision.keepId, decision.reason, decision.deleteIds]);
 
-    // 5. Delete duplicate teams
+    // 6. SESSION 87 FIX: Delete FK references BEFORE deleting teams
+    // canonical_teams has FK constraint to teams_v2, must delete first
+    await client.query(`
+      DELETE FROM canonical_teams WHERE team_v2_id = ANY($1::uuid[])
+    `, [decision.deleteIds]);
+
+    // 7. Delete from rank_history_v2 (also has FK to teams_v2)
+    await client.query(`
+      DELETE FROM rank_history_v2 WHERE team_id = ANY($1::uuid[])
+    `, [decision.deleteIds]);
+
+    // 8. Delete duplicate teams (now safe - no FK references)
     const { rowCount: deleted } = await client.query(`
       DELETE FROM teams_v2
-      WHERE id = ANY($1)
+      WHERE id = ANY($1::uuid[])
     `, [decision.deleteIds]);
 
-    // 6. SELF-LEARNING: Add merged team names to canonical_teams registry
-    // Get names of teams being deleted
-    const { rows: deletedTeams } = await client.query(`
-      SELECT canonical_name, display_name FROM teams_v2 WHERE id = ANY($1)
-    `, [decision.deleteIds]);
-
-    if (deletedTeams.length > 0) {
-      const mergedNames = deletedTeams.map(t => t.display_name || t.canonical_name);
-
+    // 9. SELF-LEARNING: Add merged team names to canonical_teams registry
+    if (mergedNames.length > 0) {
       // Check if canonical entry exists for kept team
       const { rows: existingCanonical } = await client.query(`
         SELECT id, aliases FROM canonical_teams WHERE team_v2_id = $1
@@ -429,10 +722,14 @@ export async function autoMergeHighConfidence(client, options = {}) {
         VALUES ('teams_v2', $1, 'AUTO_MERGE', $2, $3, 'teamDedup-auto', NOW())
       `, [deleteId, JSON.stringify({ name: deleteName }), JSON.stringify({ merged_into: keepId, similarity: pair.sim })]);
 
-      // Delete duplicate
+      // SESSION 87 FIX: Delete FK references BEFORE deleting team
+      await client.query('DELETE FROM canonical_teams WHERE team_v2_id = $1', [deleteId]);
+      await client.query('DELETE FROM rank_history_v2 WHERE team_id = $1', [deleteId]);
+
+      // Delete duplicate (now safe - no FK references)
       await client.query('DELETE FROM teams_v2 WHERE id = $1', [deleteId]);
 
-      // SELF-LEARNING: Update canonical registry
+      // SELF-LEARNING: Update canonical registry for kept team
       const { rows: existingCanonical } = await client.query(
         'SELECT id, aliases FROM canonical_teams WHERE team_v2_id = $1',
         [keepId]
@@ -532,6 +829,7 @@ export async function generateReport(client, options = {}) {
       samples: exact.slice(0, 10).map(g => ({
         name: g.canonical_name,
         birth_year: g.birth_year,
+        gender: g.gender,  // SESSION 87: Added gender
         count: g.count,
         matches: g.matches_played,
       })),
@@ -550,6 +848,7 @@ async function main() {
   const reportOnly = args.includes('--report');
   const autoMerge = args.includes('--auto-merge');
   const reviewCandidates = args.includes('--review-candidates');
+  const sameNameMerge = args.includes('--same-name');
 
   console.log('👥 TEAM DEDUPLICATION');
   console.log('='.repeat(40));
@@ -583,6 +882,22 @@ async function main() {
       }
       if (candidates.length > 20) {
         console.log(`   ... and ${candidates.length - 20} more`);
+      }
+      return;
+    }
+
+    if (sameNameMerge) {
+      // UNIVERSAL: Same-name duplicates with NULL metadata handling
+      const stats = await mergeSameNameDuplicates(client, { dryRun, verbose });
+      console.log('\n📊 SAME-NAME MERGE RESULTS:');
+      console.log(`   Pairs ${dryRun ? 'would be ' : ''}merged: ${stats.merged}`);
+      console.log(`   Matches ${dryRun ? 'would be ' : ''}moved: ${stats.matchesMoved}`);
+      console.log(`   Metadata fixed: ${stats.metadataFixed}`);
+      if (stats.errors && stats.errors.length > 0) {
+        console.log(`   Errors: ${stats.errors.length}`);
+      }
+      if (dryRun) {
+        console.log('\n⚠️  This was a DRY RUN. Use --execute to actually merge teams.');
       }
       return;
     }
