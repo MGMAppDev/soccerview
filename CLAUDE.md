@@ -726,6 +726,48 @@ git status  # Check for uncommitted work from previous sessions
 
 If uncommitted changes exist, address them FIRST before starting new work.
 
+### 27. Foundation First - Extract ALL Raw Data Before Daily Scrape (Session 83)
+
+**CORE FOUNDATIONAL PRINCIPLE:** Get ALL raw data first, clean it to best V2 quality, then daily scrape builds upon this foundation.
+
+**The Problem:**
+- Session 82 migrated V1 matches to V2, but later discovered gaps
+- V2 had MORE total records than V1, but V1 had data V2 was MISSING
+- More records ≠ more complete. Always check for DISCREPANCIES.
+
+**The Principle:**
+
+```
+ALL Historical Data → Clean via V2 Pipeline → Best Possible Foundation
+                                                      ↓
+                                            Daily Scrape Adds NEW Data
+                                                      ↓
+                                              Continuously Improving
+```
+
+**Key Rules:**
+
+1. **Complete Extraction:** Before daily scrape can be trusted, ALL historical data must be extracted and cleaned
+2. **Discrepancy Check:** Never assume "more records = complete". Compare V1 vs V2 for same dates/teams
+3. **Fill Gaps First:** Identify and fill gaps BEFORE relying on daily incremental updates
+4. **Foundation Quality:** The daily scrape BUILDS ON the foundation. Bad foundation = bad product.
+
+**Example (Session 83):**
+```
+V1 rank_history: 966,809 records (9 dates)
+V2 rank_history: 1,439,012 records (151 dates)
+
+Initial assumption: V2 is superior (more records)
+Reality: V1 has 49,729 entries MISSING from V2 for the same dates!
+         3,180 teams have valid IDs but NO V2 rank history.
+
+Lesson: Check discrepancies, not just volume.
+```
+
+**Files Created:**
+- `scripts/audit/analyzeRankHistoryGap.cjs` - Discrepancy analysis tool
+- `scripts/maintenance/migrateV1RankHistory.cjs` - Fill V1→V2 gaps
+
 ---
 
 ## Quick Reference
