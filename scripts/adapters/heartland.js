@@ -1,25 +1,26 @@
 /**
- * Heartland Soccer League Adapter v2.0
- * =====================================
+ * Heartland Soccer League Adapter v3.0 (Premier-Only)
+ * ====================================================
+ *
+ * Session 84: SoccerView is PREMIER-ONLY. Recreational data excluded.
  *
  * UNIFIED adapter for scraping Heartland Soccer League data from TWO sources:
  *
  * 1. CGI Results (https://heartlandsoccer.net/reports/cgi-jrb/)
  *    - Technology: Cheerio (server-rendered HTML)
  *    - Data: Match RESULTS with scores
- *    - Events: heartland-premier-2026, heartland-recreational-2026
+ *    - Events: heartland-premier-2026 (PREMIER ONLY)
  *
  * 2. Calendar (https://calendar.heartlandsoccer.net)
  *    - Technology: Puppeteer (JavaScript-rendered)
  *    - Data: SCHEDULED matches (no scores)
- *    - Events: heartland-calendar-2026
+ *    - Events: heartland-calendar-2026 (filtered for premier teams only)
  *
  * The scrapeEvent function routes to the appropriate scraping method
  * based on the event's level property.
  *
- * Based on:
- * - scripts/scrapers/scrapeHeartlandResults.js (CGI)
- * - scripts/scrapers/scrapeHeartlandLeague.js (Calendar)
+ * IMPORTANT: Recreational scraping was REMOVED in Session 84.
+ * See CLAUDE.md Principle 28 and docs/SESSION_84_PREMIER_ONLY_PLAN.md
  */
 
 export default {
@@ -40,7 +41,7 @@ export default {
 
   /**
    * This adapter uses BOTH technologies based on event type:
-   * - CGI (Premier/Recreational): Cheerio
+   * - CGI (Premier): Cheerio
    * - Calendar: Puppeteer
    * Set to "mixed" to indicate dynamic technology selection.
    */
@@ -95,6 +96,8 @@ export default {
   // LEAGUE CONFIGURATION (CGI Results)
   // =========================================
 
+  // Session 84: SoccerView is PREMIER-ONLY
+  // Recreational config REMOVED - see CLAUDE.md Principle 28
   leagues: {
     Premier: {
       level: "Premier",
@@ -103,23 +106,8 @@ export default {
       subdivisions: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"],
       paramNames: { gender: "b_g", age: "age", subdiv: "subdivison" }, // Note: misspelling in original
     },
-    Recreational: {
-      level: "Recreational",
-      genders: ["Boys", "Girls"],
-      ages: [
-        "U-9/3rd Grade 7v7",
-        "U-9/10-3rd/4th Grade 9v9",
-        "U-10/4th Grade 7v7",
-        "U-10/4th Grade 9v9",
-        "U-11/5th Grade 9v9",
-        "U-12/6th Grade 9v9",
-        "U-13/7th Grade",
-        "U-14/8th Grade",
-        "U-14/15-8th/9th Grade",
-      ],
-      subdivisions: ["CANADA", "MEXICO", "USA", "1", "2", "3"],
-      paramNames: { gender: "b_g3", age: "age1", subdiv: "subdivison1" },
-    },
+    // REMOVED in Session 84: Recreational config
+    // SoccerView focuses on premier/competitive youth soccer only
   },
 
   // =========================================
@@ -198,22 +186,23 @@ export default {
      * The actual scraping iterates through subdivision combinations (CGI)
      * or team search (Calendar).
      *
-     * THREE EVENT TYPES:
+     * TWO EVENT TYPES (Session 84: Premier-Only):
      * - Premier: CGI results scraping
-     * - Recreational: CGI results scraping
-     * - Calendar: Team schedule scraping (Puppeteer)
+     * - Calendar: Team schedule scraping (Puppeteer) - filtered for premier teams
+     *
+     * REMOVED: Recreational (Session 84)
      */
     staticEvents: [
-      // CGI Results (with scores)
+      // CGI Results (with scores) - PREMIER ONLY
       { id: "heartland-premier-2026", name: "Heartland Premier League 2026", year: 2026, type: "league", level: "Premier" },
-      { id: "heartland-recreational-2026", name: "Heartland Recreational League 2026", year: 2026, type: "league", level: "Recreational" },
-      // Calendar Schedules (no scores - future matches)
+      // REMOVED: heartland-recreational-2026 (Session 84 - SoccerView is Premier-only)
+      // Calendar Schedules (no scores - future matches) - filtered for premier teams
       { id: "heartland-calendar-2026", name: "Heartland Soccer League Schedule 2026", year: 2026, type: "league", level: "Calendar" },
     ],
 
     /**
      * UNIVERSAL: Uses engine's database-based discovery + static fallback.
-     * Heartland has 3 virtual events per year (Premier, Recreational, Calendar).
+     * Heartland has 2 virtual events per year (Premier, Calendar).
      */
     discoverEvents: async (engine) => {
       // Try database discovery first
@@ -378,12 +367,13 @@ export default {
 };
 
 // =========================================
-// CGI RESULTS SCRAPING (Premier/Recreational)
+// CGI RESULTS SCRAPING (Premier-Only)
 // =========================================
 
 /**
- * Scrape CGI results for Premier or Recreational leagues.
- * Iterates through all level/gender/age/subdivision combinations.
+ * Scrape CGI results for Premier league only.
+ * Iterates through all gender/age/subdivision combinations.
+ * Session 84: Recreational scraping REMOVED - SoccerView is Premier-only.
  */
 async function scrapeCGIResults(engine, event) {
   const allMatches = [];
@@ -551,8 +541,32 @@ function parseResultsHtml($, engine, level, gender, age, subdiv, eventName) {
 // =========================================
 
 /**
+ * Session 84: Recreational team detection patterns
+ * Used to filter out recreational teams from calendar scraping.
+ * SoccerView is Premier-only - see CLAUDE.md Principle 28.
+ */
+const RECREATIONAL_PATTERNS = [
+  /\brec\b/i,           // "Rec" as word boundary
+  /recreational/i,      // "Recreational" anywhere
+  /\bcomm\b/i,          // "Comm" (community)
+  /community/i,         // "Community" anywhere
+  /\bdev\b/i,           // "Dev" (development) as word
+  /development/i,       // "Development" anywhere
+];
+
+/**
+ * Check if a team name indicates recreational/community level.
+ * Session 84: SoccerView is Premier-only.
+ */
+function isRecreationalTeam(teamName) {
+  if (!teamName) return false;
+  return RECREATIONAL_PATTERNS.some(pattern => pattern.test(teamName));
+}
+
+/**
  * Scrape schedules from calendar.heartlandsoccer.net using Puppeteer.
  * Searches for teams by club name, then scrapes each team's schedule.
+ * Session 84: Filters out recreational teams (Premier-only).
  */
 async function scrapeCalendarSchedules(engine, event) {
   const allMatches = [];
@@ -590,6 +604,13 @@ async function scrapeCalendarSchedules(engine, event) {
         if (processedTeamIds.has(team.id)) {
           continue;
         }
+
+        // Session 84: Skip recreational teams (Premier-only policy)
+        if (isRecreationalTeam(team.name) || isRecreationalTeam(team.fullName)) {
+          console.log(`   ⏭️ Skipping recreational team: ${team.name}`);
+          continue;
+        }
+
         processedTeamIds.add(team.id);
 
         // Scrape team schedule
@@ -817,7 +838,13 @@ async function scrapeTeamSchedule(page, team, event, calendarBaseUrl, engine) {
       });
     }
 
-    return matches.filter(m => engine.adapter.dataPolicy.isValidMatch(m));
+    // Session 84: Filter out matches involving recreational teams (Premier-only)
+    const premierMatches = matches.filter(m =>
+      !isRecreationalTeam(m.homeTeamName) &&
+      !isRecreationalTeam(m.awayTeamName)
+    );
+
+    return premierMatches.filter(m => engine.adapter.dataPolicy.isValidMatch(m));
 
   } catch (error) {
     console.log(`      ⚠️ Schedule error for ${team.name}: ${error.message}`);

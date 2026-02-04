@@ -1,9 +1,12 @@
 # SoccerView Data Expansion Roadmap
 
-> **Version 2.4** | Updated: February 1, 2026 | V2 Architecture + Session 69 (Index Maintenance)
+> **Version 2.5** | Updated: February 3, 2026 | V2 Architecture + Session 84 (Premier-Only Policy)
 >
 > Strategic guide for adding new data sources using the V2 three-layer architecture.
 > **Session 57:** Adding a new source now takes ~1-2 hours (adapter config only) instead of ~1-2 days (custom script).
+>
+> **⚠️ CRITICAL (Session 84): All new data sources MUST be PREMIER/COMPETITIVE level only.**
+> Recreational, community, and development leagues are EXCLUDED from SoccerView.
 
 ---
 
@@ -62,15 +65,20 @@ Nightly Pipeline:
 
 ## Critical Rules
 
-### Rule 1: NO Indoor Soccer or Futsal
+### Rule 1: PREMIER-ONLY - NO Recreational or Indoor
 
 | Type | Include? | Reason |
 |------|----------|--------|
-| **Outdoor 11v11** | ✅ YES | Core competitive soccer |
-| **Outdoor 9v9** | ✅ YES | Youth developmental |
-| **Outdoor 7v7** | ✅ YES | Youth developmental |
+| **Premier/Competitive 11v11** | ✅ YES | Core competitive soccer |
+| **Premier/Competitive 9v9** | ✅ YES | Youth competitive |
+| **Premier/Competitive 7v7** | ✅ YES | Youth competitive |
+| **Recreational leagues** | ❌ NO | Dilutes rankings (Session 84) |
+| **Community programs** | ❌ NO | Not competitive level |
+| **Development/Rec** | ❌ NO | Not premier level |
 | **Indoor Soccer** | ❌ NO | Different sport |
 | **Futsal** | ❌ NO | Different sport |
+
+**Session 84:** Recreational teams were appearing in top 10 SoccerView rankings despite not competing at premier level. This dilutes the value proposition for users seeking competitive team rankings.
 
 ### Rule 2: Last 3 Seasons Only
 

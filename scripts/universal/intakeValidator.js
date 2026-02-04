@@ -42,7 +42,15 @@ const CONFIG = {
   MIN_VALID_BIRTH_YEAR: 2005,              // U20 in 2025 (oldest valid youth)
   MAX_VALID_BIRTH_YEAR: 2020,              // U5 in 2025 (youngest valid youth)
   BATCH_SIZE: 1000,
-  VALIDATOR_VERSION: '1.0',
+  VALIDATOR_VERSION: '1.1',  // Updated in Session 84
+
+  // Session 84: Premier-only policy - reject recreational data
+  // See CLAUDE.md Principle 28 and docs/SESSION_84_PREMIER_ONLY_PLAN.md
+  RECREATIONAL_PATTERNS: [
+    /heartland-recreational/i,       // Heartland recreational source_match_key
+    /recreational.*league/i,         // "Recreational League" in event name
+    /\brec\s+(soccer|league|team)/i, // "Rec soccer", "Rec league", "Rec team"
+  ],
 };
 
 // Rejection codes
@@ -56,6 +64,7 @@ const REJECTION_CODES = {
   UNKNOWN_PLATFORM: 'UNKNOWN_PLATFORM',
   SAME_TEAM: 'SAME_TEAM',
   MALFORMED_KEY: 'MALFORMED_KEY',
+  RECREATIONAL_LEVEL: 'RECREATIONAL_LEVEL',  // Session 84: Premier-only policy
 };
 
 // ===========================================
@@ -229,6 +238,20 @@ function validateRecord(record, autoFix = true) {
         });
       }
     }
+  }
+
+  // 7. Recreational level check (Session 84: Premier-only policy)
+  // See CLAUDE.md Principle 28 and docs/SESSION_84_PREMIER_ONLY_PLAN.md
+  const isRecreational = CONFIG.RECREATIONAL_PATTERNS.some(pattern =>
+    pattern.test(record.source_match_key || '') ||
+    pattern.test(record.event_name || '')
+  );
+
+  if (isRecreational) {
+    rejections.push({
+      code: REJECTION_CODES.RECREATIONAL_LEVEL,
+      reason: `Recreational data rejected per Premier-only policy: ${record.event_name || record.source_match_key}`,
+    });
   }
 
   return {

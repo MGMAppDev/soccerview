@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 2.8** | Updated: February 2, 2026 | V2 Architecture + Session 76 (Pipeline Bypass Fix)
+> **Version 2.9** | Updated: February 3, 2026 | V2 Architecture + Session 84 (Premier-Only Policy)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -10,6 +10,11 @@
 > **⚠️ CRITICAL (Session 76):** NEVER write directly to `teams_v2` or `matches_v2`.
 > ALL data MUST flow through staging → dataQualityEngine → production.
 > Direct writes bypass normalizers and create orphaned duplicate teams.
+>
+> **⚠️ CRITICAL (Session 84): PREMIER-ONLY POLICY**
+> SoccerView ONLY includes premier/competitive youth soccer data.
+> **DO NOT scrape:** Recreational leagues, community programs, development leagues.
+> The `intakeValidator.js` will reject any recreational data that slips through.
 
 ---
 
@@ -561,7 +566,7 @@ node scripts/validationPipeline.js --refresh-views
 |---------|--------|------------|--------|
 | `scripts/adapters/gotsport.js` | GotSport | Cheerio | ✅ Production |
 | `scripts/adapters/htgsports.js` | HTGSports | Puppeteer | ✅ Production |
-| `scripts/adapters/heartland.js` | Heartland CGI | Cheerio | ✅ Production |
+| `scripts/adapters/heartland.js` | Heartland CGI + Calendar | Cheerio/Puppeteer | ✅ Production (Premier-only, v3.0) |
 | `scripts/adapters/_template.js` | Template | — | Template |
 
 ### Legacy Scrapers (Fallback)

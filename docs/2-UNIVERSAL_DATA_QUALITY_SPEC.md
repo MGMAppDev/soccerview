@@ -1114,6 +1114,14 @@ jobs:
     - Detection: `split_part(name, ' ', 1) = split_part(name, ' ', 2)`
     - Fix: `mergeOrphansByNormalizedName.cjs` applies normalizer logic to orphans
 
+17. **DO NOT scrape recreational or community-level data (Session 84)**
+    - **SoccerView is PREMIER-ONLY** - recreational teams dilute rankings
+    - **WRONG:** Scraping Heartland Recreational, community leagues, or dev/rec programs
+    - **CORRECT:** Only scrape Premier/Competitive leagues and tournaments
+    - Detection patterns: `/\brec\b/i`, `/recreational/i`, `/\bcomm\b/i`, `/community/i`
+    - `intakeValidator.js` rejects any data matching RECREATIONAL_LEVEL patterns
+    - If recreational data gets scraped, it will be blocked at intake validation gate
+
 ---
 
 ## 📝 SESSION HANDOFF TEMPLATE

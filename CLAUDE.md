@@ -768,6 +768,47 @@ Lesson: Check discrepancies, not just volume.
 - `scripts/audit/analyzeRankHistoryGap.cjs` - Discrepancy analysis tool
 - `scripts/maintenance/migrateV1RankHistory.cjs` - Fill V1→V2 gaps
 
+### 28. Premier-Only Data Policy (Session 84)
+
+**SoccerView focuses exclusively on premier/competitive youth soccer.**
+
+| Source | Level | Status |
+|--------|-------|--------|
+| GotSport | Premier (implicit) | Included |
+| HTGSports | Premier (implicit) | Included |
+| Heartland Premier | Premier | Included |
+| Heartland Calendar | Premier filtered | Included (rec teams filtered) |
+| Heartland Recreational | Recreational | **EXCLUDED** |
+
+**Implementation:**
+- Heartland adapter only scrapes Premier CGI results (v3.0)
+- Calendar scraping filters out recreational teams by name pattern
+- `intakeValidator.js` rejects any data matching recreational patterns
+- Migration 080 removed all historical recreational data (648 matches)
+
+**Why Premier-Only?**
+- GotSport national rankings only cover premier teams
+- Recreational teams lack competitive match data for meaningful ELO
+- User value proposition is competitive team rankings
+- Mixing levels dilutes rankings (rec teams appeared in top 10)
+
+**Affected Teams:**
+- 121 teams had ONLY recreational matches → now have 0 matches, won't appear in rankings
+- 25 teams had BOTH premier and recreational → keep premier matches only
+- All GotSport-ranked teams remain (even if no matches)
+
+**Files Created/Modified:**
+- `scripts/adapters/heartland.js` - Removed Recreational config
+- `scripts/universal/intakeValidator.js` - Added `RECREATIONAL_LEVEL` rejection
+- `scripts/migrations/080_remove_recreational_data.sql` - Cleanup migration
+- `scripts/audit/verifyPremierOnly.cjs` - Verification script
+- `docs/SESSION_84_PREMIER_ONLY_PLAN.md` - Full migration plan
+
+**Anti-patterns:**
+- ❌ Scraping recreational/community league data
+- ❌ Including recreational teams in ELO calculations
+- ❌ Mixing competition levels in rankings
+
 ---
 
 ## Quick Reference
@@ -776,10 +817,10 @@ Lesson: Check discrepancies, not just volume.
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 157,331 | Team records (Session 82: +8,940 from V1) |
-| `matches_v2` | 411,074 | Match results (Session 82: +93,984 from V1) |
+| `teams_v2` | 157,331 | Team records (60,964 with matches) |
+| `matches_v2` | 412,138 | Match results (Session 84: -648 recreational) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 280 | League metadata (38 with state) |
+| `leagues` | 279 | League metadata (Session 84: -3 recreational) |
 | `tournaments` | 1,728 | Tournament metadata |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |

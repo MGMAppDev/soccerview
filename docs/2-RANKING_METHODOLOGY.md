@@ -1,9 +1,12 @@
 # SoccerView Ranking Methodology
 
-> **Version 1.0** | Created: February 1, 2026 | Session 70
+> **Version 1.1** | Updated: February 3, 2026 | Session 84 (Premier-Only Policy)
 >
 > Authoritative specification for the SoccerView Power Rating (ELO-based) system.
 > This document supplements ARCHITECTURE.md and defines how rankings are calculated.
+>
+> **⚠️ SCOPE: SoccerView rankings cover PREMIER/COMPETITIVE youth soccer ONLY.**
+> Recreational and community-level teams are excluded (Session 84).
 
 ---
 
@@ -375,6 +378,7 @@ const K = team.matches_played < 10 ? 48 : 32;
 2. **DO NOT change UI code** — The chart already works
 3. **DO NOT hardcode team pools** — Always query current pool dynamically
 4. **DO NOT skip seasons table** — It's the single source of truth for dates
+5. **DO NOT include recreational data (Session 84)** — Rankings are premier-level only
 
 ---
 
