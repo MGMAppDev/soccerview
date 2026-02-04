@@ -1,24 +1,25 @@
-> ✅ **STATUS UPDATE (Feb 3, 2026 - Session 79):** V2 ARCHITECTURE ENFORCEMENT COMPLETE
+> ✅ **STATUS UPDATE (Feb 4, 2026 - Session 85):** UNIVERSAL SOCCERVIEW ID ARCHITECTURE COMPLETE
 >
 > **Current Database State:**
-> - staging_games: 86,491 total (7,940 unprocessed - pending nightly pipeline)
-> - matches_v2: **314,852 rows**
-> - teams_v2: **147,515 rows** (Session 77-79: merged duplicates + cleaned canonical)
+> - staging_games: 86,491 total (7 unprocessed)
+> - matches_v2: **402,887 rows** (Session 85: -8,251 duplicates removed)
+> - teams_v2: **157,331 rows** (60,964 with matches)
 > - clubs: 124,650 rows
-> - leagues: 280 rows (38 with state/region metadata)
+> - leagues: 279 rows
 > - tournaments: 1,728 rows
 > - **canonical_events: 1,795 rows** (bulk seeded from leagues/tournaments)
-> - **canonical_teams: 146,639 rows** (Session 79: cleaned 876 stale entries)
+> - **canonical_teams: 146,527 rows** (93.1% coverage)
 > - **canonical_clubs: 7,301 rows** (bulk seeded from clubs with 3+ teams)
 > - **learned_patterns: 0+ rows** (adaptive learning - grows weekly)
-> - **staging_rejected: 1 row** (Session 79: intake validation gate)
+> - **staging_rejected: 84,045 rows** (V1 migration rejects)
 > - seasons: 3 rows
 >
-> **Session 79 V2 Architecture Enforcement:**
-> - **Phase 1:** Intake validation gate (`intakeValidator.js`) - rejects garbage BEFORE staging
-> - **Phase 2:** Consolidated to ONE processor (`dataQualityEngine.js` - no fallbacks)
-> - **Phase 3:** Write protection triggers block unauthorized writes to production
-> - **Phase 4:** Integrity verification (`verifyDataIntegrity.js`) runs after every cycle
+> **Session 85 Universal SoccerView ID Architecture:**
+> - Match uniqueness changed from `source_match_key` to semantic key `(match_date, home_team_id, away_team_id)`
+> - 8,251 duplicate matches removed, 0 remaining
+> - `dataQualityEngine.js` updated to use semantic ON CONFLICT
+> - `verifyDataIntegrity.js` updated with semantic duplicate check
+> - All entities now use SoccerView IDs as uniqueness anchor
 >
 > **⚠️ GUARDRAIL:** Always verify canonical registry health before deduplication work!
 > See [GUARDRAILS](1.1-GUARDRAILS_v2.md) for mandatory pre-flight checklist.
