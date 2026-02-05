@@ -7,7 +7,15 @@
  *
  * ADAPTIVE LEARNING: Supports learned keywords for better league/tournament classification.
  * Call initializeLearnedPatterns() before bulk operations to enable.
+ *
+ * GENERIC NAME REJECTION (Session 91): Rejects generic event names like "GotSport Event 12093"
+ * via centralized isGeneric() from resolveEventName.cjs. Returns canonical_name: null so DQE
+ * findOrCreateEvent() skips event creation (match created unlinked instead of garbage-linked).
  */
+
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { isGeneric } = require('../resolveEventName.cjs');
 
 // League keywords (hardcoded baseline)
 const LEAGUE_KEYWORDS = ['league', 'season', 'conference', 'division', 'premier', 'recreational'];
@@ -139,6 +147,21 @@ export function normalizeEvent(input) {
       region: null,
       normalized: false,
       error: 'Invalid or empty event name',
+    };
+  }
+
+  // Reject generic event names (Session 91)
+  // DQE findOrCreateEvent() handles canonical_name: null → match created unlinked
+  if (isGeneric(raw_name)) {
+    return {
+      canonical_name: null,
+      event_type: null,
+      year: null,
+      season: null,
+      state: null,
+      region: null,
+      normalized: false,
+      error: 'Generic event name',
     };
   }
 

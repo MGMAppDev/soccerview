@@ -17,8 +17,12 @@
  */
 
 import pg from 'pg';
+import { createRequire } from 'module';
 import 'dotenv/config';
 import { authorizePipelineWrite } from '../universal/pipelineAuth.js';
+
+const require = createRequire(import.meta.url);
+const { isGeneric } = require('../universal/resolveEventName.cjs');
 
 const { Pool } = pg;
 
@@ -131,6 +135,12 @@ async function main() {
         let created = 0;
 
         for (const eventName of missingEvents) {
+          // Reject generic event names (Session 91)
+          if (isGeneric(eventName)) {
+            console.log(`    Skipping generic event: "${eventName}"`);
+            continue;
+          }
+
           // Determine if it's likely a league or tournament based on name
           const isLeague = /league|season|fall|spring|winter|division/i.test(eventName) &&
                            !/cup|invitational|classic|showcase|tournament|memorial|challenge/i.test(eventName);
