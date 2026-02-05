@@ -220,6 +220,35 @@ export default function MatchDetailScreen() {
             goals_against: null,
           });
         }
+
+        // Fetch team stats from teams_v2 (W-L-D populated by nightly ELO script)
+        const [homeStatsRes, awayStatsRes] = await Promise.all([
+          data?.home_team?.id
+            ? supabase
+                .from("teams_v2")
+                .select("wins, losses, draws, goals_for, goals_against")
+                .eq("id", data.home_team.id)
+                .single()
+            : Promise.resolve({ data: null, error: null }),
+          data?.away_team?.id
+            ? supabase
+                .from("teams_v2")
+                .select("wins, losses, draws, goals_for, goals_against")
+                .eq("id", data.away_team.id)
+                .single()
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+
+        if (homeStatsRes.data) {
+          setHomeTeamInfo((prev) =>
+            prev ? { ...prev, ...homeStatsRes.data } : prev,
+          );
+        }
+        if (awayStatsRes.data) {
+          setAwayTeamInfo((prev) =>
+            prev ? { ...prev, ...awayStatsRes.data } : prev,
+          );
+        }
       } catch (e: any) {
         console.error("Error loading match:", e);
         setError(e?.message ?? "Unknown error");
