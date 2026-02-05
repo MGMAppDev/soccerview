@@ -1,11 +1,15 @@
 # Universal Canonical Resolution Strategy
-## SoccerView Entity Resolution Methodology v1.0
+## SoccerView Entity Resolution Methodology v2.0
 
-> **Session 86 - February 4, 2026**
+> **Updated: Session 89 - February 5, 2026**
 >
 > This document defines the UNIFIED methodology for resolving entities
 > to a single SoccerView ID. All deduplication scripts MUST follow this
 > exact priority order.
+>
+> **Session 89 UPDATE:** The `source_entity_map` table now provides Tier 1
+> deterministic resolution. The canonical_* tables remain as Tier 2 fallback.
+> See the Three-Tier Architecture section below.
 
 ---
 
@@ -13,11 +17,29 @@
 
 **Every entity (Team, Match, League, Tournament) MUST resolve to exactly ONE SoccerView ID.**
 
-The resolution process follows the same priority checklist regardless of entity type:
+### Three-Tier Architecture (Session 89 - CURRENT)
+
+The resolution process uses deterministic source ID lookup as the primary method:
 
 ```
-ENTITY RESOLUTION PRIORITY ORDER
-================================
+THREE-TIER ENTITY RESOLUTION (Session 89)
+==========================================
+TIER 1: SOURCE ENTITY MAP     → O(1) deterministic lookup via source_entity_map
+TIER 2: CANONICAL NAME MATCH  → NULL-tolerant metadata matching
+TIER 3: CREATE NEW + REGISTER → Create entity + register source ID for future Tier 1
+```
+
+**Implementation:** `dataQualityEngine.js` (`findOrCreateTeam`, `findOrCreateEvent`) and `fastProcessStaging.cjs` both follow this pattern.
+
+**Key table:** `source_entity_map` — maps `(entity_type, source_platform, source_entity_id)` → SoccerView UUID
+
+### Legacy 6-Step Approach (Session 86 - SUPERSEDED)
+
+The original approach below is retained for reference. Steps 3-4 (canonical registry + fuzzy match) are now Tier 2 fallbacks, used only when Tier 1 source ID lookup has no match.
+
+```
+LEGACY RESOLUTION PRIORITY ORDER (now Tier 2 fallback)
+======================================================
 1. EXACT ID MATCH      → Check if ID already exists
 2. SEMANTIC KEY MATCH  → Check by unique semantic attributes
 3. CANONICAL REGISTRY  → Check aliases in canonical_* tables
@@ -147,12 +169,17 @@ async function resolveToSoccerViewId(client, entityType, data) {
 
 ## Implementation Status
 
-| Entity | Resolution Script | Status |
-|--------|------------------|--------|
-| Teams | `scripts/universal/deduplication/teamDedup.js` | ✅ Implemented |
-| Matches | `scripts/universal/deduplication/matchDedup.js` | ✅ Implemented |
-| Events | `scripts/universal/deduplication/eventDedup.js` | ✅ Implemented |
-| Unified Resolver | `scripts/universal/canonicalResolver.js` | ❌ TODO |
+| Entity | Resolution Script | Three-Tier (Session 89) | Status |
+|--------|------------------|------------------------|--------|
+| Teams | `dataQualityEngine.js` → `findOrCreateTeam()` | ✅ Tier 1/2/3 | ✅ Production |
+| Teams | `fastProcessStaging.cjs` | ✅ Tier 1/2/3 (bulk) | ✅ Production |
+| Leagues | `dataQualityEngine.js` → `findOrCreateEvent()` | ✅ Tier 1/2/3 | ✅ Production |
+| Tournaments | `dataQualityEngine.js` → `findOrCreateEvent()` | ✅ Tier 1/2/3 | ✅ Production |
+| Teams (dedup) | `scripts/universal/deduplication/teamDedup.js` | Legacy (Tier 2) | ✅ Implemented |
+| Matches (dedup) | `scripts/universal/deduplication/matchDedup.js` | N/A | ✅ Implemented |
+| Events (dedup) | `scripts/universal/deduplication/eventDedup.js` | Legacy (Tier 2) | ✅ Implemented |
+
+**Note:** The Unified Resolver TODO from Session 86 is now effectively implemented via the three-tier pattern in DQE and fastProcessStaging.
 
 ---
 
@@ -202,7 +229,7 @@ WHERE ht.id IS NULL OR at.id IS NULL;
 
 ## Next Steps
 
-1. [ ] Create unified `canonicalResolver.js` that implements this strategy
-2. [ ] Update all dedup scripts to call canonicalResolver
-3. [ ] Add resolution step to `dataQualityEngine.js` intake
-4. [ ] Create monitoring dashboard for canonical coverage
+1. [x] ~~Create unified `canonicalResolver.js`~~ → Implemented as three-tier pattern in DQE + fastProcessStaging (Session 89)
+2. [x] ~~Update all dedup scripts~~ → DQE and fastProcessStaging use Tier 1/2/3 (Session 89)
+3. [x] ~~Add resolution step to `dataQualityEngine.js` intake~~ → `findOrCreateTeam()` + `findOrCreateEvent()` (Session 89)
+4. [ ] Create monitoring dashboard for source_entity_map coverage

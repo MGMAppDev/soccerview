@@ -1,12 +1,13 @@
-> ✅ **STATUS UPDATE (Feb 5, 2026 - Session 88):** UNIVERSAL QC FIX COMPLETE (4 ISSUES)
+> ✅ **STATUS UPDATE (Feb 5, 2026 - Session 89):** UNIVERSAL ENTITY RESOLUTION COMPLETE
 >
 > **Current Database State:**
 > - staging_games: 86,491 total (0 unprocessed) - UNIQUE constraint on source_match_key
-> - matches_v2: **407,896 active rows** (2,423 soft-deleted: 1,660 semantic + 749 reverse + 14 state merges)
-> - teams_v2: **160,705 rows** (60,817 with ELO ratings)
+> - matches_v2: **405,595 active rows** (~2,941 soft-deleted)
+> - teams_v2: **158,043 rows** (~59,401 with ELO ratings)
 > - clubs: 124,650 rows
-> - leagues: 279 rows
-> - tournaments: 1,728 rows
+> - leagues: 280 rows
+> - tournaments: 1,711 rows (17 dupes merged in Session 89)
+> - **source_entity_map: 3,253 rows** (NEW Session 89 - universal source ID mappings)
 > - **canonical_events: 1,795 rows** (bulk seeded from leagues/tournaments)
 > - **canonical_teams: 138,252 rows**
 > - **canonical_clubs: 7,301 rows** (bulk seeded from clubs with 3+ teams)
@@ -14,7 +15,7 @@
 > - **staging_rejected: 84,045 rows** (V1 migration rejects)
 > - seasons: 3 rows
 >
-> **Sessions 85-88 Changes:**
+> **Sessions 85-89 Changes:**
 > - Match uniqueness: semantic key `(match_date, home_team_id, away_team_id)`
 > - Soft-delete pattern: `deleted_at` + `deletion_reason` columns (Session 86)
 > - All queries MUST filter `WHERE deleted_at IS NULL` for active matches
@@ -24,6 +25,10 @@
 > - State inference from team display names (Session 88)
 > - Dynamic SEASON_YEAR from DB seasons table (Session 88)
 > - `deleted_at IS NULL` filters in materialized views (Session 88)
+> - **`source_entity_map` table: Three-tier deterministic entity resolution (Session 89)**
+> - **7,253 v1-legacy duplicate teams merged, 17 tournament dupes merged (Session 89)**
+> - **Adapters emit source_home/away_team_id for Tier 1 resolution (Session 89)**
+> - **Partial unique index for semantic match uniqueness (Session 89)**
 >
 > **⚠️ GUARDRAIL:** Always verify canonical registry health before deduplication work!
 > See [GUARDRAILS](1.1-GUARDRAILS_v2.md) for mandatory pre-flight checklist.
