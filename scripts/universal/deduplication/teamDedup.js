@@ -174,8 +174,7 @@ export async function detectSameNameDuplicates(client, options = {}) {
       -- If both have birth_year, they must match (or differ by 1 year max)
       AND (t1.birth_year IS NULL OR t2.birth_year IS NULL OR ABS(t1.birth_year - t2.birth_year) <= 1)
       -- Exclude teams with 0 matches that were already merged (have merged_into in audit_log)
-      AND t1.matches_played > 0
-      AND t2.matches_played > 0
+      AND (t1.matches_played > 0 OR t2.matches_played > 0)
     ORDER BY sim DESC, (t1.matches_played + t2.matches_played) DESC
     LIMIT $2
   `, [threshold, limit]);
@@ -271,36 +270,53 @@ export async function mergeSameNameDuplicates(client, options = {}) {
         stats.metadataFixed++;
       }
 
-      // 2. Update match references (mergeTeam -> keepTeam)
+      // 2. SESSION 89 FIX: Soft-delete semantic duplicates BEFORE updating FK refs
+      // If keepTeam already has a match with same (date, opponent), soft-delete the mergeTeam version
+      const { rowCount: dupeHomeDeleted } = await client.query(`
+        UPDATE matches_v2 m
+        SET deleted_at = NOW(),
+            deletion_reason = 'Semantic duplicate after same-name team merge into ' || $1::text
+        WHERE m.home_team_id = $2
+          AND m.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM matches_v2 existing
+            WHERE existing.match_date = m.match_date
+              AND existing.home_team_id = $1::uuid
+              AND existing.away_team_id = m.away_team_id
+              AND existing.deleted_at IS NULL
+          )
+      `, [keepTeam.id, mergeTeam.id]);
+
+      const { rowCount: dupeAwayDeleted } = await client.query(`
+        UPDATE matches_v2 m
+        SET deleted_at = NOW(),
+            deletion_reason = 'Semantic duplicate after same-name team merge into ' || $1::text
+        WHERE m.away_team_id = $2
+          AND m.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM matches_v2 existing
+            WHERE existing.match_date = m.match_date
+              AND existing.home_team_id = m.home_team_id
+              AND existing.away_team_id = $1::uuid
+              AND existing.deleted_at IS NULL
+          )
+      `, [keepTeam.id, mergeTeam.id]);
+
+      // 3. Update remaining match references (only non-soft-deleted)
       const { rowCount: home } = await client.query(
-        'UPDATE matches_v2 SET home_team_id = $1 WHERE home_team_id = $2',
+        'UPDATE matches_v2 SET home_team_id = $1 WHERE home_team_id = $2 AND deleted_at IS NULL',
         [keepTeam.id, mergeTeam.id]
       );
       const { rowCount: away } = await client.query(
-        'UPDATE matches_v2 SET away_team_id = $1 WHERE away_team_id = $2',
+        'UPDATE matches_v2 SET away_team_id = $1 WHERE away_team_id = $2 AND deleted_at IS NULL',
         [keepTeam.id, mergeTeam.id]
       );
 
       stats.matchesMoved += home + away;
 
-      // 3. Delete duplicate matches (same date + same teams after merge)
-      await client.query(`
-        WITH dupes AS (
-          SELECT id,
-                 ROW_NUMBER() OVER (
-                   PARTITION BY match_date, home_team_id, away_team_id
-                   ORDER BY created_at ASC
-                 ) as rn
-          FROM matches_v2
-          WHERE home_team_id = $1 OR away_team_id = $1
-        )
-        DELETE FROM matches_v2
-        WHERE id IN (SELECT id FROM dupes WHERE rn > 1)
-      `, [keepTeam.id]);
-
       // 4. Update matches_played count on keep team
       const { rows: count } = await client.query(
-        'SELECT COUNT(*) as total FROM matches_v2 WHERE home_team_id = $1 OR away_team_id = $1',
+        'SELECT COUNT(*) as total FROM matches_v2 WHERE (home_team_id = $1 OR away_team_id = $1) AND deleted_at IS NULL',
         [keepTeam.id]
       );
       await client.query(
@@ -505,7 +521,7 @@ export async function mergeTeamGroup(group, client, options = {}) {
     // 3. Update kept team's matches_played count
     const { rows: matchCount } = await client.query(`
       SELECT COUNT(*) as total FROM matches_v2
-      WHERE home_team_id = $1 OR away_team_id = $1
+      WHERE (home_team_id = $1 OR away_team_id = $1) AND deleted_at IS NULL
     `, [decision.keepId]);
 
     await client.query(`
@@ -696,19 +712,50 @@ export async function autoMergeHighConfidence(client, options = {}) {
     try {
       await client.query('BEGIN');
 
-      // Update match references
+      // SESSION 89 FIX: Soft-delete semantic duplicates BEFORE updating FK refs
+      await client.query(`
+        UPDATE matches_v2 m
+        SET deleted_at = NOW(),
+            deletion_reason = 'Semantic duplicate after auto-merge team into ' || $1::text
+        WHERE m.home_team_id = $2
+          AND m.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM matches_v2 existing
+            WHERE existing.match_date = m.match_date
+              AND existing.home_team_id = $1::uuid
+              AND existing.away_team_id = m.away_team_id
+              AND existing.deleted_at IS NULL
+          )
+      `, [keepId, deleteId]);
+
+      await client.query(`
+        UPDATE matches_v2 m
+        SET deleted_at = NOW(),
+            deletion_reason = 'Semantic duplicate after auto-merge team into ' || $1::text
+        WHERE m.away_team_id = $2
+          AND m.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM matches_v2 existing
+            WHERE existing.match_date = m.match_date
+              AND existing.home_team_id = m.home_team_id
+              AND existing.away_team_id = $1::uuid
+              AND existing.deleted_at IS NULL
+          )
+      `, [keepId, deleteId]);
+
+      // Update match references (only non-soft-deleted)
       const { rowCount: home } = await client.query(
-        'UPDATE matches_v2 SET home_team_id = $1 WHERE home_team_id = $2',
+        'UPDATE matches_v2 SET home_team_id = $1 WHERE home_team_id = $2 AND deleted_at IS NULL',
         [keepId, deleteId]
       );
       const { rowCount: away } = await client.query(
-        'UPDATE matches_v2 SET away_team_id = $1 WHERE away_team_id = $2',
+        'UPDATE matches_v2 SET away_team_id = $1 WHERE away_team_id = $2 AND deleted_at IS NULL',
         [keepId, deleteId]
       );
 
       // Update matches_played
       const { rows: count } = await client.query(
-        'SELECT COUNT(*) as total FROM matches_v2 WHERE home_team_id = $1 OR away_team_id = $1',
+        'SELECT COUNT(*) as total FROM matches_v2 WHERE (home_team_id = $1 OR away_team_id = $1) AND deleted_at IS NULL',
         [keepId]
       );
       await client.query(

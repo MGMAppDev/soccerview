@@ -1,6 +1,6 @@
 # SoccerView Data Expansion Roadmap
 
-> **Version 3.0** | Updated: February 4, 2026 | V2 Architecture + Session 87.2
+> **Version 4.0** | Updated: February 5, 2026 | V2 Architecture + Session 89 (Source Entity Resolution)
 >
 > Strategic guide for adding new data sources using the V2 three-layer architecture.
 > **Session 57:** Adding a new source now takes ~1-2 hours (adapter config only) instead of ~1-2 days (custom script).
@@ -109,6 +109,33 @@ Scraper → staging_games → dataQualityEngine.js → matches_v2 → app_views
 ```
 
 **See:** [docs/DATA_SCRAPING_PLAYBOOK.md](DATA_SCRAPING_PLAYBOOK.md)
+
+### Rule 5: Source Entity IDs Required (Session 89)
+
+**Every new adapter MUST emit source entity IDs** for deterministic Tier 1 resolution.
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `source_home_team_id` | Yes | Source's ID for home team |
+| `source_away_team_id` | Yes | Source's ID for away team |
+| `event_id` | Yes | Source's ID for the league/tournament |
+| `source_platform` | Yes | Platform identifier |
+
+**Why:** Source IDs enable O(1) deterministic entity resolution via `source_entity_map`. Without them, the pipeline falls back to name-based fuzzy matching which creates duplicates.
+
+**Implementation:** Emit IDs in `raw_data` JSONB and/or as top-level staging fields:
+```javascript
+raw_data: {
+  source_home_team_id: m.homeId,   // Source's team ID
+  source_away_team_id: m.awayId,   // Source's team ID
+  // ... other fields
+}
+```
+
+The pipeline (`dataQualityEngine.js` and `fastProcessStaging.cjs`) automatically:
+1. Looks up `source_entity_map` for existing mappings (Tier 1)
+2. Falls back to canonical name matching (Tier 2)
+3. Registers new source IDs after entity creation (prevents future duplicates)
 
 ---
 
@@ -269,10 +296,11 @@ Every custom scraper MUST:
 1. **Write to staging tables** (NOT production)
 2. **Set source_platform** on every record
 3. **Generate source_match_key** for deduplication
-4. **Preserve raw_data** in JSONB column
+4. **Preserve raw_data** in JSONB column (including source team IDs)
 5. **Register events** in staging_events
 6. **Handle outdoor filter** (NO futsal)
 7. **Respect date limits** (Aug 2023+)
+8. **Emit source entity IDs** in raw_data (Session 89)
 
 ### Template
 

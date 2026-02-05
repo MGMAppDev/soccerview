@@ -586,7 +586,22 @@ async function findOrCreateTeam(teamData, originalRecord, client) {
   // UNIVERSAL: State comes from staging record, not hardcoded platform mapping
   const inferredState = inferStateFromRecord(originalRecord);
 
-  // STEP 1: Try exact canonical_name match (fastest)
+  // SESSION 89 TIER 1: Deterministic source entity map lookup (fastest, 100% accurate)
+  const sourceTeamId = originalRecord?.source_home_team_id || originalRecord?.source_away_team_id;
+  const sourcePlatform = originalRecord?.source_platform;
+  if (sourceTeamId && sourcePlatform) {
+    const { rows: sourceMatch } = await client.query(`
+      SELECT sv_id FROM source_entity_map
+      WHERE entity_type = 'team' AND source_platform = $1 AND source_entity_id = $2
+    `, [sourcePlatform, String(sourceTeamId)]);
+
+    if (sourceMatch.length > 0) {
+      stats.teamsLinked++;
+      return sourceMatch[0].sv_id;
+    }
+  }
+
+  // STEP 1: Try exact canonical_name + birth_year match
   const { rows: existing } = await client.query(`
     SELECT id, canonical_name, display_name, birth_year, gender
     FROM teams_v2
@@ -598,6 +613,30 @@ async function findOrCreateTeam(teamData, originalRecord, client) {
   if (existing.length > 0) {
     stats.teamsLinked++;
     return existing[0].id;
+  }
+
+  // SESSION 89 TIER 2: NULL-tolerant fallback — match by name even when birth_year differs
+  // If incoming has birth_year but DB team has NULL (or vice versa), still match
+  if (birth_year) {
+    const { rows: nullTolerant } = await client.query(`
+      SELECT id, canonical_name, display_name, birth_year, gender
+      FROM teams_v2
+      WHERE canonical_name ILIKE $1
+        AND birth_year IS NULL
+        AND ($2::text IS NULL OR gender = $2 OR gender IS NULL)
+      ORDER BY matches_played DESC
+      LIMIT 1
+    `, [canonical_name, gender]);
+
+    if (nullTolerant.length > 0) {
+      // Update the matched team's birth_year (fill the gap)
+      await client.query(
+        'UPDATE teams_v2 SET birth_year = $1, gender = COALESCE(gender, $2) WHERE id = $3',
+        [birth_year, gender, nullTolerant[0].id]
+      );
+      stats.teamsLinked++;
+      return nullTolerant[0].id;
+    }
   }
 
   // STEP 2: Try fuzzy match - canonical_name as SUFFIX of existing team
@@ -700,6 +739,17 @@ async function findOrCreateTeam(teamData, originalRecord, client) {
         // Silently ignore registry insert failures - not critical
       }
 
+      // SESSION 89: Register source entity ID for deterministic future lookups
+      if (sourceTeamId && sourcePlatform) {
+        try {
+          await client.query(`
+            INSERT INTO source_entity_map (entity_type, source_platform, source_entity_id, sv_id)
+            VALUES ('team', $1, $2, $3)
+            ON CONFLICT (entity_type, source_platform, source_entity_id) DO NOTHING
+          `, [sourcePlatform, String(sourceTeamId), created[0].id]);
+        } catch (_) { /* ignore */ }
+      }
+
       return created[0].id;
     }
   } catch (error) {
@@ -738,6 +788,22 @@ async function findOrCreateEvent(eventData, sourcePlatform, client) {
 
   const isLeague = event_type === 'league';
   const tableName = isLeague ? 'leagues' : 'tournaments';
+  const entityType = isLeague ? 'league' : 'tournament';
+
+  // SESSION 89 TIER 1: Deterministic source entity map lookup
+  if (eventData.source_event_id && sourcePlatform) {
+    const { rows: sourceMatch } = await client.query(`
+      SELECT sv_id FROM source_entity_map
+      WHERE entity_type = $1 AND source_platform = $2 AND source_entity_id = $3
+    `, [entityType, sourcePlatform, String(eventData.source_event_id)]);
+
+    if (sourceMatch.length > 0) {
+      stats.eventsLinked++;
+      return isLeague
+        ? { league_id: sourceMatch[0].sv_id, tournament_id: null }
+        : { league_id: null, tournament_id: sourceMatch[0].sv_id };
+    }
+  }
 
   // Try to find existing by name or source_event_id
   const { rows: existing } = await client.query(`
@@ -779,6 +845,17 @@ async function findOrCreateEvent(eventData, sourcePlatform, client) {
           // Silently ignore registry insert failures
         }
 
+        // SESSION 89: Register source entity ID
+        if (eventData.source_event_id && sourcePlatform) {
+          try {
+            await client.query(`
+              INSERT INTO source_entity_map (entity_type, source_platform, source_entity_id, sv_id)
+              VALUES ('league', $1, $2, $3)
+              ON CONFLICT (entity_type, source_platform, source_entity_id) DO NOTHING
+            `, [sourcePlatform, String(eventData.source_event_id), created[0].id]);
+          } catch (_) { /* ignore */ }
+        }
+
         return { league_id: created[0].id, tournament_id: null };
       }
     } else {
@@ -803,6 +880,17 @@ async function findOrCreateEvent(eventData, sourcePlatform, client) {
           `, [canonical_name, [], created[0].id]);
         } catch (regErr) {
           // Silently ignore registry insert failures
+        }
+
+        // SESSION 89: Register source entity ID
+        if (eventData.source_event_id && sourcePlatform) {
+          try {
+            await client.query(`
+              INSERT INTO source_entity_map (entity_type, source_platform, source_entity_id, sv_id)
+              VALUES ('tournament', $1, $2, $3)
+              ON CONFLICT (entity_type, source_platform, source_entity_id) DO NOTHING
+            `, [sourcePlatform, String(eventData.source_event_id), created[0].id]);
+          } catch (_) { /* ignore */ }
         }
 
         return { league_id: null, tournament_id: created[0].id };
@@ -847,7 +935,7 @@ function inferStateFromRecord(record) {
   const nameState = inferStateFromName(record?.home_team) || inferStateFromName(record?.away_team);
   if (nameState) return nameState;
   // 3. Default: unknown state
-  return 'XX';
+  return 'unknown';
 }
 
 /**

@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 11.0** | Last Updated: February 5, 2026 | Session 88 Complete
+> **Version 12.0** | Last Updated: February 5, 2026 | Session 89 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -949,6 +949,43 @@ WHERE a.deleted_at IS NULL AND b.deleted_at IS NULL;
 - `scripts/daily/recalculate_elo_v2.js` - 2 SQL queries (count + fetch)
 - Migration 088 - 3 materialized views (app_team_profile, app_matches_feed, app_league_standings)
 
+### 34. Universal Source Entity Resolution - Three-Tier Deterministic (Session 89)
+
+**Problem:** V1 migration created ~7,253 duplicate team records with NULL/incomplete metadata (birth_year=null, state='Unknown'). Same real-world team existed as two `teams_v2` records. Caused 1,412+ duplicate match pairs visible to users.
+
+**Solution: `source_entity_map` table + Three-Tier Resolution**
+
+```
+Tier 1: source_entity_map lookup (deterministic, O(1), 100% accurate)
+Tier 2: Canonical name + NULL-tolerant metadata match
+Tier 3: Create new entity + register source ID for future Tier 1
+```
+
+**source_entity_map table:**
+```sql
+CREATE TABLE source_entity_map (
+  entity_type TEXT NOT NULL,       -- 'team', 'league', 'tournament', etc.
+  source_platform TEXT NOT NULL,   -- 'gotsport', 'htgsports', 'heartland'
+  source_entity_id TEXT NOT NULL,  -- Source's own ID
+  sv_id UUID NOT NULL,             -- SoccerView UUID
+  UNIQUE (entity_type, source_platform, source_entity_id)
+);
+```
+
+**Pipeline integration:**
+- `dataQualityEngine.js`: `findOrCreateTeam()` and `findOrCreateEvent()` use Tier 1/2/3
+- `fastProcessStaging.cjs`: Bulk source ID lookup before name-based resolution
+- `coreScraper.js`: Emits `source_home_team_id` / `source_away_team_id` in raw_data
+
+**Adapter requirement:** All adapters must include source entity IDs in `raw_data`.
+
+**Retroactive fix:** 7,253 teams merged, 17 tournament groups merged, 3,253 source mappings backfilled.
+
+**Anti-patterns:**
+- Fuzzy matching without checking source_entity_map first
+- Adapters that don't emit source team/event IDs
+- Name-only team resolution (must check source IDs first)
+
 ---
 
 ## Quick Reference
@@ -957,11 +994,12 @@ WHERE a.deleted_at IS NULL AND b.deleted_at IS NULL;
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 160,705 | Team records (60,817 with ELO ratings) |
-| `matches_v2` | 407,896 active | Match results (2,423 soft-deleted) |
+| `teams_v2` | 158,043 | Team records (~59,401 with ELO ratings) |
+| `matches_v2` | 405,595 active | Match results (~2,941 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 279 | League metadata |
-| `tournaments` | 1,728 | Tournament metadata |
+| `leagues` | 280 | League metadata |
+| `tournaments` | 1,711 | Tournament metadata (17 dupes merged) |
+| `source_entity_map` | 3,253 | **NEW** Universal source ID mappings (Session 89) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
@@ -1377,6 +1415,44 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 89 - Universal Entity Resolution + Source ID Architecture (February 5, 2026) - COMPLETE ✅
+
+**Goal:** Eliminate all duplicate matches caused by V1-legacy duplicate teams. Build permanent prevention via source_entity_map.
+
+**Root Cause:** V1 migration created 7,253 duplicate team records with NULL/incomplete metadata. 100% involved v1-legacy data.
+
+**Completed:**
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1 | Fix teamDedup.js (4 bugs) | Soft-delete first, AND→OR, deleted_at filter |
+| 2 | Migration 089 | source_entity_map table + state normalization |
+| 3 | Backfill source entity IDs | 3,253 mappings (1,244 teams + 274 leagues + 1,735 tournaments) |
+| 4 | Retroactive team merge | 7,253 v1-legacy duplicates merged via bulk SQL |
+| 5 | Tournament dedup | 17 duplicate groups merged, 0 remaining |
+| 6-7 | DQE pipeline prevention | Tier 1/2/3 resolution in findOrCreateTeam/Event |
+| 8 | fastProcessStaging prevention | Bulk source ID lookup + NULL-tolerant fallback |
+| 9 | Adapter enhancement | coreScraper emits source_home/away_team_id |
+| 10 | Post-fix cleanup | ELO recalc (189,971 matches, 59,401 teams) + view refresh |
+
+**Key Architecture Changes:**
+- `source_entity_map` table: Universal (entity_type, source_platform, source_entity_id) → SV UUID
+- Partial unique index `unique_match_semantic` replaces constraint (allows soft-deleted duplicates)
+- Three-tier resolution in all pipeline paths (DQE, fastProcessStaging)
+- Adapters emit source entity IDs for Tier 1 deterministic resolution
+
+**Database After Session 89:**
+- teams_v2: 158,043 (down from 160,705 — 7,253 merged)
+- matches_v2: 405,595 active (~2,941 soft-deleted)
+- source_entity_map: 3,253 mappings
+- tournaments: 1,711 (17 dupes merged)
+- 0 remaining v1-legacy duplicate pairs
+
+**Files Modified:** `teamDedup.js`, `dataQualityEngine.js`, `fastProcessStaging.cjs`, `coreScraper.js`, `1.2-ARCHITECTURE.md`, `3-DATA_EXPANSION_ROADMAP.md`, `3-DATA_SCRAPING_PLAYBOOK.md`, `CLAUDE.md`
+**Files Created:** `089_universal_source_entity_map.sql`, `backfillSourceEntityMap.cjs`, `mergeV1LegacyDuplicates.cjs`, `SESSION_89_UNIVERSAL_ENTITY_RESOLUTION.md`
+
+---
 
 ### Session 88 - Universal QC Fix (4 Issues) (February 5, 2026) - COMPLETE ✅
 

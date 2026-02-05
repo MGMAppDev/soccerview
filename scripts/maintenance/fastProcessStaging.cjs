@@ -112,6 +112,73 @@ async function main() {
     }
     console.log(`  ${uniqueTeams.size} unique team combinations`);
 
+    // SESSION 89 TIER 1: Bulk source entity map lookup (deterministic, fastest)
+    // Extract source team IDs from Heartland source_match_keys
+    const sourceTeamIds = new Map(); // source_entity_id → team display_name
+    for (const row of staging) {
+      if (row.source_platform === 'heartland' && row.source_match_key) {
+        const parts = row.source_match_key.split('-');
+        if (parts.length >= 4 && parts[0] === 'heartland') {
+          const homeSourceId = parts[1];
+          const awaySourceId = parts[2];
+          if (homeSourceId) sourceTeamIds.set('heartland:' + homeSourceId, row.home_team_name);
+          if (awaySourceId) sourceTeamIds.set('heartland:' + awaySourceId, row.away_team_name);
+        }
+      }
+      // Also check raw_data for source team IDs from adapters
+      if (row.raw_data?.source_home_team_id) {
+        sourceTeamIds.set(row.source_platform + ':' + row.raw_data.source_home_team_id, row.home_team_name);
+      }
+      if (row.raw_data?.source_away_team_id) {
+        sourceTeamIds.set(row.source_platform + ':' + row.raw_data.source_away_team_id, row.away_team_name);
+      }
+    }
+
+    if (sourceTeamIds.size > 0) {
+      const sourceIds = [...sourceTeamIds.keys()].map(k => k.split(':'));
+      const platforms = [...new Set(sourceIds.map(s => s[0]))];
+      const ids = sourceIds.map(s => s[1]);
+
+      const { rows: sourceMatches } = await client.query(`
+        SELECT source_platform, source_entity_id, sv_id
+        FROM source_entity_map
+        WHERE entity_type = 'team'
+          AND source_platform = ANY($1)
+          AND source_entity_id = ANY($2)
+      `, [platforms, ids]);
+
+      // Map source IDs to SV IDs, then to team keys
+      const sourceIdToSvId = new Map();
+      for (const sm of sourceMatches) {
+        sourceIdToSvId.set(sm.source_platform + ':' + sm.source_entity_id, sm.sv_id);
+      }
+
+      // For each staging row, check if source team IDs resolve
+      for (const row of staging) {
+        const keys = rowTeamKeys.get(row.id);
+        if (!keys) continue;
+
+        if (row.source_platform === 'heartland' && row.source_match_key) {
+          const parts = row.source_match_key.split('-');
+          if (parts.length >= 4) {
+            const homeSvId = sourceIdToSvId.get('heartland:' + parts[1]);
+            if (homeSvId && !teamMap.has(keys.homeKey)) teamMap.set(keys.homeKey, homeSvId);
+            const awaySvId = sourceIdToSvId.get('heartland:' + parts[2]);
+            if (awaySvId && !teamMap.has(keys.awayKey)) teamMap.set(keys.awayKey, awaySvId);
+          }
+        }
+        if (row.raw_data?.source_home_team_id) {
+          const svId = sourceIdToSvId.get(row.source_platform + ':' + row.raw_data.source_home_team_id);
+          if (svId && !teamMap.has(keys.homeKey)) teamMap.set(keys.homeKey, svId);
+        }
+        if (row.raw_data?.source_away_team_id) {
+          const svId = sourceIdToSvId.get(row.source_platform + ':' + row.raw_data.source_away_team_id);
+          if (svId && !teamMap.has(keys.awayKey)) teamMap.set(keys.awayKey, svId);
+        }
+      }
+      console.log(`  Tier 1 (source IDs): ${sourceMatches.length} resolved from source_entity_map`);
+    }
+
     // Bulk find existing teams by display_name + birth_year + gender
     const teamNames = [...new Set([...uniqueTeams.values()].map(t => t.name))];
     const { rows: existingTeams } = await client.query(`
@@ -122,9 +189,32 @@ async function main() {
 
     for (const t of existingTeams) {
       const key = makeTeamKey(t.display_name, t.birth_year, t.gender);
-      teamMap.set(key, t.id);
+      if (!teamMap.has(key)) teamMap.set(key, t.id);
     }
-    console.log(`  ${existingTeams.length} existing teams found`);
+    console.log(`  Tier 2 (name match): ${existingTeams.length} existing teams found`);
+
+    // SESSION 89 TIER 2b: NULL-tolerant fallback — match by name only when birth_year differs
+    const stillUnresolved = [];
+    for (const [key, team] of uniqueTeams) {
+      if (!teamMap.has(key)) stillUnresolved.push(team.name);
+    }
+    if (stillUnresolved.length > 0) {
+      const { rows: nullTolerant } = await client.query(`
+        SELECT id, display_name, birth_year, gender
+        FROM teams_v2
+        WHERE display_name = ANY($1) AND birth_year IS NULL
+      `, [stillUnresolved]);
+      for (const t of nullTolerant) {
+        // Find the uniqueTeam entry for this name
+        for (const [key, team] of uniqueTeams) {
+          if (!teamMap.has(key) && team.name === t.display_name) {
+            teamMap.set(key, t.id);
+            break;
+          }
+        }
+      }
+      if (nullTolerant.length > 0) console.log(`  Tier 2b (NULL-tolerant): ${nullTolerant.length} matched`);
+    }
 
     // Create missing teams
     const missingTeams = [];

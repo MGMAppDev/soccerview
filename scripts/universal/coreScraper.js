@@ -496,6 +496,9 @@ class CoreScraperEngine {
         status: m.status,
         gender: m.gender,
         ageGroup: m.ageGroup,
+        // SESSION 89: Emit source team IDs for deterministic entity resolution
+        source_home_team_id: m.homeId || null,
+        source_away_team_id: m.awayId || null,
         original: m,
       },
       processed: false,

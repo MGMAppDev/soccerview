@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 3.0** | Updated: February 5, 2026 | V2 Architecture + Session 87.2 (Heartland Mechanisms + staging_games constraint fix)
+> **Version 4.0** | Updated: February 5, 2026 | V2 Architecture + Session 89 (Universal Entity Resolution)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -418,12 +418,16 @@ async function main() {
     home_score: m.homeScore,    // TEXT
     away_score: m.awayScore,    // TEXT
     event_name: m.eventName,    // TEXT
-    event_id: m.eventId,        // TEXT
+    event_id: m.eventId,        // TEXT - REQUIRED for Tier 1 resolution
     venue_name: m.venue,        // TEXT
     division: m.division,       // TEXT
     source_platform: CONFIG.SOURCE_PLATFORM,  // REQUIRED
     source_match_key: `${CONFIG.SOURCE_PLATFORM}-${m.id}`,  // For dedup
-    raw_data: m,                // JSONB - preserve original
+    raw_data: {                 // JSONB - preserve original + source IDs
+      ...m,
+      source_home_team_id: m.homeTeamId,  // REQUIRED (Session 89)
+      source_away_team_id: m.awayTeamId,  // REQUIRED (Session 89)
+    },
     processed: false,           // Will be true after validation
   }));
 
@@ -503,17 +507,62 @@ node scripts/refresh_views_manual.js
    - Parses dates
    - Validates scores (numeric or null)
    - Normalizes team names
-3. **Creates/links teams**:
-   - Finds existing team in teams_v2
-   - Or creates new team with quality flags
-4. **Creates events**:
-   - Creates league or tournament entry
+3. **Resolves teams** (Session 89 Three-Tier Resolution):
+   - **Tier 1:** Deterministic `source_entity_map` lookup (O(1), 100% accurate)
+   - **Tier 2:** Canonical name match with NULL-tolerant birth_year fallback
+   - **Tier 3:** Fuzzy name matching (last resort)
+   - Creates new team if no match + registers source ID to prevent future duplicates
+4. **Resolves events** (Same three-tier pattern):
+   - Tier 1 source ID → Tier 2 canonical name → Tier 3 create new
 5. **Inserts to matches_v2**:
    - With proper foreign keys
 6. **Marks staging as processed**:
    - Sets `processed = true`
 7. **Refreshes views** (if `--refresh-views`):
    - Calls `refresh_app_views()`
+
+---
+
+## Entity Resolution: Three-Tier Pattern (Session 89)
+
+When data flows from staging to production, entities (teams, leagues, tournaments) are resolved using a deterministic three-tier system:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  TIER 1: Source Entity Map (Deterministic, O(1))                  │
+│  SELECT sv_id FROM source_entity_map                              │
+│  WHERE entity_type='team' AND source_platform=$1                  │
+│    AND source_entity_id=$2                                        │
+│  → If found: Use this team. DONE. 100% accurate.                  │
+├──────────────────────────────────────────────────────────────────┤
+│  TIER 2: Canonical Name + NULL-Tolerant Metadata                  │
+│  SELECT id FROM teams_v2                                          │
+│  WHERE canonical_name=$1 AND gender=$2                            │
+│    AND (birth_year=$3 OR birth_year IS NULL)                      │
+│  → If found: Use this team + register source ID for Tier 1        │
+├──────────────────────────────────────────────────────────────────┤
+│  TIER 3: Create New Entity                                        │
+│  INSERT INTO teams_v2 (...) RETURNING id                          │
+│  INSERT INTO source_entity_map (entity_type, source_platform,     │
+│    source_entity_id, sv_id)                                       │
+│  → New entity + registered for future Tier 1 resolution           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Key insight:** Tier 1 prevents duplicates with 100% accuracy. Every new source ID registered makes the system more accurate over time.
+
+**Adapter requirement:** Emit `source_home_team_id` and `source_away_team_id` in `raw_data` JSONB for Tier 1 to work.
+
+### source_entity_map Table
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `entity_type` | TEXT | 'team', 'league', 'tournament', etc. |
+| `source_platform` | TEXT | 'gotsport', 'htgsports', 'heartland' |
+| `source_entity_id` | TEXT | Source's own ID for this entity |
+| `sv_id` | UUID | SoccerView's authoritative UUID |
+
+**UNIQUE constraint:** `(entity_type, source_platform, source_entity_id)`
 
 ---
 
@@ -527,6 +576,7 @@ node scripts/refresh_views_manual.js
 - [ ] Source has data from Aug 2023+ (last 3 seasons)
 - [ ] Data type identified: [ ] League  [ ] Tournament  [ ] Both
 - [ ] Access method identified: [ ] HTML  [ ] API  [ ] ICS
+- [ ] Source provides team IDs (for source_entity_map Tier 1)
 ```
 
 ### During Development
@@ -537,6 +587,8 @@ node scripts/refresh_views_manual.js
 - [ ] Sets `source_platform` on every record
 - [ ] Generates `source_match_key` for deduplication
 - [ ] Preserves raw data in `raw_data` JSONB column
+- [ ] Emits `source_home_team_id` / `source_away_team_id` in raw_data (Session 89)
+- [ ] Emits `event_id` for league/tournament source ID (Session 89)
 - [ ] Registers events in `staging_events`
 - [ ] No data validation in scraper (pipeline handles it)
 - [ ] Handles rate limits / delays
@@ -551,6 +603,7 @@ node scripts/refresh_views_manual.js
 - [ ] Check staging_games.processed = true for new records
 - [ ] Verify matches appear in `matches_v2`
 - [ ] Verify teams appear in `teams_v2`
+- [ ] Verify source IDs registered in `source_entity_map`
 - [ ] Refresh views: `refresh_app_views()`
 - [ ] Test in app: matches visible, teams searchable
 ```
