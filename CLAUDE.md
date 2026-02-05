@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 13.0** | Last Updated: February 5, 2026 | Session 90 Complete
+> **Version 14.0** | Last Updated: February 5, 2026 | Session 91 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -987,6 +987,39 @@ CREATE TABLE source_entity_map (
 - Adapters that don't emit source team/event IDs
 - Name-only team resolution (must check source IDs first)
 
+### 35. Generic Event Name Prevention - 5-Layer Defense (Session 91)
+
+**Problem:** 215 tournaments had generic names like "GotSport Event 12093" or "Event 39064". No pipeline layer rejected them.
+
+**5-Layer Defense Architecture:**
+
+| Layer | Component | What It Does |
+|-------|-----------|-------------|
+| 1 | `intakeValidator.js` | Rejects INVALID data (null dates, rec leagues) |
+| 2 | `eventNormalizer.js` | Rejects GENERIC names → `canonical_name: null` |
+| 3 | DQE `findOrCreateEvent()` | `null` canonical_name → skip (existing line 787) |
+| 4 | Fast processors | Own `isGeneric()` / `resolveEventName()` guards |
+| 5 | DB CHECK constraint | Blocks generic INSERTs (migration 091) |
+
+**Key Design Decision:** Generic names are INCOMPLETE, not INVALID. They belong in the normalizer (Layer 2), not intakeValidator (Layer 1). Fixing the normalizer protects all DQE code paths automatically.
+
+**`resolveEventName.cjs` Resolution Priority:**
+1. Provided rawName (if non-generic)
+2. `staging_games.event_name` (most recent non-generic for this event_id)
+3. `canonical_events.canonical_name` (via source_entity_map)
+4. GotSport web page embedded JSON (for gotsport/htgsports sources)
+5. NULL (never return a generic name)
+
+**`isGeneric()` patterns:**
+- `/^(HTGSports |GotSport |Heartland )?Event \d+$/` — "GotSport Event 12093"
+- `/^\d+$/` — Bare numbers like "39064"
+- `/^(GotSport|HTGSports|Heartland)$/` — Bare platform names
+
+**Anti-patterns:**
+- Creating tournaments/leagues with generic names (blocked at DB level)
+- Using raw event names without `isGeneric()` check
+- Treating generic names as INVALID (wrong layer — they're INCOMPLETE)
+
 ---
 
 ## Quick Reference
@@ -999,7 +1032,7 @@ CREATE TABLE source_entity_map (
 | `matches_v2` | 403,068 active | Match results (~5,468 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
 | `leagues` | 280 | League metadata |
-| `tournaments` | 1,711 | Tournament metadata (17 dupes merged) |
+| `tournaments` | 1,711 | Tournament metadata (17 dupes merged, 0 generic names) |
 | `source_entity_map` | 3,253 | **NEW** Universal source ID mappings (Session 89) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
@@ -1239,6 +1272,7 @@ node scripts/universal/adaptiveLearning.js --classify "KC Spring Classic 2026"
 |--------|---------|
 | `intakeValidator.js` | **NEW (Session 79)** Pre-staging validation gate |
 | `dataQualityEngine.js` | **THE orchestrator** - Normalize → Resolve → Deduplicate → Promote |
+| `resolveEventName.cjs` | **NEW (Session 91)** Centralized event name resolver — NULL instead of generic |
 | `testDataQualityEngine.js` | Integration test for full pipeline |
 
 **Usage:**
@@ -1259,7 +1293,7 @@ Performance: 4.6ms per 1000 records.
 | Script | Purpose | Tests |
 |--------|---------|-------|
 | `teamNormalizer.js` | Standardize team names, extract birth_year/gender/state | 6/6 |
-| `eventNormalizer.js` | Standardize event names, detect league/tournament | 6/6 |
+| `eventNormalizer.js` | Standardize event names, reject generics, detect league/tournament | 6/6 |
 | `matchNormalizer.js` | Parse dates/scores, generate source_match_key | 7/7 |
 | `clubNormalizer.js` | Extract club name from team name | 7/7 |
 | `testWithStagingData.js` | Integration test with real staging data | - |
@@ -1279,6 +1313,7 @@ Performance: 4.6ms per 1000 records.
 | `backfillSourceMatchKey.js` | Backfilled 286,253 NULL source_match_key values |
 | `deduplicateMatchKeys.js` | Removed 3,562 duplicate source_match_key records |
 | `applyConstraint.js` | Added UNIQUE constraint on source_match_key |
+| `091_block_generic_event_names.sql` | **NEW (Session 91)** CHECK constraints blocking generic tournament/league names |
 
 ### Maintenance (`scripts/maintenance/`)
 
@@ -1299,6 +1334,7 @@ Diagnostics, audits, and utilities.
 | `linkByEventPattern.js` | Link HTGSports/Heartland by event ID pattern |
 | `linkFromV1Archive.js` | Link legacy gotsport via V1 archived data (67% success) |
 | `inferEventLinkage.js` | **NIGHTLY** Infer event from team activity patterns |
+| `fixGenericEventNames.cjs` | **Retroactive generic tournament name fix** (Session 91) |
 | `cleanupGarbageMatches.js` | Delete future-dated matches (2027+) |
 | `mergeHeartlandLeagues.js` | Merge duplicate league entries (Session 59) |
 
@@ -1416,6 +1452,45 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 91 - Generic Event Name Prevention + Display Utility Integration (February 5, 2026) - COMPLETE ✅
+
+**Goal:** Eliminate generic tournament/league names from production data AND consolidate duplicate display utility functions into shared modules. Zero UI design changes.
+
+**Root Cause:** 215 tournaments had generic names ("GotSport Event 12093", "Event 39064") because no layer in the pipeline rejected them. Also, 3 local patch functions in `app/match/[id].tsx` duplicated logic available in shared modules.
+
+**5-Layer Defense Architecture (NEW):**
+
+```
+Layer 0: Scraper emits raw data to staging_games
+Layer 1: intakeValidator.js — rejects INVALID data (null dates, rec, etc.)
+Layer 2: eventNormalizer.js — rejects GENERIC names → canonical_name: null    ← NEW
+Layer 3: DQE findOrCreateEvent() — null canonical_name → skip (line 787)     ← EXISTING
+Layer 4: Fast processors — own isGeneric() guards                             ← NEW
+Layer 5: DB CHECK constraint — blocks generic INSERTs (migration 091)         ← NEW
+```
+
+**Completed:**
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1A | Retroactive data fix | 215 generic tournament names resolved (4-tier: staging, canonical_events, web, NULL) |
+| 1B | DB CHECK constraints | Migration 091 blocks future generic INSERTs on tournaments + leagues |
+| 1C | Pipeline guards | `resolveEventName.cjs` integrated in fastProcessStaging, linkByEventPattern, linkFromV1Archive, coreScraper |
+| 2A | Shared display utils | `lib/matchUtils.ts` — `getMatchStatus()` + `getEventTypeBadge()` |
+| 2B | match/[id].tsx cleanup | 3 local patch functions removed → shared imports |
+| 2C | team/[id].tsx cleanup | Inline gender formatting → `getGenderDisplay()` |
+| 3 | eventNormalizer guard | `isGeneric()` rejection → DQE auto-skips with ZERO DQE changes |
+| 4 | linkUnlinkedMatches guard | `isGeneric()` guard before event creation |
+| 5 | Archive dead code | `fastProcessHTG.cjs` → `scripts/_archive/` (superseded by fastProcessStaging) |
+
+**Key Architecture Insight:** `eventNormalizer.js` is the architecturally correct validation point. DQE `findOrCreateEvent()` already handles `canonical_name: null` at line 787 → returns `{ league_id: null, tournament_id: null }` → match created unlinked. Fixing the normalizer protects ALL DQE code paths with zero DQE changes.
+
+**Files Created:** `resolveEventName.cjs`, `fixGenericEventNames.cjs`, `091_block_generic_event_names.sql`, `lib/matchUtils.ts`
+**Files Modified:** `eventNormalizer.js`, `linkUnlinkedMatches.js`, `fastProcessStaging.cjs`, `linkByEventPattern.js`, `linkFromV1Archive.js`, `coreScraper.js`, `app/match/[id].tsx`, `app/team/[id].tsx`
+**Files Archived:** `fastProcessHTG.cjs` → `scripts/_archive/`
+
+---
 
 ### Session 90 - Fix Cross-Import Duplicate Matches (February 5, 2026) - COMPLETE ✅
 
@@ -1595,6 +1670,7 @@ soccerview/
 │   └── MatchCard.tsx     # Shared match card
 ├── lib/
 │   ├── supabase.ts       # Supabase client
+│   ├── matchUtils.ts     # Shared match display utilities (Session 91)
 │   └── leagues.ts        # League functions
 ├── scripts/
 │   ├── daily/            # GitHub Actions pipeline

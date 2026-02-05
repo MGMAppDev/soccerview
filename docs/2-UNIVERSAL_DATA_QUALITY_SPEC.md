@@ -532,16 +532,21 @@ assert(normalize("Tigers U12 Girls").gender === "F");
 ```
 
 **Normalization Rules:**
-1. Check canonical_events registry first (return canonical if found)
-2. Determine event_type:
+1. Reject NULL/empty names → `{ canonical_name: null, normalized: false }`
+2. **Reject GENERIC names (Session 91)** → `{ canonical_name: null, normalized: false, error: 'Generic event name' }`
+   - Uses `isGeneric()` from `resolveEventName.cjs`
+   - Patterns: `"GotSport Event 12093"`, `"Event 39064"`, `"12093"`, `"GotSport"`
+   - DQE `findOrCreateEvent()` handles `null` canonical_name at line 787 → match created unlinked
+3. Check canonical_events registry first (return canonical if found)
+4. Determine event_type:
    - Contains "league", "season", "conference" → league
    - Contains "cup", "classic", "showcase", "tournament", "shootout" → tournament
    - Single weekend date range → tournament
    - Multi-month date range → league
-3. Extract year: `"2025"`, `"25-26"`, `"Fall 2025"`
-4. Normalize common variations:
+5. Extract year: `"2025"`, `"25-26"`, `"Fall 2025"`
+6. Normalize common variations:
    - `"Soccer League"` → `"Premier League"` (for Heartland)
-5. Extract state/region from name if present
+7. Extract state/region from name if present
 
 ### matchNormalizer.js
 
