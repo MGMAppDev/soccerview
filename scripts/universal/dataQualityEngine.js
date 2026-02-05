@@ -25,7 +25,7 @@ import pg from 'pg';
 import 'dotenv/config';
 
 // Import normalizers
-import { normalizeTeam, normalizeTeamsBulk, initializeLearnedPatterns as initTeamPatterns, initializeSeasonYear as initSeasonYear } from './normalizers/teamNormalizer.js';
+import { normalizeTeam, normalizeTeamsBulk, initializeLearnedPatterns as initTeamPatterns, initializeSeasonYear as initSeasonYear, inferStateFromName } from './normalizers/teamNormalizer.js';
 import { normalizeEvent, normalizeEventsBulk, initializeLearnedPatterns as initEventPatterns } from './normalizers/eventNormalizer.js';
 import { normalizeMatch, normalizeMatchesBulk } from './normalizers/matchNormalizer.js';
 import { normalizeClub, normalizeClubsBulk } from './normalizers/clubNormalizer.js';
@@ -839,11 +839,14 @@ async function findOrCreateEvent(eventData, sourcePlatform, client) {
  * See scripts/adapters/_template.js for adapter config pattern.
  */
 function inferStateFromRecord(record) {
-  // State should be provided by the adapter in staging_games
+  // 1. Adapter-provided state (from staging_games.state if it exists)
   if (record?.state && record.state.trim().length === 2) {
     return record.state.trim().toUpperCase();
   }
-  // Default: unknown state
+  // 2. Infer from team name (e.g., "Sporting Iowa" → "IA")
+  const nameState = inferStateFromName(record?.home_team) || inferStateFromName(record?.away_team);
+  if (nameState) return nameState;
+  // 3. Default: unknown state
   return 'XX';
 }
 
@@ -892,7 +895,7 @@ function escapeRegex(str) {
 async function promoteRecords(records, client, dryRun) {
   const startTime = Date.now();
 
-  const toInsert = [];
+  let toInsert = [];
   const toUpdate = [];
   const stagingIdsProcessed = [];
   const stagingIdsFailed = [];
@@ -1006,6 +1009,42 @@ async function promoteRecords(records, client, dryRun) {
     console.log(`   Skip: ${stats.matchesSkipped} (duplicates with same data)`);
     console.log(`   Fail: ${stagingIdsFailed.length} records`);
     return { inserted: 0, updated: 0, failed: stagingIdsFailed.length };
+  }
+
+  // Session 88: Pre-insert reverse match check (prevent reverse duplicates)
+  if (toInsert.length > 0) {
+    const reverseDates = toInsert.map(m => m.match_date);
+    const reverseHomeIds = toInsert.map(m => m.away_team_id); // swapped
+    const reverseAwayIds = toInsert.map(m => m.home_team_id); // swapped
+    try {
+      const { rows: existingReverse } = await client.query(`
+        SELECT match_date::text, home_team_id, away_team_id
+        FROM matches_v2
+        WHERE deleted_at IS NULL
+          AND (match_date, home_team_id, away_team_id) IN (
+            SELECT d::date, h::uuid, a::uuid
+            FROM unnest($1::text[], $2::uuid[], $3::uuid[]) AS t(d, h, a)
+          )
+      `, [reverseDates, reverseHomeIds, reverseAwayIds]);
+
+      if (existingReverse.length > 0) {
+        const reverseSet = new Set(existingReverse.map(r =>
+          `${r.match_date}|${r.home_team_id}|${r.away_team_id}`
+        ));
+        const beforeLen = toInsert.length;
+        toInsert = toInsert.filter(m => {
+          const key = `${m.match_date}|${m.away_team_id}|${m.home_team_id}`;
+          return !reverseSet.has(key);
+        });
+        const skipped = beforeLen - toInsert.length;
+        if (skipped > 0) {
+          console.log(`   ↩️ Skipped ${skipped} reverse matches (already exist with swapped teams)`);
+          stats.matchesSkipped += skipped;
+        }
+      }
+    } catch (err) {
+      console.error(`   ⚠️ Reverse match check failed: ${err.message}`);
+    }
   }
 
   // Bulk insert new matches

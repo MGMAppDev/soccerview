@@ -13,6 +13,37 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 // Season year - default fallback, updated from DB at startup
 let SEASON_YEAR = 2026;
 
+// US state inference from team names (synced with teamNormalizer.js)
+const STATE_NAMES_SORTED = [
+  ['west virginia', 'WV'], ['south carolina', 'SC'], ['south dakota', 'SD'],
+  ['north carolina', 'NC'], ['north dakota', 'ND'], ['new hampshire', 'NH'],
+  ['new jersey', 'NJ'], ['new mexico', 'NM'], ['new york', 'NY'],
+  ['rhode island', 'RI'],
+  ['alabama', 'AL'], ['alaska', 'AK'], ['arizona', 'AZ'], ['arkansas', 'AR'],
+  ['california', 'CA'], ['colorado', 'CO'], ['connecticut', 'CT'], ['delaware', 'DE'],
+  ['florida', 'FL'], ['georgia', 'GA'], ['hawaii', 'HI'], ['idaho', 'ID'],
+  ['illinois', 'IL'], ['indiana', 'IN'], ['iowa', 'IA'], ['kansas', 'KS'],
+  ['kentucky', 'KY'], ['louisiana', 'LA'], ['maine', 'ME'], ['maryland', 'MD'],
+  ['massachusetts', 'MA'], ['michigan', 'MI'], ['minnesota', 'MN'], ['mississippi', 'MS'],
+  ['missouri', 'MO'], ['montana', 'MT'], ['nebraska', 'NE'], ['nevada', 'NV'],
+  ['ohio', 'OH'], ['oklahoma', 'OK'], ['oregon', 'OR'], ['pennsylvania', 'PA'],
+  ['tennessee', 'TN'], ['texas', 'TX'], ['utah', 'UT'], ['vermont', 'VT'],
+  ['virginia', 'VA'], ['washington', 'WA'], ['wisconsin', 'WI'], ['wyoming', 'WY'],
+];
+
+function inferStateFromName(name) {
+  if (!name) return null;
+  const lower = name.toLowerCase();
+  for (const [stateName, abbrev] of STATE_NAMES_SORTED) {
+    const regex = new RegExp(`\\b${stateName}\\b`, 'i');
+    if (!regex.test(lower)) continue;
+    if (stateName === 'kansas' && /\bkansas\s+city\b/i.test(lower)) continue;
+    if (stateName === 'washington' && !/\bwashington\s+state\b/i.test(lower)) continue;
+    return abbrev;
+  }
+  return null;
+}
+
 async function main() {
   const startTime = Date.now();
   const args = process.argv.slice(2);
@@ -112,7 +143,7 @@ async function main() {
         const vals = [];
         const phs = batch.map((t, idx) => {
           const o = idx * 5;
-          vals.push(t.name, t.name, t.birth_year, t.gender, 'unknown');
+          vals.push(t.name, t.name, t.birth_year, t.gender, inferStateFromName(t.name) || 'unknown');
           return `($${o+1}, $${o+2}, $${o+3}::int, $${o+4}::gender_type, $${o+5}, 1500)`;
         });
 
@@ -232,14 +263,16 @@ async function main() {
           continue;
         }
 
-        // Deduplicate: same date + home + away within batch
+        // Deduplicate: same date + home + away within batch (includes reverse check)
         const dedup = `${row.match_date}|${homeTeamId}|${awayTeamId}`;
-        if (seen.has(dedup)) {
+        const reverseDedup = `${row.match_date}|${awayTeamId}|${homeTeamId}`;
+        if (seen.has(dedup) || seen.has(reverseDedup)) {
           totalSkipped++;
           batchSuccessIds.push(row.id);
           continue;
         }
         seen.add(dedup);
+        seen.add(reverseDedup); // Block reverse form from this batch
 
         const eventInfo = eventMap.get(row.event_id) || { tournament_id: null, league_id: null };
         matchRecords.push({
@@ -256,6 +289,39 @@ async function main() {
           source_match_key: row.source_match_key,
         });
         batchSuccessIds.push(row.id);
+      }
+
+      // Session 88: Pre-insert reverse match check (bulk DB query)
+      if (matchRecords.length > 0 && !dryRun) {
+        const reverseDates = matchRecords.map(m => m.match_date);
+        const reverseHomeIds = matchRecords.map(m => m.away_team_id); // swapped
+        const reverseAwayIds = matchRecords.map(m => m.home_team_id); // swapped
+        const { rows: existingReverse } = await client.query(`
+          SELECT match_date::text, home_team_id, away_team_id
+          FROM matches_v2
+          WHERE deleted_at IS NULL
+            AND (match_date, home_team_id, away_team_id) IN (
+              SELECT d::date, h::uuid, a::uuid
+              FROM unnest($1::text[], $2::uuid[], $3::uuid[]) AS t(d, h, a)
+            )
+        `, [reverseDates, reverseHomeIds, reverseAwayIds]);
+
+        if (existingReverse.length > 0) {
+          const reverseSet = new Set(existingReverse.map(r =>
+            `${r.match_date}|${r.home_team_id}|${r.away_team_id}`
+          ));
+          const beforeLen = matchRecords.length;
+          const filtered = matchRecords.filter(m => {
+            const key = `${m.match_date}|${m.away_team_id}|${m.home_team_id}`;
+            return !reverseSet.has(key);
+          });
+          const reverseSkipped = beforeLen - filtered.length;
+          if (reverseSkipped > 0) {
+            totalSkipped += reverseSkipped;
+            console.log(`  Skipped ${reverseSkipped} reverse matches in batch`);
+          }
+          matchRecords.splice(0, matchRecords.length, ...filtered);
+        }
       }
 
       if (matchRecords.length > 0 && !dryRun) {

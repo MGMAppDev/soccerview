@@ -396,6 +396,54 @@ export function normalizeTeamsBulk(teams) {
 }
 
 // ============================================
+// STATE INFERENCE FROM TEAM NAME
+// ============================================
+
+// US state name → abbreviation, sorted longest-first for correct matching
+const STATE_NAMES_SORTED = [
+  ['west virginia', 'WV'], ['south carolina', 'SC'], ['south dakota', 'SD'],
+  ['north carolina', 'NC'], ['north dakota', 'ND'], ['new hampshire', 'NH'],
+  ['new jersey', 'NJ'], ['new mexico', 'NM'], ['new york', 'NY'],
+  ['rhode island', 'RI'],
+  ['alabama', 'AL'], ['alaska', 'AK'], ['arizona', 'AZ'], ['arkansas', 'AR'],
+  ['california', 'CA'], ['colorado', 'CO'], ['connecticut', 'CT'], ['delaware', 'DE'],
+  ['florida', 'FL'], ['georgia', 'GA'], ['hawaii', 'HI'], ['idaho', 'ID'],
+  ['illinois', 'IL'], ['indiana', 'IN'], ['iowa', 'IA'], ['kansas', 'KS'],
+  ['kentucky', 'KY'], ['louisiana', 'LA'], ['maine', 'ME'], ['maryland', 'MD'],
+  ['massachusetts', 'MA'], ['michigan', 'MI'], ['minnesota', 'MN'], ['mississippi', 'MS'],
+  ['missouri', 'MO'], ['montana', 'MT'], ['nebraska', 'NE'], ['nevada', 'NV'],
+  ['ohio', 'OH'], ['oklahoma', 'OK'], ['oregon', 'OR'], ['pennsylvania', 'PA'],
+  ['tennessee', 'TN'], ['texas', 'TX'], ['utah', 'UT'], ['vermont', 'VT'],
+  ['virginia', 'VA'], ['washington', 'WA'], ['wisconsin', 'WI'], ['wyoming', 'WY'],
+];
+
+/**
+ * Infer US state abbreviation from a team name.
+ * Returns null if no unambiguous state name found.
+ *
+ * Ambiguity rules:
+ * - "Kansas City" → null (could be KS or MO)
+ * - "Washington" alone → null (state vs DC vs city)
+ * - "West Virginia" matches before "Virginia" (longest-first)
+ */
+export function inferStateFromName(name) {
+  if (!name) return null;
+  const lower = name.toLowerCase();
+
+  for (const [stateName, abbrev] of STATE_NAMES_SORTED) {
+    const regex = new RegExp(`\\b${stateName}\\b`, 'i');
+    if (!regex.test(lower)) continue;
+
+    // Ambiguity checks
+    if (stateName === 'kansas' && /\bkansas\s+city\b/i.test(lower)) continue;
+    if (stateName === 'washington' && !/\bwashington\s+state\b/i.test(lower)) continue;
+
+    return abbrev;
+  }
+  return null;
+}
+
+// ============================================
 // UNIT TESTS
 // ============================================
 

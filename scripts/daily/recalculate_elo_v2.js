@@ -102,6 +102,7 @@ async function main() {
         AND home_score IS NOT NULL
         AND away_score IS NOT NULL
         AND match_date >= '${CURRENT_SEASON_START}'
+        AND deleted_at IS NULL
     `);
     const totalMatches = parseInt(matchCount.rows[0].cnt);
     console.log(`📋 Eligible matches to process: ${totalMatches.toLocaleString()}`);
@@ -139,6 +140,7 @@ async function main() {
         AND home_score IS NOT NULL
         AND away_score IS NOT NULL
         AND match_date >= '${CURRENT_SEASON_START}'
+        AND deleted_at IS NULL
       ORDER BY match_date ASC NULLS LAST, id ASC
     `);
     console.log(`   ✅ Loaded ${allMatches.rows.length.toLocaleString()} matches\n`);

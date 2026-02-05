@@ -1,9 +1,9 @@
-> ✅ **STATUS UPDATE (Feb 4, 2026 - Session 87.2):** PIPELINE FIXES + STAGING CONSTRAINT COMPLETE
+> ✅ **STATUS UPDATE (Feb 5, 2026 - Session 88):** UNIVERSAL QC FIX COMPLETE (4 ISSUES)
 >
 > **Current Database State:**
 > - staging_games: 86,491 total (0 unprocessed) - UNIQUE constraint on source_match_key
-> - matches_v2: **410,319 active rows** (1,660 soft-deleted duplicates)
-> - teams_v2: **161,231 rows** (60,864 with ELO ratings)
+> - matches_v2: **407,896 active rows** (2,423 soft-deleted: 1,660 semantic + 749 reverse + 14 state merges)
+> - teams_v2: **160,705 rows** (60,817 with ELO ratings)
 > - clubs: 124,650 rows
 > - leagues: 279 rows
 > - tournaments: 1,728 rows
@@ -14,12 +14,16 @@
 > - **staging_rejected: 84,045 rows** (V1 migration rejects)
 > - seasons: 3 rows
 >
-> **Sessions 85-87.2 Changes:**
+> **Sessions 85-88 Changes:**
 > - Match uniqueness: semantic key `(match_date, home_team_id, away_team_id)`
 > - Soft-delete pattern: `deleted_at` + `deletion_reason` columns (Session 86)
 > - All queries MUST filter `WHERE deleted_at IS NULL` for active matches
 > - `fastProcessStaging.cjs`: Universal bulk processor, 240x faster than DQE
 > - Gender constraint on fuzzy matching (Session 87)
+> - Reverse match detection + prevention in pipeline (Session 88)
+> - State inference from team display names (Session 88)
+> - Dynamic SEASON_YEAR from DB seasons table (Session 88)
+> - `deleted_at IS NULL` filters in materialized views (Session 88)
 >
 > **⚠️ GUARDRAIL:** Always verify canonical registry health before deduplication work!
 > See [GUARDRAILS](1.1-GUARDRAILS_v2.md) for mandatory pre-flight checklist.

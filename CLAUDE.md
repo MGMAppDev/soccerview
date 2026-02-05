@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 10.0** | Last Updated: February 4, 2026 | Session 87.2 Complete
+> **Version 11.0** | Last Updated: February 5, 2026 | Session 88 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -27,6 +27,9 @@
 | [docs/3-UI_PATTERNS.md](docs/3-UI_PATTERNS.md) | Mandatory UI patterns |
 | [docs/3-UI_PROTECTION_PROTOCOL.md](docs/3-UI_PROTECTION_PROTOCOL.md) | UI backup/recovery procedures |
 | [docs/4-LAUNCH_PLAN.md](docs/4-LAUNCH_PLAN.md) | Marketing messages & launch checklist |
+| [docs/SESSION_88_UNIVERSAL_QC_FIX.md](docs/SESSION_88_UNIVERSAL_QC_FIX.md) | Session 88: QC Issues #1-2 (birth year, rank badge) |
+| [docs/SESSION_88_QC3_STATE_FIX.md](docs/SESSION_88_QC3_STATE_FIX.md) | Session 88: QC Issue #3 (wrong state assignment) |
+| [docs/SESSION_88_QC4_DUPLICATE_MATCHES.md](docs/SESSION_88_QC4_DUPLICATE_MATCHES.md) | Session 88: QC Issue #4 (duplicate matches) |
 | [docs/_archive/](docs/_archive/) | Completed project documents |
 
 ---
@@ -882,6 +885,70 @@ SELECT * FROM matches_v2 WHERE deleted_at IS NULL;
 - ❌ Forgetting `WHERE deleted_at IS NULL` in queries
 - ❌ Assuming "duplicate" matches can be safely deleted
 
+### 31. Reverse Match Detection - Same Game, Swapped Teams (Session 88)
+
+**Problem:** The UNIQUE constraint `(match_date, home_team_id, away_team_id)` treats (date, A, B) and (date, B, A) as DIFFERENT tuples. Cross-source data records the same game with teams in different home/away positions, creating reverse duplicates.
+
+**Impact:** Team Details page shows same match twice. Season Stats double-count W-L-D. ELO miscalculates.
+
+**Detection:**
+```sql
+SELECT a.id, b.id FROM matches_v2 a
+JOIN matches_v2 b ON a.match_date = b.match_date
+  AND a.home_team_id = b.away_team_id
+  AND a.away_team_id = b.home_team_id
+  AND a.id < b.id
+WHERE a.deleted_at IS NULL AND b.deleted_at IS NULL;
+```
+
+**Conservative Resolution (Session 88):**
+- Only soft-delete score-consistent pairs (A's home_score = B's away_score AND vice versa)
+- Skip different-score pairs (legitimate rematches on same date)
+- Keep the record with event linkage, or earliest created
+
+**Pipeline Prevention (Session 88):**
+- `fastProcessStaging.cjs`: Within-batch reverse dedup + pre-insert DB check
+- `dataQualityEngine.js`: Pre-insert reverse match check
+- `matchDedup.js`: `detectReverseMatches()` + `resolveReverseMatches()` exports
+
+**Scripts:**
+- `scripts/maintenance/fixReverseMatches.cjs` - Retroactive reverse match cleanup
+- `scripts/universal/deduplication/matchDedup.js` - Ongoing detection in pipeline
+
+### 32. State Inference from Team Names (Session 88)
+
+**Problem:** Teams had wrong state assignments (e.g., "Sporting Iowa" classified as KS). Caused by Session 76 GotSport rankings importer using unreliable `STATE_ASSOCIATION_MAP`.
+
+**Fix Architecture:**
+- **Retroactive:** `fixTeamStates.cjs` - Extracts US state names from display_name, corrects mismatches
+- **Prevention:** `inferStateFromName()` in `teamNormalizer.js` - Infers state at team creation time
+
+**Ambiguity Handling:**
+- "Kansas City" → SKIP (ambiguous KS/MO)
+- "Washington" → SKIP unless followed by "State"
+- "West Virginia" before "Virginia" (longest match first)
+
+**Pipeline Integration:**
+- `fastProcessStaging.cjs`: Uses inferred state instead of hardcoded 'unknown'
+- `dataQualityEngine.js`: Enhanced `inferStateFromRecord()` checks team names
+
+### 33. deleted_at IS NULL - MANDATORY in ALL Match Queries (Session 88)
+
+**Every query that reads `matches_v2` MUST include `deleted_at IS NULL`.**
+
+| Layer | Component | Filter Required |
+|-------|-----------|----------------|
+| Layer 2 | Direct SQL queries | `AND deleted_at IS NULL` |
+| Layer 2 | Supabase client queries | `.is("deleted_at", null)` |
+| Layer 3 | Materialized views | `WHERE m.deleted_at IS NULL` in view SQL |
+| App | Team Details match queries | `.is("deleted_at", null)` |
+| Pipeline | ELO recalculation | `AND deleted_at IS NULL` |
+
+**Session 88 added `deleted_at IS NULL` to:**
+- `app/team/[id].tsx` - 4 Supabase queries (homeMatches, awayMatches, homeStats, awayStats)
+- `scripts/daily/recalculate_elo_v2.js` - 2 SQL queries (count + fetch)
+- Migration 088 - 3 materialized views (app_team_profile, app_matches_feed, app_league_standings)
+
 ---
 
 ## Quick Reference
@@ -890,8 +957,8 @@ SELECT * FROM matches_v2 WHERE deleted_at IS NULL;
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 161,231 | Team records (60,864 with ELO ratings) |
-| `matches_v2` | 410,319 active | Match results (1,660 soft-deleted dupes) |
+| `teams_v2` | 160,705 | Team records (60,817 with ELO ratings) |
+| `matches_v2` | 407,896 active | Match results (2,423 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
 | `leagues` | 279 | League metadata |
 | `tournaments` | 1,728 | Tournament metadata |
@@ -1152,7 +1219,7 @@ Performance: 4.6ms per 1000 records.
 
 | Script | Purpose | Tests |
 |--------|---------|-------|
-| `teamNormalizer.js` | Standardize team names, extract birth_year/gender | 6/6 |
+| `teamNormalizer.js` | Standardize team names, extract birth_year/gender/state | 6/6 |
 | `eventNormalizer.js` | Standardize event names, detect league/tournament | 6/6 |
 | `matchNormalizer.js` | Parse dates/scores, generate source_match_key | 7/7 |
 | `clubNormalizer.js` | Extract club name from team name | 7/7 |
@@ -1183,6 +1250,8 @@ Diagnostics, audits, and utilities.
 | `ensureViewIndexes.js` | **NIGHTLY** Universal index maintenance for all views (Session 69) |
 | `recalculateHistoricalRanks.cjs` | Recalculate rank_history with consistent baseline (Session 70) |
 | `fastProcessStaging.cjs` | **Universal bulk staging processor** - 7,200 matches/30s (Session 87.2) |
+| `fixReverseMatches.cjs` | **Retroactive reverse match dedup** (Session 88) |
+| `fixTeamStates.cjs` | **Retroactive state correction** from team names (Session 88) |
 | `recoverSession85Matches.cjs` | Recover matches from audit_log (Session 86) |
 | `recoverDeletedMatches.cjs` | General match recovery tool (Session 86) |
 | `bulkMergeDuplicateTeams.cjs` | Universal bulk team deduplication (Session 86) |
@@ -1309,26 +1378,39 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
+### Session 88 - Universal QC Fix (4 Issues) (February 5, 2026) - COMPLETE ✅
+
+**Goal:** Fix 4 QC issues found during app review. All fixes are data-layer only. ZERO UI design changes.
+
+**QC Issues Fixed:**
+
+| # | Issue | Root Cause | Fix | Scale |
+|---|-------|-----------|-----|-------|
+| 1 | Birth year/age group mismatch | Hardcoded `SEASON_YEAR = 2026` in 4 pipeline files | Dynamic season year from DB `seasons` table | Prevention for 22K+ teams |
+| 2 | Rank badge discrepancy | Rankings SELECT missing `elo_national_rank`, `elo_state_rank` columns | Added 2 columns to Supabase SELECT query | All SoccerView mode users |
+| 3 | Wrong state assignment | GotSport importer used unreliable `STATE_ASSOCIATION_MAP` | `fixTeamStates.cjs` + `inferStateFromName()` in pipeline | 526 teams corrected |
+| 4 | Duplicate matches in Team Details | Reverse matches (swapped home/away) + missing `deleted_at IS NULL` | Soft-delete filters + reverse match detection + pipeline prevention | 749 reverse dupes removed |
+
+**Key Innovations:**
+- `deleted_at IS NULL` added to ALL match queries (app, views, ELO, pipeline)
+- Reverse match detection in `matchDedup.js` (conservative: score-consistent only)
+- State inference from team display names (`inferStateFromName()`)
+- Dynamic `SEASON_YEAR` from DB for zero-code season rollover
+
+**Database After Session 88:**
+- teams_v2: 160,705 | matches_v2: 407,896 active (2,423 soft-deleted)
+- ELO: 192,172 matches, 60,817 teams (range 1157-1782)
+- 0 score-consistent reverse duplicates | 0 semantic duplicate groups
+
+**Files Modified:** `app/team/[id].tsx`, `rankings.tsx`, `recalculate_elo_v2.js`, `fastProcessStaging.cjs`, `dataQualityEngine.js`, `matchDedup.js`, `teamNormalizer.js`
+**Files Created:** `fixReverseMatches.cjs`, `fixTeamStates.cjs`, `088_add_deleted_at_filters.sql`
+**Session Docs:** `SESSION_88_UNIVERSAL_QC_FIX.md`, `SESSION_88_QC3_STATE_FIX.md`, `SESSION_88_QC4_DUPLICATE_MATCHES.md`
+
+---
+
 ### Session 87.2 - HTGSports Scraping + Pipeline Fixes (February 4, 2026) - COMPLETE ✅
 
 **Goal:** Complete HTGSports scraping, fix staging pipeline constraints, create universal bulk processor.
-
-**Completed:**
-
-| Task | Status |
-|------|--------|
-| Fix staging_games UNIQUE constraint | ✅ Deleted 87,638 dupes, added constraint |
-| Create fastProcessStaging.cjs | ✅ 7,200 matches in 30 seconds |
-| Update Heartland adapter v5.0 | ✅ Between-season detection |
-| Fix verifyDataIntegrity.js | ✅ Filter deleted_at IS NULL |
-| Process all staging backlog | ✅ 0 unprocessed |
-
-**Key Innovation:** `fastProcessStaging.cjs` - Universal bulk processor that's 240x faster than DQE. Uses dedicated client for pipeline auth, bulk team resolution, and batch deduplication.
-
-**Database After Session 87.2:**
-- teams_v2: 161,231 | matches_v2: 410,319 active | 0 staging backlog
-- 0 semantic duplicates | 0 duplicate source_match_keys
-- ELO: 192,689 matches, 60,864 teams (range 1157-1781)
 
 ---
 

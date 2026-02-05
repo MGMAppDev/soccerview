@@ -244,6 +244,145 @@ export async function resolveDuplicates(duplicateGroups, client, options = {}) {
 }
 
 // ===========================================
+// REVERSE MATCH DETECTION (Session 88)
+// ===========================================
+
+/**
+ * Detect reverse duplicate matches: same date, swapped home/away teams.
+ * The semantic UNIQUE constraint treats (date, A, B) and (date, B, A) as
+ * different tuples, so cross-source data with teams in different positions
+ * slips through.
+ *
+ * CONSERVATIVE: Only returns confirmed duplicates (score-consistent or
+ * same-event scheduled). Skips pairs with different scores (legitimate
+ * rematches / pool play).
+ *
+ * Universal: Works for ANY data source.
+ */
+export async function detectReverseMatches(client, options = {}) {
+  const { limit = 10000, verbose = false } = options;
+
+  if (verbose) console.log('  Checking reverse matches (date + swapped team IDs)...');
+
+  const { rows: reversePairs } = await client.query(`
+    SELECT
+      a.id as id_a, b.id as id_b,
+      a.match_date,
+      a.home_score as a_home_score, a.away_score as a_away_score,
+      b.home_score as b_home_score, b.away_score as b_away_score,
+      a.league_id as a_league, b.league_id as b_league,
+      a.tournament_id as a_tourn, b.tournament_id as b_tourn,
+      a.source_match_key as a_key, b.source_match_key as b_key,
+      a.created_at as a_created, b.created_at as b_created
+    FROM matches_v2 a
+    JOIN matches_v2 b ON a.match_date = b.match_date
+      AND a.home_team_id = b.away_team_id
+      AND a.away_team_id = b.home_team_id
+      AND a.id < b.id
+    WHERE a.deleted_at IS NULL AND b.deleted_at IS NULL
+    ORDER BY a.match_date DESC
+    LIMIT $1
+  `, [limit]);
+
+  // Filter to confirmed duplicates only (conservative)
+  const confirmed = [];
+  let skippedDifferent = 0;
+  let skippedAmbiguous = 0;
+
+  for (const pair of reversePairs) {
+    const aHasScore = pair.a_home_score !== null && pair.a_away_score !== null;
+    const bHasScore = pair.b_home_score !== null && pair.b_away_score !== null;
+    const scoresConsistent = aHasScore && bHasScore &&
+      pair.a_home_score === pair.b_away_score && pair.a_away_score === pair.b_home_score;
+    const scoresDifferent = aHasScore && bHasScore && !scoresConsistent;
+
+    if (scoresDifferent) { skippedDifferent++; continue; }
+
+    const isLegacySwap = pair.a_key && pair.b_key &&
+      pair.a_key.startsWith('legacy-') && pair.b_key.startsWith('legacy-');
+
+    if (!aHasScore && !bHasScore && !isLegacySwap) {
+      const sameEvent = (pair.a_league && pair.b_league && pair.a_league === pair.b_league) ||
+                        (pair.a_tourn && pair.b_tourn && pair.a_tourn === pair.b_tourn);
+      if (!sameEvent) { skippedAmbiguous++; continue; }
+    }
+
+    // Determine which to keep (same priority as semantic dedup)
+    const aHasEvent = pair.a_league || pair.a_tourn;
+    const bHasEvent = pair.b_league || pair.b_tourn;
+    let keepId, deleteId, reason;
+
+    if (aHasEvent && !bHasEvent) {
+      keepId = pair.id_a; deleteId = pair.id_b; reason = 'linked_to_event';
+    } else if (bHasEvent && !aHasEvent) {
+      keepId = pair.id_b; deleteId = pair.id_a; reason = 'linked_to_event';
+    } else if (aHasScore && !bHasScore) {
+      keepId = pair.id_a; deleteId = pair.id_b; reason = 'has_scores';
+    } else if (bHasScore && !aHasScore) {
+      keepId = pair.id_b; deleteId = pair.id_a; reason = 'has_scores';
+    } else {
+      if (new Date(pair.a_created) <= new Date(pair.b_created)) {
+        keepId = pair.id_a; deleteId = pair.id_b;
+      } else {
+        keepId = pair.id_b; deleteId = pair.id_a;
+      }
+      reason = 'earliest_created';
+    }
+
+    confirmed.push({
+      type: 'reverse_match',
+      match_date: pair.match_date,
+      keepId, deleteId, reason,
+      source_keys: [pair.a_key, pair.b_key],
+    });
+  }
+
+  if (verbose) {
+    console.log(`  Found ${reversePairs.length} reverse pairs total`);
+    console.log(`  Confirmed duplicates: ${confirmed.length}`);
+    console.log(`  Skipped (different scores): ${skippedDifferent}`);
+    console.log(`  Skipped (ambiguous): ${skippedAmbiguous}`);
+  }
+
+  return confirmed;
+}
+
+/**
+ * Resolve reverse duplicate matches by soft-deleting the inferior record.
+ * Uses bulk SQL for performance.
+ */
+export async function resolveReverseMatches(reverseMatches, client, options = {}) {
+  const { dryRun = true, verbose = false } = options;
+  const BATCH_SIZE = 500;
+  let totalDeleted = 0;
+
+  if (dryRun) {
+    return { deleted: reverseMatches.length, dryRun: true };
+  }
+
+  for (let i = 0; i < reverseMatches.length; i += BATCH_SIZE) {
+    const batch = reverseMatches.slice(i, i + BATCH_SIZE);
+    const deleteIds = batch.map(r => r.deleteId);
+    const reasonCases = batch.map((r, idx) =>
+      `WHEN id = $${idx + 1}::uuid THEN 'Reverse duplicate of ' || $${batch.length + idx + 1}::text`
+    ).join(' ');
+    const params = [...deleteIds, ...batch.map(r => r.keepId)];
+
+    await client.query(`
+      UPDATE matches_v2
+      SET deleted_at = NOW(),
+          deletion_reason = CASE ${reasonCases} END
+      WHERE id = ANY($${params.length + 1}::uuid[]) AND deleted_at IS NULL
+    `, [...params, deleteIds]);
+
+    totalDeleted += batch.length;
+    if (verbose) console.log(`  Batch: ${totalDeleted}/${reverseMatches.length}`);
+  }
+
+  return { deleted: totalDeleted, dryRun: false };
+}
+
+// ===========================================
 // REPORTING
 // ===========================================
 
@@ -255,14 +394,19 @@ export async function resolveDuplicates(duplicateGroups, client, options = {}) {
  */
 export async function generateReport(client) {
   const duplicates = await detectDuplicates(client, { verbose: false, limit: 10000 });
+  const reverseMatches = await detectReverseMatches(client, { verbose: false, limit: 10000 });
 
   const report = {
     timestamp: new Date().toISOString(),
-    description: 'Semantic duplicates: same date + home_team_id + away_team_id',
+    description: 'Semantic + reverse duplicates',
     semanticDuplicates: {
       count: duplicates.length,
       totalExtra: duplicates.reduce((sum, g) => sum + g.count - 1, 0),
       samples: duplicates.slice(0, 5),
+    },
+    reverseDuplicates: {
+      count: reverseMatches.length,
+      samples: reverseMatches.slice(0, 5),
     },
   };
 
@@ -315,16 +459,27 @@ async function main() {
       return;
     }
 
-    console.log('\n🔧 Resolving duplicates...');
+    console.log('\n🔧 Resolving semantic duplicates...');
     const stats = await resolveDuplicates(duplicates, client, { dryRun, verbose });
 
-    console.log('\n📊 RESULTS:');
+    console.log('\n📊 SEMANTIC RESULTS:');
     console.log(`   Groups processed: ${stats.groupsProcessed}`);
     console.log(`   Matches kept: ${stats.matchesKept}`);
     console.log(`   Matches ${dryRun ? 'would be ' : ''}deleted: ${stats.matchesDeleted}`);
 
     if (stats.errors.length > 0) {
       console.log(`   Errors: ${stats.errors.length}`);
+    }
+
+    // Session 88: Also detect and resolve reverse matches
+    console.log('\n📋 Detecting reverse matches (swapped home/away)...');
+    const reverseMatches = await detectReverseMatches(client, { verbose });
+    console.log(`   Found ${reverseMatches.length} confirmed reverse duplicates`);
+
+    if (reverseMatches.length > 0) {
+      console.log('\n🔧 Resolving reverse duplicates...');
+      const reverseStats = await resolveReverseMatches(reverseMatches, client, { dryRun, verbose });
+      console.log(`   Reverse matches ${dryRun ? 'would be ' : ''}deleted: ${reverseStats.deleted}`);
     }
 
     if (dryRun) {

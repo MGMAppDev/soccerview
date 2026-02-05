@@ -90,6 +90,9 @@ When you find a QC issue in the app, copy and paste this template to Claude Code
    | Stale canonical | `node scripts/maintenance/cleanupStaleCanonical.cjs --dry-run` then `--execute` |
    | Manual merge | `node scripts/maintenance/mergeTeams.js --find "NAME"` |
    | Orphan (0 matches) | Coverage gap - cannot fix by merging. Document for expansion. |
+   | Wrong state | `node scripts/maintenance/fixTeamStates.cjs --dry-run` then `--execute` |
+   | Reverse dupes | `node scripts/maintenance/fixReverseMatches.cjs --dry-run` then `--execute` |
+   | Birth year wrong | `node scripts/maintenance/fixBirthYearFromDisplayName.cjs` |
 
 3. Verify: `node scripts/daily/verifyDataIntegrity.js`
 
@@ -146,6 +149,9 @@ The diagnostic tool will:
 | **Stats Mismatch** | W-L-D wrong | Pre-computed stats stale | `fixDataDisconnect.cjs` |
 | **Orphan** | GS rank but 0 matches | Coverage gap (not a dupe) | Scrape more leagues |
 | **Stale View** | App shows old data | Materialized view not refreshed | `refresh_app_views()` |
+| **Wrong State** | Team in wrong state filter | Bad state inference from source | `fixTeamStates.cjs` |
+| **Reverse Dupes** | Same match appears twice | Cross-source reversed home/away | `fixReverseMatches.cjs` |
+| **Birth Year Wrong** | Team in wrong age filter | Bad birth_year extraction | `fixBirthYearFromDisplayName.cjs` |
 | **Stale Canonical** | Duplicate groups persist | Orphan canonical entries | `cleanupStaleCanonical.cjs` |
 
 ### Step 4: V2 Architecture Compliance
@@ -168,6 +174,9 @@ Key rules:
 | `fixDataDisconnect.cjs` | Recalculate stats | `--dry-run` then execute |
 | `cleanupStaleCanonical.cjs` | Clean orphan canonical entries | `--dry-run` then `--execute` |
 | `mergeTeams.js` | Manual team merge | `--find "name"` then `--keep --merge --execute` |
+| `fixTeamStates.cjs` | Fix wrong state assignments | `--dry-run` then `--execute` (Session 88) |
+| `fixReverseMatches.cjs` | Fix reverse match duplicates | `--dry-run` then `--execute` (Session 88) |
+| `fixBirthYearFromDisplayName.cjs` | Fix birth year from team name | Direct run (Session 88) |
 | `verifyDataIntegrity.js` | Post-fix verification | Direct run |
 
 ### Step 6: Post-Fix Verification (UNIVERSAL, not specific)

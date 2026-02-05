@@ -752,6 +752,7 @@ export default function TeamDetailScreen() {
         .from("matches_v2")
         .select(matchQuery)
         .eq("home_team_id", id)
+        .is("deleted_at", null)
         .order("match_date", { ascending: false })
         .limit(50);
 
@@ -759,6 +760,7 @@ export default function TeamDetailScreen() {
         .from("matches_v2")
         .select(matchQuery)
         .eq("away_team_id", id)
+        .is("deleted_at", null)
         .order("match_date", { ascending: false })
         .limit(50);
 
@@ -797,6 +799,7 @@ export default function TeamDetailScreen() {
         .from("matches_v2")
         .select("home_score, away_score")
         .eq("home_team_id", id)
+        .is("deleted_at", null)
         .not("home_score", "is", null)
         .not("away_score", "is", null)
         .gte("match_date", seasonStart);
@@ -805,6 +808,7 @@ export default function TeamDetailScreen() {
         .from("matches_v2")
         .select("home_score, away_score")
         .eq("away_team_id", id)
+        .is("deleted_at", null)
         .not("home_score", "is", null)
         .not("away_score", "is", null)
         .gte("match_date", seasonStart);
