@@ -1,9 +1,9 @@
-> ✅ **STATUS UPDATE (Feb 5, 2026 - Session 89):** UNIVERSAL ENTITY RESOLUTION COMPLETE
+> ✅ **STATUS UPDATE (Feb 5, 2026 - Session 90):** CROSS-IMPORT DUPLICATE FIX COMPLETE
 >
 > **Current Database State:**
 > - staging_games: 86,491 total (0 unprocessed) - UNIQUE constraint on source_match_key
-> - matches_v2: **405,595 active rows** (~2,941 soft-deleted)
-> - teams_v2: **158,043 rows** (~59,401 with ELO ratings)
+> - matches_v2: **403,068 active rows** (~5,468 soft-deleted)
+> - teams_v2: **158,043 rows** (~59,295 with ELO ratings)
 > - clubs: 124,650 rows
 > - leagues: 280 rows
 > - tournaments: 1,711 rows (17 dupes merged in Session 89)
@@ -15,7 +15,7 @@
 > - **staging_rejected: 84,045 rows** (V1 migration rejects)
 > - seasons: 3 rows
 >
-> **Sessions 85-89 Changes:**
+> **Sessions 85-90 Changes:**
 > - Match uniqueness: semantic key `(match_date, home_team_id, away_team_id)`
 > - Soft-delete pattern: `deleted_at` + `deletion_reason` columns (Session 86)
 > - All queries MUST filter `WHERE deleted_at IS NULL` for active matches
@@ -28,6 +28,7 @@
 > - **`source_entity_map` table: Three-tier deterministic entity resolution (Session 89)**
 > - **7,253 v1-legacy duplicate teams merged, 17 tournament dupes merged (Session 89)**
 > - **Adapters emit source_home/away_team_id for Tier 1 resolution (Session 89)**
+> - **Cross-import duplicate fix: 2,527 legacy matches soft-deleted (Session 90)**
 > - **Partial unique index for semantic match uniqueness (Session 89)**
 >
 > **⚠️ GUARDRAIL:** Always verify canonical registry health before deduplication work!

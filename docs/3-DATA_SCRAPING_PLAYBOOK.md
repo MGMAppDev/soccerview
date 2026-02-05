@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 4.0** | Updated: February 5, 2026 | V2 Architecture + Session 89 (Universal Entity Resolution)
+> **Version 4.1** | Updated: February 5, 2026 | V2 Architecture + Session 90 (Cross-Import Duplicate Fix)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -661,31 +661,25 @@ Heartland Soccer Association has **4 distinct data access mechanisms**. As of Fe
 
 **Current Data:** 9,932 Heartland matches in production (9,729 with scores)
 
-### Session 87.2 Database Snapshot (Feb 5, 2026)
+### Session 90 Database Snapshot (Feb 5, 2026)
 
 | Metric | Value |
 |--------|-------|
-| **matches_v2 (active)** | 410,319 |
-| **teams_v2** | 161,231 |
-| **Teams with matches** | 60,864 |
+| **matches_v2 (active)** | 403,068 |
+| **matches_v2 (soft-deleted)** | ~5,468 |
+| **teams_v2** | 158,043 |
+| **Teams with ELO** | 59,295 |
 | **ELO range** | 1,157 - 1,781 |
+| **source_entity_map** | 3,253 |
 | **Unprocessed staging** | 0 |
 | **Semantic duplicates** | 0 |
 
-**Matches by source:**
-| Source | Count | With Scores |
-|--------|-------|-------------|
-| GotSport | 382,156 | 371,117 |
-| HTGSports | 16,010 | 15,823 |
-| Heartland | 9,932 | 9,729 |
-| Legacy (null) | 2,221 | 1,501 |
-
-**Key fixes this session:**
-- staging_games UNIQUE constraint on `source_match_key`
-- 87,638 duplicate staging rows cleaned
-- 1,660 duplicate match keys soft-deleted
-- `verifyDataIntegrity.js` queries now filter by `deleted_at IS NULL`
-- HTGSports: 7,200 new matches processed via `fastProcessStaging.cjs`
+**Key changes (Sessions 87.2-90):**
+- staging_games UNIQUE constraint on `source_match_key` (87.2)
+- HTGSports: 7,200 new matches via `fastProcessStaging.cjs` (87.2)
+- Dynamic SEASON_YEAR from DB, reverse match detection (88)
+- `source_entity_map` + three-tier entity resolution, 7,253 teams merged (89)
+- Cross-import duplicate fix: 2,527 legacy matches soft-deleted (90)
 
 ### staging_games Constraint (Session 87.2)
 
