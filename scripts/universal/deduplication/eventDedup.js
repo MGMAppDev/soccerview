@@ -167,11 +167,11 @@ export async function mergeLeagueGroup(group, client, options = {}) {
   await client.query('BEGIN');
 
   try {
-    // 1. Migrate matches to kept league
+    // 1. Migrate matches to kept league (only active matches)
     const { rowCount: migrated } = await client.query(`
       UPDATE matches_v2
       SET league_id = $1
-      WHERE league_id = ANY($2)
+      WHERE league_id = ANY($2) AND deleted_at IS NULL
     `, [decision.keepId, decision.deleteIds]);
 
     // 2. Log deletions
@@ -230,11 +230,11 @@ export async function mergeTournamentGroup(group, client, options = {}) {
   await client.query('BEGIN');
 
   try {
-    // 1. Migrate matches
+    // 1. Migrate matches (only active matches)
     const { rowCount: migrated } = await client.query(`
       UPDATE matches_v2
       SET tournament_id = $1
-      WHERE tournament_id = ANY($2)
+      WHERE tournament_id = ANY($2) AND deleted_at IS NULL
     `, [decision.keepId, decision.deleteIds]);
 
     // 2. Log deletions

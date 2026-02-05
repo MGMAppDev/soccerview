@@ -194,6 +194,7 @@ async function checkSemanticDuplicates() {
     FROM (
       SELECT match_date, home_team_id, away_team_id
       FROM matches_v2
+      WHERE deleted_at IS NULL
       GROUP BY match_date, home_team_id, away_team_id
       HAVING COUNT(*) > 1
     ) dups
@@ -318,7 +319,7 @@ async function checkOrphanRate() {
         WHERE t.national_rank IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM matches_v2 m
-            WHERE m.home_team_id = t.id OR m.away_team_id = t.id
+            WHERE (m.home_team_id = t.id OR m.away_team_id = t.id) AND m.deleted_at IS NULL
           )
       ) as orphans
     FROM teams_v2 t
@@ -424,6 +425,42 @@ async function checkRejectedRecords() {
 }
 
 // ===========================================
+// CHECK 8: Source Entity Map Coverage (Session 89)
+// ===========================================
+
+async function checkSourceEntityMapCoverage() {
+  console.log('\n--- Check 8: Source Entity Map Coverage (Session 89) ---');
+
+  const { rows } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*) FROM source_entity_map) as total_mappings,
+      (SELECT COUNT(*) FROM source_entity_map WHERE entity_type = 'team') as team_mappings,
+      (SELECT COUNT(*) FROM source_entity_map WHERE entity_type = 'league') as league_mappings,
+      (SELECT COUNT(*) FROM source_entity_map WHERE entity_type = 'tournament') as tournament_mappings,
+      (SELECT COUNT(DISTINCT source_platform) FROM source_entity_map) as platforms
+  `);
+
+  const { total_mappings, team_mappings, league_mappings, tournament_mappings, platforms } = rows[0];
+
+  if (parseInt(total_mappings) > 0) {
+    addResult(
+      'Source Entity Map',
+      'pass',
+      `${total_mappings} mappings across ${platforms} platforms (${team_mappings} teams, ${league_mappings} leagues, ${tournament_mappings} tournaments)`
+    );
+  } else {
+    addResult(
+      'Source Entity Map',
+      'warn',
+      'No source entity mappings found',
+      'Run: node scripts/maintenance/backfillSourceEntityMap.cjs'
+    );
+  }
+
+  return rows[0];
+}
+
+// ===========================================
 // QUICK CHECKS (for --quick mode)
 // ===========================================
 
@@ -442,6 +479,7 @@ async function runFullChecks() {
   await checkDuplicateSourceMatchKeys();
   await checkSemanticDuplicates();  // Session 85: SoccerView ID Architecture
   await checkCanonicalRegistryCompleteness();
+  await checkSourceEntityMapCoverage();  // Session 89: Three-tier resolution
   await checkBirthYearValidity();
   await checkOrphanRate();
   await checkStagingBacklog();
@@ -476,10 +514,10 @@ async function runFixes() {
           WHERE m.home_score IS NOT NULL AND m.home_score = m.away_score
         ) as draws
       FROM teams_v2 t
-      LEFT JOIN matches_v2 m ON m.home_team_id = t.id OR m.away_team_id = t.id
+      LEFT JOIN matches_v2 m ON (m.home_team_id = t.id OR m.away_team_id = t.id) AND m.deleted_at IS NULL
       WHERE t.matches_played IS DISTINCT FROM (
         SELECT COUNT(*) FROM matches_v2
-        WHERE home_team_id = t.id OR away_team_id = t.id
+        WHERE (home_team_id = t.id OR away_team_id = t.id) AND deleted_at IS NULL
       )
       GROUP BY t.id
     )

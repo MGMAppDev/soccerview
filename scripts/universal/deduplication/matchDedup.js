@@ -249,7 +249,7 @@ export async function resolveDuplicates(duplicateGroups, client, options = {}) {
 
 /**
  * Detect reverse duplicate matches: same date, swapped home/away teams.
- * The semantic UNIQUE constraint treats (date, A, B) and (date, B, A) as
+ * The semantic unique partial INDEX treats (date, A, B) and (date, B, A) as
  * different tuples, so cross-source data with teams in different positions
  * slips through.
  *
