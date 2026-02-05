@@ -233,8 +233,6 @@ async function fetchRecentMatches(): Promise<MatchRow[]> {
     .from("app_matches_feed")
     .select("id, match_date, match_time, home_score, away_score, home_team, away_team, event, venue, gender, birth_year, age_group, state")
     .lte("match_date", new Date().toISOString().split('T')[0]) // Only past/current matches (date only)
-    .not("home_score", "is", null)  // Only completed matches with scores
-    .not("away_score", "is", null)  // Only completed matches with scores
     .order("match_date", { ascending: false })
     .limit(10);
 

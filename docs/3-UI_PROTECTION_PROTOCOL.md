@@ -122,3 +122,4 @@ Session 66 lost hours of UI work when `git checkout` was run to fix a database i
 | 90 | `app/match/[id].tsx` | Icons swapped (league=⚽, tournament=🏆), remove name truncation, align scores, gender M/F→Boys/Girls | ZERO design change — data display fixes only |
 | 90 | `app/team/[id].tsx` | `renderRecentMatch()`: icon swap (league=⚽, tournament=🏆) | ZERO design change — corrects emoji only |
 | 90 | `app/match/[id].tsx` | Add team stats queries for Tale of the Tape W-L-D + Goal Diff | ZERO design change — populates existing fields |
+| 90 | `app/(tabs)/index.tsx` | `fetchRecentMatches()`: Add NOT NULL score filters to exclude unscored scheduled matches | ZERO design change — query filter only |
