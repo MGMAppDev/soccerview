@@ -10,7 +10,19 @@
  */
 
 // Current season year for age group calculations
-const SEASON_YEAR = 2026;
+// Default fallback; callers should call initializeSeasonYear() with DB value
+let SEASON_YEAR = 2026;
+
+/**
+ * Initialize season year from database value.
+ * Call this once before bulk processing.
+ * Falls back to default (2026) if not called.
+ */
+export function initializeSeasonYear(year) {
+  if (year && year >= 2020 && year <= 2040) {
+    SEASON_YEAR = year;
+  }
+}
 
 // ===========================================
 // ADAPTIVE LEARNING INTEGRATION

@@ -23,7 +23,8 @@ const VERBOSE = process.argv.includes('--verbose');
 const LIMIT = parseInt(process.argv.find(a => a.startsWith('--limit='))?.split('=')[1] || '0') || 0;
 
 // Current season year for age group calculations
-const SEASON_YEAR = 2026;
+// Default fallback; updated from DB at startup
+let SEASON_YEAR = 2026;
 
 /**
  * Extract birth year from team name - V2 Normalizer Logic
@@ -103,7 +104,13 @@ function extractBirthYearFromName(name) {
 async function findInconsistencies() {
   console.log('=== BIRTH YEAR FIX FROM NAMES ===');
   console.log(`Mode: ${DRY_RUN ? 'DRY RUN' : 'EXECUTE'}`);
-  console.log(`Season year: ${SEASON_YEAR}\n`);
+
+  // Load season year from database (dynamic, not hardcoded)
+  try {
+    const { rows: seasonRows } = await pool.query('SELECT year FROM seasons WHERE is_current = true LIMIT 1');
+    if (seasonRows[0]?.year) SEASON_YEAR = seasonRows[0].year;
+  } catch (e) { /* fallback to default */ }
+  console.log(`Season year: ${SEASON_YEAR} (from database)\n`);
 
   // V2 ARCHITECTURE ENFORCEMENT: Authorize pipeline writes (Session 79)
   if (!DRY_RUN) {

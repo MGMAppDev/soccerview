@@ -10,6 +10,9 @@ require("dotenv").config();
 const { Pool } = require("pg");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+// Season year - default fallback, updated from DB at startup
+let SEASON_YEAR = 2026;
+
 async function main() {
   const startTime = Date.now();
   const args = process.argv.slice(2);
@@ -24,6 +27,11 @@ async function main() {
   const client = await pool.connect();
   try {
     await client.query("SELECT authorize_pipeline_write()");
+
+    // Load season year from database (dynamic, not hardcoded)
+    const { rows: seasonRows } = await client.query('SELECT year FROM seasons WHERE is_current = true LIMIT 1');
+    SEASON_YEAR = seasonRows[0]?.year || new Date().getFullYear();
+    console.log(`Season year: ${SEASON_YEAR} (from database)\n`);
 
     // Step 0: Fetch unprocessed records
     let query = `
@@ -327,7 +335,7 @@ function extractBirthYear(division, teamName) {
   m = (division || '').match(/U-?(\d{1,2})\b/i);
   if (m) {
     const age = parseInt(m[1]);
-    if (age >= 8 && age <= 19) return 2026 - age;
+    if (age >= 8 && age <= 19) return SEASON_YEAR - age;
   }
   return null;
 }

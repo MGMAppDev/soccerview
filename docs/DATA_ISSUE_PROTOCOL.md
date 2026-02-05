@@ -1,8 +1,8 @@
 # Data Issue Protocol
 
-> **Version 1.3** | Created: Session 79 | February 3, 2026
+> **Version 2.0** | Updated: Session 88 | February 4, 2026
 >
-> Standard protocol for reporting and fixing data issues in SoccerView.
+> Standard protocol for reporting and fixing QC issues in SoccerView.
 
 ---
 
@@ -53,110 +53,47 @@ WHERE birth_year IS NULL AND display_name ~ '\\d{2}[BG]?\\s*\\(U\\d+';
 
 ## Quick Start: Copy This Prompt
 
-When you find a data issue, copy and paste this template to Claude Code:
+When you find a QC issue in the app, copy and paste this template to Claude Code:
 
 ```
-## MANDATORY GATE — Complete Before ANY Other Action
+## QC Issue Report
 
-Do NOT read the problem description below yet.
-Do NOT run any scripts, queries, or commands yet.
-Do NOT write any code yet.
-
-You must complete these 2 reads FIRST and prove it:
-
-1. Read the FULL file: docs/DATA_ISSUE_PROTOCOL.md
-2. Read the FULL file: docs/1.1-GUARDRAILS_v2.md
-
-After reading both files, STOP and respond with ONLY this:
-- List 3 specific rules from GUARDRAILS that are relevant to this type of fix
-- State which V2-compliant scripts from the Protocol are approved for use
-- Confirm: "I have read both documents and will not bypass normalizers, use ad-hoc fuzzy matching, or ignore birth_year."
-
-Do NOT proceed past this gate until you have printed the above.
+**Screen:** [Home | Rankings | Teams | Matches | Team Detail | League Detail]
+**Issue:** [One sentence - what's wrong]
+**Expected:** [What should appear]
+**Actual:** [What I see - include numbers, screenshots]
+**Team/Match:** [Name, ID, or "N/A" for general issues]
 
 ---
 
-## Data Issue Report (Read ONLY after completing the gate above)
+**Fix Rules (non-negotiable):**
+- This example is ONE symptom. Quantify and fix ALL affected records universally.
+- Data bug → Fix the data layer. NEVER touch .tsx files without explicit approval.
+- UI bug → Get explicit approval before touching any .tsx file. One change at a time.
+- Use bulk SQL with pg Pool. No row-by-row. No Supabase client for bulk writes.
+- Soft delete only. No hard deletes on matches_v2.
+- No fuzzy matching that ignores birth_year or gender.
 
-**Problem:** [One sentence describing what's wrong]
-
-**Team/Match Affected:** [Team name, match details, or screenshot]
-
-**What I Expected:** [What should appear]
-
-**What I See:** [What actually appears - include numbers, dates, etc.]
-
----
-
-**Instructions for Claude Code (after gate is complete):**
-
-⚠️ CRITICAL: The team above is ONE EXAMPLE. Fix must be UNIVERSAL.
-
-1. First, QUANTIFY the problem (not just my example):
-   ```bash
-   # How many records have this issue?
+**Steps:**
+1. Diagnose:
    node scripts/maintenance/diagnoseDataIssue.cjs --health-check
-   # Then investigate my specific team as ONE example:
-   node scripts/maintenance/diagnoseDataIssue.cjs --team "TEAM_NAME_HERE"
-   ```
-   STOP and tell me: "Found X records with this issue, not just 1."
+   node scripts/maintenance/diagnoseDataIssue.cjs --team "TEAM_NAME"
+   STOP and report: "Found X records with this issue."
 
-2. Follow V2 Architecture compliance:
-   - Read GUARDRAILS: docs/1.1-GUARDRAILS_v2.md
-   - Use ONLY V2-compliant tools listed below
-   - NEVER bypass canonical_teams registry
-   - NEVER use fuzzy matching that ignores birth_year
+2. Classify and fix:
+   | Root Cause | Fix Script |
+   |------------|------------|
+   | Stale view | `node scripts/refresh_views_manual.js` |
+   | Stats mismatch | `node scripts/maintenance/fixDataDisconnect.cjs` |
+   | Duplicate teams | `node scripts/maintenance/mergeCanonicalDuplicates.cjs --dry-run` then `--execute` |
+   | NULL metadata | `node scripts/maintenance/fixNullMetadataAndMerge.cjs` |
+   | Stale canonical | `node scripts/maintenance/cleanupStaleCanonical.cjs --dry-run` then `--execute` |
+   | Manual merge | `node scripts/maintenance/mergeTeams.js --find "NAME"` |
+   | Orphan (0 matches) | Coverage gap - cannot fix by merging. Document for expansion. |
 
-3. Diagnose the root cause category:
-   - [ ] Duplicate teams (same canonical_name + birth_year + gender)
-   - [ ] NULL metadata (missing birth_year or gender)
-   - [ ] Stats mismatch (W-L-D doesn't match actual matches)
-   - [ ] Orphan team (GS rank but no matches - coverage gap)
-   - [ ] Stale view (needs refresh_app_views())
-   - [ ] Missing from canonical registry
-   - [ ] Other: _______________
+3. Verify: `node scripts/daily/verifyDataIntegrity.js`
 
-4. Fix using ONLY these V2-compliant scripts:
-   | Issue | Script |
-   |-------|--------|
-   | Duplicate teams | `mergeCanonicalDuplicates.cjs --dry-run` then `--execute` |
-   | NULL metadata | `fixNullMetadataAndMerge.cjs` |
-   | Stats mismatch | `fixDataDisconnect.cjs` |
-   | Stale canonical | `cleanupStaleCanonical.cjs --execute` |
-   | Manual team merge | `mergeTeams.js --keep UUID --merge UUID --execute` |
-   | Refresh views | `psql $DATABASE_URL -c "SELECT refresh_app_views();"` |
-
-5. Performance Requirements:
-   - Use direct SQL with pg Pool - NOT Supabase client for bulk ops
-   - Process thousands per minute - NOT dozens
-   - Use bulk INSERT/UPDATE - NOT row-by-row loops
-   - If 10K+ records takes more than a few minutes, you're doing it wrong
-
-6. Universal, Not Specific:
-   - Fix must work for ANY data source across ALL THREE LAYERS:
-     Layer 1 (Intake) → Layer 2 (Processing) → Layer 3 (Presentation)
-   - No hardcoding. No source-specific logic. No shortcuts.
-   - Test: Will this work when we add MLS Next tomorrow?
-
-7. Data Lifecycle Check (before closing):
-   - [ ] Does Layer 1 (Scrapers/Adapters) capture it correctly?
-   - [ ] Does Layer 2 (Validation/Normalizers) clean it correctly?
-   - [ ] Does Layer 3 (Views/App) display it correctly?
-
-8. If uncertain about approach - STOP and RESEARCH FIRST:
-   - Do NOT guess or trial-and-error
-   - Use web_search for authoritative sources
-   - Present findings with confidence level (High/Medium/Low)
-   - Wait for approval before implementing
-
-9. After fix, verify UNIVERSAL impact:
-   ```bash
-   node scripts/daily/verifyDataIntegrity.js
-   ```
-   REQUIRED: Report back with:
-   - "Fixed X of Y affected records" (not just "Fixed the team")
-   - "Issue now affects 0 records" (verify problem is gone)
-   - "Fix will prevent future occurrences because..." (systemic, not band-aid)
+4. Report: "Fixed X of Y records. Issue now affects 0. Prevention: [how pipeline prevents recurrence]."
 ```
 
 ---
@@ -486,7 +423,8 @@ No trial-and-error. No "let me try this." Research → Present → Approve → I
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.3 | 2026-02-03 | **CRITICAL**: Restructured prompt template with mandatory gate - Claude Code must prove it read GUARDRAILS before seeing problem details |
+| 2.0 | 2026-02-04 | **Streamlined**: Replaced verbose gate ceremony with concise QC prompt. Added Screen field, UI vs Data decision, verified all script references. Removed redundant rules already in CLAUDE.md/GUARDRAILS. |
+| 1.3 | 2026-02-03 | Restructured prompt template with mandatory gate |
 | 1.2 | 2026-02-03 | Added "Think Big, Fix Big" - universal fixes required |
 | 1.1 | 2026-02-03 | Added session reminders, performance requirements, 3-layer check |
 | 1.0 | 2026-02-02 | Initial protocol created (Session 79) |

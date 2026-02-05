@@ -25,7 +25,7 @@ import pg from 'pg';
 import 'dotenv/config';
 
 // Import normalizers
-import { normalizeTeam, normalizeTeamsBulk, initializeLearnedPatterns as initTeamPatterns } from './normalizers/teamNormalizer.js';
+import { normalizeTeam, normalizeTeamsBulk, initializeLearnedPatterns as initTeamPatterns, initializeSeasonYear as initSeasonYear } from './normalizers/teamNormalizer.js';
 import { normalizeEvent, normalizeEventsBulk, initializeLearnedPatterns as initEventPatterns } from './normalizers/eventNormalizer.js';
 import { normalizeMatch, normalizeMatchesBulk } from './normalizers/matchNormalizer.js';
 import { normalizeClub, normalizeClubsBulk } from './normalizers/clubNormalizer.js';
@@ -1136,6 +1136,16 @@ async function processStaging(options = {}) {
   console.log(`Started: ${new Date().toISOString()}\n`);
 
   stats.startTime = Date.now();
+
+  // Initialize season year from database (dynamic, not hardcoded)
+  try {
+    const { rows: seasonRows } = await pool.query('SELECT year FROM seasons WHERE is_current = true LIMIT 1');
+    const seasonYear = seasonRows[0]?.year || new Date().getFullYear();
+    initSeasonYear(seasonYear);
+    console.log(`📅 Season year: ${seasonYear} (from database)`);
+  } catch (e) {
+    console.log('   ⚠️ Could not load season year from DB, using default');
+  }
 
   // ADAPTIVE LEARNING: Load learned patterns for normalizers
   // This enables pattern-based improvements from previous processing

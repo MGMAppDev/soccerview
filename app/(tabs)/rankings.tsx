@@ -149,7 +149,7 @@ async function fetchTeams(
   let query = supabase
     .from("app_rankings")
     .select(
-      "id, name, display_name, club_name, birth_year, gender, age_group, state, elo_rating, national_rank, state_rank, gotsport_rank, gotsport_points, matches_played, wins, losses, draws, has_matches",
+      "id, name, display_name, club_name, birth_year, gender, age_group, state, elo_rating, national_rank, state_rank, elo_national_rank, elo_state_rank, gotsport_rank, gotsport_points, matches_played, wins, losses, draws, has_matches",
     );
 
   if (mode === "leaderboard") {
@@ -660,18 +660,12 @@ export default function RankingsTab() {
   }, []);
 
   const rankedTeams: (TeamRankRow & { rank?: number })[] = useMemo(() => {
-    // Determine if we should use position-based ranking (1, 2, 3 in filtered list)
-    // vs national rank (team's actual national position)
-    const usePositionRanking = mode === "national" || selectedStates.length > 0;
-
+    // Show actual rank from database to match Team Detail page
     return teams.map((team, index) => ({
       ...team,
-      rank: usePositionRanking
-        // Position in current filtered list (1, 2, 3...)
-        // index is 0-based, so add 1 for display rank
-        ? (index + 1)
-        // National rank (team's actual position in national standings)
-        : (team.national_rank ?? undefined),
+      rank: mode === "national"
+        ? (selectedStates.length > 0 ? (team.elo_state_rank ?? index + 1) : (team.elo_national_rank ?? index + 1))
+        : (selectedStates.length > 0 ? (team.state_rank ?? index + 1) : (team.national_rank ?? index + 1)),
     }));
   }, [teams, mode, selectedStates.length]);
 
@@ -716,11 +710,13 @@ export default function RankingsTab() {
     item: TeamRankRow & { rank?: number };
     index: number;
   }) => {
-    // Compute rank directly here to avoid stale closure/memo issues
-    // When state filter is active OR in SoccerView mode: use position-based ranking (1, 2, 3...)
-    // Otherwise: use team's national rank from database
-    const usePositionRanking = mode === "national" || selectedStates.length > 0;
-    const rank = usePositionRanking ? (index + 1) : (item.national_rank || 0);
+    // Show actual rank from database to match Team Detail page
+    // GotSport mode: national_rank or state_rank when state filter active
+    // SoccerView mode: elo_national_rank or elo_state_rank when state filter active
+    // Fallback to list position if rank is null
+    const rank = mode === "national"
+      ? (selectedStates.length > 0 ? (item.elo_state_rank ?? index + 1) : (item.elo_national_rank ?? index + 1))
+      : (selectedStates.length > 0 ? (item.state_rank ?? index + 1) : (item.national_rank ?? index + 1));
     const isSoccerViewMode = mode === "national";
     const badgeInfo = getRankBadgeInfo(rank, isSoccerViewMode);
     const gradeInfo = getEloGrade(item.elo_rating || 1500);
