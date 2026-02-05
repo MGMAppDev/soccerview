@@ -1,6 +1,6 @@
 # SoccerView UI Patterns & Standards
 
-> **Version 1.9** | Last Updated: February 5, 2026 | Session 90 (Match Tap Navigation Fix)
+> **Version 2.0** | Last Updated: February 5, 2026 | Session 90 (Match Detail QC Fixes)
 >
 > Universal UI patterns that must be applied consistently across ALL screens.
 
@@ -941,6 +941,43 @@ expandedMatchRow: {
 - Shows complete match history at a glance
 - Compact 2-line event card header keeps list scannable
 - Universal pattern works for both leagues and tournaments
+
+### 19b. Icon Convention: League vs Tournament (Session 90)
+
+**MANDATORY across all screens:**
+
+| Event Type | Emoji | Rationale |
+|------------|-------|-----------|
+| League | ⚽ | Regular season play |
+| Tournament | 🏆 | Championship/competitive format |
+
+```typescript
+// CORRECT — use everywhere
+const icon = isLeague ? "⚽" : "🏆";
+```
+
+**Applies to:** Event cards, recent match cards, match detail badge, any future match display.
+
+### 19c. Gender Display: Always Human-Readable (Session 90)
+
+**MANDATORY:** Never display raw database gender values ("M"/"F"). Always convert:
+
+```typescript
+function formatGender(gender: string): string {
+  const g = gender.toUpperCase();
+  if (g === "M" || g === "MALE") return "Boys";
+  if (g === "F" || g === "FEMALE") return "Girls";
+  return gender;
+}
+```
+
+### 19d. Match Detail Score Alignment (Session 90)
+
+**Score numbers MUST be horizontally aligned** regardless of team name length. Use `alignItems: 'stretch'` on the score card row and `marginTop: 'auto'` on the score section to push scores to the bottom of equally-tall columns.
+
+### 19e. Team Names Never Truncate on Match Detail (Session 90)
+
+Per Principle 4: team names must ALWAYS be fully visible. Never use `numberOfLines` on team name Text elements in the match detail score card.
 
 ---
 

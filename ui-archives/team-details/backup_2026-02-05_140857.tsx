@@ -1121,9 +1121,9 @@ export default function TeamDetailScreen() {
 
     const sourceEmoji =
       item.source_type === "league"
-        ? "⚽"
+        ? "🏆"
         : item.source_type === "tournament"
-          ? "🏆"
+          ? "⚽"
           : "";
 
     return (
@@ -1250,17 +1250,12 @@ export default function TeamDetailScreen() {
         : "";
 
       return (
-        <TouchableOpacity
+        <View
           key={match.id}
           style={[
             styles.expandedMatchRow,
             isLast && { borderBottomWidth: 0 },
           ]}
-          activeOpacity={0.7}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push(`/match/${match.id}`);
-          }}
         >
           <Text style={[styles.expandedMatchResult, { color: resultColor }]}>
             {resultIcon}
@@ -1271,7 +1266,7 @@ export default function TeamDetailScreen() {
           <Text style={styles.expandedMatchScore}>
             {hasScores ? `${teamScore}-${opponentScore}` : "—"}
           </Text>
-        </TouchableOpacity>
+        </View>
       );
     };
 

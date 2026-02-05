@@ -119,3 +119,5 @@ Session 66 lost hours of UI work when `git checkout` was run to fix a database i
 | Session | File | Change | Impact |
 |---------|------|--------|--------|
 | 90 | `app/team/[id].tsx` | `renderExpandedMatch()`: `View` → `TouchableOpacity` with match navigation | ZERO design change — adds tap handler only |
+| 90 | `app/match/[id].tsx` | Icons swapped (league=⚽, tournament=🏆), remove name truncation, align scores, gender M/F→Boys/Girls | ZERO design change — data display fixes only |
+| 90 | `app/team/[id].tsx` | `renderRecentMatch()`: icon swap (league=⚽, tournament=🏆) | ZERO design change — corrects emoji only |

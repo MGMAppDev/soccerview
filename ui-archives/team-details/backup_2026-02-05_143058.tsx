@@ -1121,9 +1121,9 @@ export default function TeamDetailScreen() {
 
     const sourceEmoji =
       item.source_type === "league"
-        ? "⚽"
+        ? "🏆"
         : item.source_type === "tournament"
-          ? "🏆"
+          ? "⚽"
           : "";
 
     return (

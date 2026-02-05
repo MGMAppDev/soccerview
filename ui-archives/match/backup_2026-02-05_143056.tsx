@@ -71,13 +71,6 @@ function isValidValue(v: any): boolean {
   return str.length > 0 && str !== "??" && str !== "TBD";
 }
 
-function formatGender(gender: string): string {
-  const g = gender.toUpperCase();
-  if (g === "M" || g === "MALE") return "Boys";
-  if (g === "F" || g === "FEMALE") return "Girls";
-  return gender;
-}
-
 function formatDate(value: any): string {
   if (!value) return "";
   const d = new Date(value);
@@ -116,8 +109,8 @@ function getMatchTypeBadge(
 ): { emoji: string; label: string } | null {
   if (!sourceType) return null;
   const type = sourceType.toLowerCase();
-  if (type === "league") return { emoji: "⚽", label: "League Match" };
-  if (type === "tournament") return { emoji: "🏆", label: "Tournament" };
+  if (type === "league") return { emoji: "🏆", label: "League Match" };
+  if (type === "tournament") return { emoji: "⚽", label: "Tournament" };
   return null;
 }
 
@@ -369,6 +362,7 @@ export default function MatchDetailScreen() {
                 styles.teamNameLarge,
                 homeTeamInfo && styles.teamNameClickable,
               ]}
+              numberOfLines={2}
             >
               {homeName}
             </Text>
@@ -377,12 +371,10 @@ export default function MatchDetailScreen() {
                 🏆 #{homeTeamInfo.national_rank}
               </Text>
             )}
-            <View style={{ marginTop: "auto", alignItems: "center" }}>
-              {hasScore && <Text style={styles.scoreNumber}>{homeScore}</Text>}
-              {homeTeamInfo && (
-                <Text style={styles.tapToView}>Tap for details</Text>
-              )}
-            </View>
+            {hasScore && <Text style={styles.scoreNumber}>{homeScore}</Text>}
+            {homeTeamInfo && (
+              <Text style={styles.tapToView}>Tap for details</Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.vsContainer}>
@@ -416,6 +408,7 @@ export default function MatchDetailScreen() {
                 styles.teamNameLarge,
                 awayTeamInfo && styles.teamNameClickable,
               ]}
+              numberOfLines={2}
             >
               {awayName}
             </Text>
@@ -424,12 +417,10 @@ export default function MatchDetailScreen() {
                 🏆 #{awayTeamInfo.national_rank}
               </Text>
             )}
-            <View style={{ marginTop: "auto", alignItems: "center" }}>
-              {hasScore && <Text style={styles.scoreNumber}>{awayScore}</Text>}
-              {awayTeamInfo && (
-                <Text style={styles.tapToView}>Tap for details</Text>
-              )}
-            </View>
+            {hasScore && <Text style={styles.scoreNumber}>{awayScore}</Text>}
+            {awayTeamInfo && (
+              <Text style={styles.tapToView}>Tap for details</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -473,7 +464,7 @@ export default function MatchDetailScreen() {
               <View style={styles.infoItem}>
                 <Ionicons name="football-outline" size={20} color="#f59e0b" />
                 <Text style={styles.infoLabel}>Division</Text>
-                <Text style={styles.infoValue}>{formatGender(match.gender)}</Text>
+                <Text style={styles.infoValue}>{match.gender}</Text>
               </View>
             )}
           </View>
@@ -687,7 +678,7 @@ const styles = StyleSheet.create({
   // Score Card
   scoreCard: {
     flexDirection: "row",
-    alignItems: "stretch",
+    alignItems: "flex-start",
     backgroundColor: "#111",
     borderRadius: 16,
     padding: 20,
