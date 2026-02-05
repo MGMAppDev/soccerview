@@ -1,6 +1,6 @@
 # SoccerView Data Expansion Roadmap
 
-> **Version 2.5** | Updated: February 3, 2026 | V2 Architecture + Session 84 (Premier-Only Policy)
+> **Version 3.0** | Updated: February 4, 2026 | V2 Architecture + Session 87.2
 >
 > Strategic guide for adding new data sources using the V2 three-layer architecture.
 > **Session 57:** Adding a new source now takes ~1-2 hours (adapter config only) instead of ~1-2 days (custom script).
@@ -9,6 +9,8 @@
 > Recreational, community, and development leagues are EXCLUDED from SoccerView.
 
 ---
+
+> **Scope:** This document answers **WHAT** to scrape next and **WHY**. For **HOW** to scrape, see [DATA_SCRAPING_PLAYBOOK.md](3-DATA_SCRAPING_PLAYBOOK.md).
 
 ## Data Integrity Status (Session 56 - COMPLETE)
 
@@ -103,7 +105,7 @@ Nightly Pipeline:
 All new scrapers MUST follow V2 architecture:
 
 ```
-Scraper → staging_games → validationPipeline.js → matches_v2 → app_views
+Scraper → staging_games → dataQualityEngine.js → matches_v2 → app_views
 ```
 
 **See:** [docs/DATA_SCRAPING_PLAYBOOK.md](DATA_SCRAPING_PLAYBOOK.md)
@@ -189,7 +191,7 @@ node scripts/discoverHTGSportsOutdoor.js  # TODO: Create
 node scripts/universal/coreScraper.js --adapter htgsports --active
 
 # 4. Validate and refresh
-node scripts/daily/validationPipeline.js --refresh-views
+node scripts/universal/dataQualityEngine.js --process-staging
 ```
 
 ---
@@ -304,7 +306,7 @@ See [docs/DATA_SCRAPING_PLAYBOOK.md](DATA_SCRAPING_PLAYBOOK.md) for adapter temp
 - [ ] No futsal/indoor data
 
 ### Integration
-- [ ] validationPipeline.js processes data
+- [ ] dataQualityEngine.js processes data
 - [ ] Data appears in matches_v2
 - [ ] Views refreshed
 - [ ] App displays new data

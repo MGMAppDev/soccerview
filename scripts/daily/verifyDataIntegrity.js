@@ -116,9 +116,9 @@ async function checkTeamStatsConsistency() {
         t.matches_played as stored,
         COUNT(DISTINCT m.id) as actual
       FROM teams_v2 t
-      LEFT JOIN matches_v2 m ON m.home_team_id = t.id OR m.away_team_id = t.id
+      LEFT JOIN matches_v2 m ON (m.home_team_id = t.id OR m.away_team_id = t.id) AND m.deleted_at IS NULL
       WHERE t.matches_played > 0 OR EXISTS (
-        SELECT 1 FROM matches_v2 WHERE home_team_id = t.id OR away_team_id = t.id
+        SELECT 1 FROM matches_v2 WHERE (home_team_id = t.id OR away_team_id = t.id) AND deleted_at IS NULL
       )
       GROUP BY t.id, t.display_name, t.matches_played
     )
@@ -159,7 +159,7 @@ async function checkDuplicateSourceMatchKeys() {
   const { rows } = await pool.query(`
     SELECT source_match_key, COUNT(*) as count
     FROM matches_v2
-    WHERE source_match_key IS NOT NULL
+    WHERE source_match_key IS NOT NULL AND deleted_at IS NULL
     GROUP BY source_match_key
     HAVING COUNT(*) > 1
     ORDER BY count DESC

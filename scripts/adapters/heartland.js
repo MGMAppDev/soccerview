@@ -1,27 +1,46 @@
 /**
- * Heartland Soccer League Adapter v3.0 (Premier-Only)
- * ====================================================
+ * Heartland Soccer League Adapter v5.0 (Premier-Only, Multi-Source)
+ * ===================================================================
  *
  * Session 84: SoccerView is PREMIER-ONLY. Recreational data excluded.
+ * Session 87.2: Deep investigation of all Heartland data mechanisms.
  *
- * UNIFIED adapter for scraping Heartland Soccer League data from TWO sources:
+ * FINDINGS (Feb 2026):
+ *   - subdiv_results.cgi: DEAD (301 → www → 404). Cannot be fixed.
+ *   - subdiv_standings.cgi: ALIVE but empty between seasons (returns 200, 0 bytes)
+ *   - team_results.cgi: ALIVE (returns real responses, but team numbers change by season)
+ *   - hs-reports WordPress plugin: Custom web component, intercepts form submit via AJAX
+ *   - Season Archives: Static HTML at /reports/seasoninfo/archives/standings/{season}/
+ *   - Calendar site: ALIVE at calendar.heartlandsoccer.net/team/
  *
- * 1. CGI Results (https://heartlandsoccer.net/reports/cgi-jrb/)
- *    - Technology: Cheerio (server-rendered HTML)
- *    - Data: Match RESULTS with scores
- *    - Events: heartland-premier-2026 (PREMIER ONLY)
+ * DATA ACCESS MECHANISMS:
  *
- * 2. Calendar (https://calendar.heartlandsoccer.net)
- *    - Technology: Puppeteer (JavaScript-rendered)
- *    - Data: SCHEDULED matches (no scores)
- *    - Events: heartland-calendar-2026 (filtered for premier teams only)
+ * 1. CGI Standings (AJAX from Score-Standings page)
+ *    - URL: heartlandsoccer.net/reports/cgi-jrb/subdiv_standings.cgi
+ *    - Data: Team W-L-T-GF-GA-Pts per division (when season is active)
+ *    - Technology: Puppeteer page.evaluate → fetch() (same-origin AJAX)
+ *    - Status: Works but EMPTY between seasons
  *
- * The scrapeEvent function routes to the appropriate scraping method
- * based on the event's level property.
+ * 2. Season Archives (Static HTML)
+ *    - URL: www.heartlandsoccer.net/reports/seasoninfo/archives/standings/{season}/
+ *    - Data: Historical standings with team IDs, W-L-T-GF-GA
+ *    - Technology: Simple HTTP fetch + Cheerio parse
+ *    - Seasons available: Fall 2018 through Fall 2025
+ *
+ * 3. Calendar (Puppeteer)
+ *    - URL: calendar.heartlandsoccer.net/team/
+ *    - Data: SCHEDULED matches (no scores) for upcoming games
+ *    - Technology: Puppeteer (JavaScript-rendered SPA)
+ *
+ * NOTE: subdiv_results.cgi (individual match results) is DEAD.
+ * We already have 9,237 Fall 2025 matches from previous scrapes.
+ * When Spring 2026 starts, standings CGI should repopulate.
  *
  * IMPORTANT: Recreational scraping was REMOVED in Session 84.
  * See CLAUDE.md Principle 28 and docs/SESSION_84_PREMIER_ONLY_PLAN.md
  */
+
+import * as cheerio from "cheerio";
 
 export default {
   // =========================================
@@ -367,100 +386,148 @@ export default {
 };
 
 // =========================================
-// CGI RESULTS SCRAPING (Premier-Only)
+// CGI STANDINGS SCRAPING (Premier-Only)
 // =========================================
 
 /**
- * Scrape CGI results for Premier league only.
- * Iterates through all gender/age/subdivision combinations.
- * Session 84: Recreational scraping REMOVED - SoccerView is Premier-only.
+ * Scrape CGI standings for Premier league via AJAX within Score-Standings page.
+ *
+ * Session 87.2 FINDINGS:
+ *   - subdiv_results.cgi: DEAD (301 → www → 404). Cannot be fixed.
+ *   - subdiv_standings.cgi: ALIVE via same-origin AJAX (returns 200).
+ *     Empty between seasons (Fall ends Dec, Spring starts Mar).
+ *   - hs-reports WordPress plugin intercepts forms via jQuery AJAX.
+ *   - We replicate the same AJAX from within page.evaluate().
+ *
+ * Between seasons: Logs a message and returns [].
+ * During season: Fetches standings (W-L-T-GF-GA) for all divisions.
  */
 async function scrapeCGIResults(engine, event) {
-  const allMatches = [];
-
-  // Determine which level to scrape
   const levelConfig = engine.adapter.leagues[event.level];
   if (!levelConfig) {
     console.log(`   ⚠️ Unknown level: ${event.level}`);
     return [];
   }
 
-  console.log(`   📊 CGI Results Scraping`);
+  const standingsUrl = "https://www.heartlandsoccer.net/league/score-standings/";
+  console.log(`   📊 CGI Standings Scraping (via AJAX within Score-Standings page)`);
+  console.log(`   URL: ${standingsUrl}`);
+  console.log(`   Note: subdiv_results.cgi is DEAD. Using subdiv_standings.cgi.`);
   console.log(`   Level: ${levelConfig.level}`);
   console.log(`   Genders: ${levelConfig.genders.join(", ")}`);
-  console.log(`   Ages: ${levelConfig.ages.length}`);
-  console.log(`   Subdivisions: ${levelConfig.subdivisions.length}`);
+  console.log(`   Ages: ${levelConfig.ages.length}, Subdivisions: ${levelConfig.subdivisions.length}`);
 
+  // Open Score-Standings page for same-origin AJAX context
+  let page;
+  try {
+    page = await engine.fetchWithPuppeteer(standingsUrl, {
+      waitForSelector: "#results-premier-b_g",
+    });
+    await engine.sleep(5000);
+  } catch (error) {
+    console.log(`   ❌ Failed to open Score-Standings page: ${error.message}`);
+    return [];
+  }
+
+  // Quick probe: check if standings CGI has data (between-season check)
+  try {
+    const probeResult = await page.evaluate(async () => {
+      try {
+        const resp = await fetch(
+          "https://heartlandsoccer.net/reports/cgi-jrb/subdiv_standings.cgi?level=Premier&b_g=Boys&age=U-13&subdivison=1"
+        );
+        const text = await resp.text();
+        return { status: resp.status, length: text.length, hasTable: text.includes("<table") };
+      } catch (e) {
+        return { error: e.message };
+      }
+    });
+
+    if (probeResult.error || probeResult.length === 0) {
+      console.log(`   ⚠️ Standings CGI returned empty - likely between seasons`);
+      console.log(`   ⚠️ Fall 2025 data already in DB (9,237 matches with scores)`);
+      console.log(`   ⚠️ Spring 2026 data will appear when season starts (~March)`);
+      await page.close();
+      return [];
+    }
+
+    if (!probeResult.hasTable) {
+      console.log(`   ⚠️ Standings CGI responded but no table data (${probeResult.length} bytes)`);
+      await page.close();
+      return [];
+    }
+  } catch (error) {
+    console.log(`   ❌ Probe failed: ${error.message}`);
+    await page.close();
+    return [];
+  }
+
+  console.log(`   ✅ Standings CGI has data! Scraping all divisions...`);
+
+  const allMatches = [];
   let divisionsScraped = 0;
   let divisionsWithData = 0;
 
-  for (const gender of levelConfig.genders) {
-    for (const age of levelConfig.ages) {
-      process.stdout.write(`\r   ${gender} ${age}...                    `);
+  try {
+    for (const gender of levelConfig.genders) {
+      for (const age of levelConfig.ages) {
+        process.stdout.write(`\r   ${gender} ${age}...                    `);
 
-      for (const subdiv of levelConfig.subdivisions) {
-        divisionsScraped++;
+        for (const subdiv of levelConfig.subdivisions) {
+          divisionsScraped++;
 
-        const matches = await fetchDivisionResults(
-          engine,
-          levelConfig.level,
-          gender,
-          age,
-          subdiv,
-          levelConfig.paramNames,
-          event.name
-        );
+          const html = await fetchStandingsAjax(
+            engine, page, levelConfig.level, gender, age, subdiv, levelConfig.paramNames
+          );
 
-        if (matches.length > 0) {
-          divisionsWithData++;
-          allMatches.push(...matches);
+          if (html && html.includes("<table")) {
+            divisionsWithData++;
+            const $ = cheerio.load(html);
+            const parsed = parseResultsHtml($, engine, levelConfig.level, gender, age, subdiv, event.name);
+            allMatches.push(...parsed);
+          }
+
+          await engine.sleep(engine.adapter.rateLimiting.iterationDelay);
         }
-
-        await engine.sleep(engine.adapter.rateLimiting.iterationDelay);
+        await engine.sleep(engine.adapter.rateLimiting.itemDelay);
       }
     }
+  } finally {
+    await page.close();
   }
 
   console.log(`\n   📊 Scraped ${divisionsScraped} divisions, ${divisionsWithData} with data`);
-
-  // Deduplicate by match key
-  const uniqueMatches = [];
-  const seenKeys = new Set();
-  for (const match of allMatches) {
-    const key = engine.generateMatchKey(match);
-    if (!seenKeys.has(key)) {
-      seenKeys.add(key);
-      uniqueMatches.push(match);
-    }
-  }
-
-  console.log(`   📊 ${uniqueMatches.length} unique matches`);
-  return uniqueMatches;
+  console.log(`   📊 ${allMatches.length} records`);
+  return allMatches;
 }
 
 /**
- * Fetch results for a specific division.
+ * Fetch standings data for a specific division via same-origin AJAX.
+ * Session 87.2: Uses page.evaluate() + fetch() to bypass CORS.
+ *
+ * The hs-reports WordPress plugin normally does this via jQuery AJAX.
+ * We replicate the same mechanism from within the page context.
+ *
+ * @returns {string|null} Raw HTML response or null if no data
  */
-async function fetchDivisionResults(engine, level, gender, age, subdiv, paramNames, eventName) {
-  const url = new URL(`${engine.adapter.baseUrl}${engine.adapter.endpoints.results}`);
-  url.searchParams.set("level", level);
-  url.searchParams.set(paramNames.gender, gender);
-  url.searchParams.set(paramNames.age, age);
-  url.searchParams.set(paramNames.subdiv, subdiv);
-
-  const { $, error } = await engine.fetchWithCheerio(url.toString());
-
-  if (error || !$) {
-    return [];
+async function fetchStandingsAjax(engine, page, level, gender, age, subdiv, paramNames) {
+  try {
+    const params = paramNames || { gender: "b_g", age: "age", subdiv: "subdivison" };
+    const result = await page.evaluate(async (p) => {
+      try {
+        const url = `https://heartlandsoccer.net/reports/cgi-jrb/subdiv_standings.cgi?level=${p.level}&${p.gp}=${p.gender}&${p.ap}=${p.age}&${p.sp}=${p.subdiv}`;
+        const resp = await fetch(url);
+        if (!resp.ok) return null;
+        const text = await resp.text();
+        return text.length > 0 ? text : null;
+      } catch {
+        return null;
+      }
+    }, { level, gender, age, subdiv, gp: params.gender, ap: params.age, sp: params.subdiv });
+    return result;
+  } catch {
+    return null;
   }
-
-  // Check for error page
-  const html = $.html();
-  if (html.includes("Select Subdivision Error") || html.includes("could not match")) {
-    return [];
-  }
-
-  return parseResultsHtml($, engine, level, gender, age, subdiv, eventName);
 }
 
 /**

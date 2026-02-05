@@ -43,3 +43,10 @@ app-example
 /android
 
 .env.local
+
+# Backup files (too large for git)
+backup_*.json
+
+# Scraper checkpoint files
+scripts/.*_checkpoint.json
+scripts/.heartland_checkpoint.json

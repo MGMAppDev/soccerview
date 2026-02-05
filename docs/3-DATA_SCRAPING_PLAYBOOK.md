@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 2.9** | Updated: February 3, 2026 | V2 Architecture + Session 84 (Premier-Only Policy)
+> **Version 3.0** | Updated: February 5, 2026 | V2 Architecture + Session 87.2 (Heartland Mechanisms + staging_games constraint fix)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -24,17 +24,14 @@
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    V2 DATA SCRAPING WORKFLOW                            │
 │                                                                         │
-│   OPTION A (PREFERRED): Universal Framework                             │
-│   1. CREATE ADAPTER → Copy _template.js, configure ~50 lines            │
-│   2. RUN → node scripts/universal/coreScraper.js --adapter {name}       │
-│   3. VALIDATE → Run validationPipeline.js                               │
-│   4. REFRESH → Run refresh_app_views()                                  │
-│                                                                         │
-│   OPTION B (LEGACY): Custom Scraper                                     │
-│   1. SCRAPE → Write to staging_games (no constraints)                   │
-│   2. VALIDATE → Run validationPipeline.js                               │
-│   3. REFRESH → Run refresh_app_views()                                  │
-│   4. VERIFY → Check app displays new data                               │
+│   1. SCRAPE → node scripts/universal/coreScraper.js --adapter {name}   │
+│   2. PROCESS (Option A - fast bulk):                                    │
+│      → node scripts/maintenance/fastProcessStaging.cjs                 │
+│   2. PROCESS (Option B - full pipeline):                                │
+│      → node scripts/universal/dataQualityEngine.js --process-staging   │
+│   3. ELO → node scripts/daily/recalculate_elo_v2.js                    │
+│   4. VIEWS → node scripts/refresh_views_manual.js                      │
+│   5. VERIFY → node scripts/daily/verifyDataIntegrity.js                │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,7 +48,7 @@
 │                     SOURCE ADAPTERS                              │
 │  /scripts/adapters/gotsport.js    (Cheerio - static HTML)       │
 │  /scripts/adapters/htgsports.js   (Puppeteer - JavaScript SPA)  │
-│  /scripts/adapters/heartland.js   (Cheerio - CGI endpoints)     │
+│  /scripts/adapters/heartland.js   (Puppeteer - CGI via AJAX)     │
 │  /scripts/adapters/_template.js   (Template for new sources)    │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -91,8 +88,9 @@ node scripts/universal/coreScraper.js --adapter newsource --event 12345 --dry-ru
 # 4. Run for real
 node scripts/universal/coreScraper.js --adapter newsource --active
 
-# 5. Validate and refresh
-node scripts/daily/validationPipeline.js --refresh-views
+# 5. Process staging and refresh views
+node scripts/maintenance/fastProcessStaging.cjs
+node scripts/refresh_views_manual.js
 ```
 
 **Time to add new source: ~1-2 hours (config only, no custom code)**
@@ -277,7 +275,7 @@ node scripts/universal/coreScraper.js --adapter htgsports --active --useUniversa
 ### Data Flow
 
 ```
-Scrapers → staging_games → validationPipeline.js → matches_v2 → app_views → App
+Scrapers → staging_games → dataQualityEngine.js → matches_v2 → app_views → App
 ```
 
 ### Key Tables
@@ -437,7 +435,7 @@ async function main() {
   }
 
   console.log(`✅ Staged ${stagingGames.length} matches`);
-  console.log("📋 Next: Run validationPipeline.js to process");
+  console.log("📋 Next: Run fastProcessStaging.cjs or dataQualityEngine.js to process");
 }
 
 main();
@@ -489,15 +487,16 @@ main();
 ### After Scraping
 
 ```bash
-# 1. Run validation pipeline (handles staging → production)
-node scripts/validationPipeline.js
+# 1. Process staging → production (Option A: fast bulk, Option B: full pipeline)
+node scripts/maintenance/fastProcessStaging.cjs
+# OR
+node scripts/universal/dataQualityEngine.js --process-staging
 
 # 2. Refresh materialized views
-# (validationPipeline.js can do this with --refresh-views flag)
-node scripts/validationPipeline.js --refresh-views
+node scripts/refresh_views_manual.js
 ```
 
-### What validationPipeline.js Does
+### What dataQualityEngine.js Does
 
 1. **Reads staging_games** where `processed = false`
 2. **Validates data**:
@@ -548,7 +547,7 @@ node scripts/validationPipeline.js --refresh-views
 
 ```markdown
 ## Post-Scrape Checklist
-- [ ] Run `validationPipeline.js`
+- [ ] Run `dataQualityEngine.js --process-staging` (or `fastProcessStaging.cjs`)
 - [ ] Check staging_games.processed = true for new records
 - [ ] Verify matches appear in `matches_v2`
 - [ ] Verify teams appear in `teams_v2`
@@ -566,7 +565,7 @@ node scripts/validationPipeline.js --refresh-views
 |---------|--------|------------|--------|
 | `scripts/adapters/gotsport.js` | GotSport | Cheerio | ✅ Production |
 | `scripts/adapters/htgsports.js` | HTGSports | Puppeteer | ✅ Production |
-| `scripts/adapters/heartland.js` | Heartland CGI + Calendar | Cheerio/Puppeteer | ✅ Production (Premier-only, v3.0) |
+| `scripts/adapters/heartland.js` | Heartland CGI + Calendar | Puppeteer/AJAX | ✅ Production (Premier-only, v5.0) |
 | `scripts/adapters/_template.js` | Template | — | Template |
 
 ### Legacy Scrapers (Fallback)
@@ -580,11 +579,91 @@ node scripts/validationPipeline.js --refresh-views
 
 **Note:** GitHub Actions uses Universal Framework by default with auto-fallback to legacy on failure.
 
+### Heartland Data Access Mechanisms (Session 87.2)
+
+Heartland Soccer Association has **4 distinct data access mechanisms**. As of Feb 2026:
+
+| # | Source | URL | Status | Data |
+|---|--------|-----|--------|------|
+| 1 | CGI Results | `heartlandsoccer.net/reports/cgi-jrb/subdiv_results.cgi` | **DEAD** (404 on www) | Match results with scores |
+| 2 | CGI Standings | `heartlandsoccer.net/reports/cgi-jrb/subdiv_standings.cgi` | **ALIVE** (empty between seasons) | Team W-L-T-GF-GA-Pts |
+| 3 | Calendar | `calendar.heartlandsoccer.net/team/` | **ALIVE** | Scheduled matches (NULL scores) |
+| 4 | Season Archives | `/reports/seasoninfo/archives/standings/` | **ALIVE** | Historical standings (static HTML) |
+
+**CGI Access via hs-reports WordPress Plugin:**
+- Score-Standings page: `https://www.heartlandsoccer.net/league/score-standings/`
+- Custom `<hs-reports>` web component intercepts form submissions
+- Forms have `.ajax-submit` class, jQuery AJAX fetches CGI, results injected into iframe
+- Use Puppeteer `page.evaluate(() => fetch(url))` for same-origin access (bypasses CORS)
+
+**Between-Season Detection:**
+- Fall season ends ~December, Spring starts ~March
+- CGI returns HTTP 200 but 0 bytes between seasons
+- heartland.js v5.0 probes standings CGI and exits immediately if empty
+
+**Season Archives (Static HTML):**
+- URL: `/reports/seasoninfo/archives/standings/{season}/{gender}_prem.html`
+- Seasons: `2025_fall`, `2024_fall`, `2024_spring`, etc. back to Fall 2018
+- Contains per-division team standings with IDs
+
+**Current Data:** 9,932 Heartland matches in production (9,729 with scores)
+
+### Session 87.2 Database Snapshot (Feb 5, 2026)
+
+| Metric | Value |
+|--------|-------|
+| **matches_v2 (active)** | 410,319 |
+| **teams_v2** | 161,231 |
+| **Teams with matches** | 60,864 |
+| **ELO range** | 1,157 - 1,781 |
+| **Unprocessed staging** | 0 |
+| **Semantic duplicates** | 0 |
+
+**Matches by source:**
+| Source | Count | With Scores |
+|--------|-------|-------------|
+| GotSport | 382,156 | 371,117 |
+| HTGSports | 16,010 | 15,823 |
+| Heartland | 9,932 | 9,729 |
+| Legacy (null) | 2,221 | 1,501 |
+
+**Key fixes this session:**
+- staging_games UNIQUE constraint on `source_match_key`
+- 87,638 duplicate staging rows cleaned
+- 1,660 duplicate match keys soft-deleted
+- `verifyDataIntegrity.js` queries now filter by `deleted_at IS NULL`
+- HTGSports: 7,200 new matches processed via `fastProcessStaging.cjs`
+
+### staging_games Constraint (Session 87.2)
+
+**CRITICAL:** `staging_games.source_match_key` MUST have a UNIQUE constraint for `ON CONFLICT` to work.
+
+```sql
+-- This constraint was added in Session 87.2
+ALTER TABLE staging_games ADD CONSTRAINT staging_games_source_match_key_unique UNIQUE (source_match_key);
+```
+
+Without it, `coreScraper.js` staging inserts silently fail with:
+> "there is no unique or exclusion constraint matching the ON CONFLICT specification"
+
+### Fast Bulk Staging Processor (Session 87.2)
+
+When `dataQualityEngine.js` is too slow (row-by-row team resolution), use:
+
+```bash
+node scripts/maintenance/fastProcessStaging.cjs [--source htgsports] [--limit 1000] [--dry-run]
+```
+
+- Universal: works for any source platform
+- Uses dedicated client for pipeline auth (session variables are per-connection)
+- Bulk team resolution + bulk match insert
+- 7,200 records in 30 seconds vs DQE's 0 in 10+ minutes
+
 ---
 
 ## Data Quality Rules
 
-### Handled by validationPipeline.js
+### Handled by dataQualityEngine.js (replaces validationPipeline.js)
 
 | Rule | Action |
 |------|--------|
@@ -605,7 +684,7 @@ node scripts/validationPipeline.js --refresh-views
 
 ### Birth Year Extraction Priority (Session 53)
 
-The `validationPipeline.js` extracts birth_year from team names using this priority:
+The `dataQualityEngine.js` extracts birth_year from team names using this priority:
 
 | Priority | Pattern | Example | Result |
 |----------|---------|---------|--------|
@@ -733,8 +812,9 @@ node scripts/universal/coreScraper.js --adapter gotsport --active
 # Run legacy scraper (fallback)
 node scripts/scrapers/scrapeHeartlandResults.js
 
-# Run validation
-node scripts/daily/validationPipeline.js --refresh-views
+# Process staging and refresh views
+node scripts/universal/dataQualityEngine.js --process-staging
+node scripts/refresh_views_manual.js
 
 # Manual view refresh
 psql $DATABASE_URL -c "SELECT refresh_app_views();"

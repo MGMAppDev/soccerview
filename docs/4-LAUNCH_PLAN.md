@@ -1,8 +1,9 @@
 # SoccerView Launch Plan
 
+> **Version 1.1** | Last Updated: February 4, 2026
+>
 > **Status:** Pre-Launch Planning
 > **Target:** V1.0 Public Launch
-> **Last Updated:** January 29, 2026
 
 This document captures launch considerations, marketing messages, and ideas as we prepare for public release.
 
@@ -65,7 +66,7 @@ SoccerView is the definitive youth soccer rankings app, covering teams across al
 • Power Rating — Uses the same ELO system FIFA adopted for World Rankings
 
 🔍 FIND ANY TEAM
-• Search 140,000+ teams nationwide
+• Search 161,000+ teams nationwide
 • Filter by state, age group, and gender
 • See complete match history and head-to-head records
 

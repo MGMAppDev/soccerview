@@ -1,25 +1,25 @@
-> ✅ **STATUS UPDATE (Feb 4, 2026 - Session 85):** UNIVERSAL SOCCERVIEW ID ARCHITECTURE COMPLETE
+> ✅ **STATUS UPDATE (Feb 4, 2026 - Session 87.2):** PIPELINE FIXES + STAGING CONSTRAINT COMPLETE
 >
 > **Current Database State:**
-> - staging_games: 86,491 total (7 unprocessed)
-> - matches_v2: **402,887 rows** (Session 85: -8,251 duplicates removed)
-> - teams_v2: **157,331 rows** (60,964 with matches)
+> - staging_games: 86,491 total (0 unprocessed) - UNIQUE constraint on source_match_key
+> - matches_v2: **410,319 active rows** (1,660 soft-deleted duplicates)
+> - teams_v2: **161,231 rows** (60,864 with ELO ratings)
 > - clubs: 124,650 rows
 > - leagues: 279 rows
 > - tournaments: 1,728 rows
 > - **canonical_events: 1,795 rows** (bulk seeded from leagues/tournaments)
-> - **canonical_teams: 146,527 rows** (93.1% coverage)
+> - **canonical_teams: 138,252 rows**
 > - **canonical_clubs: 7,301 rows** (bulk seeded from clubs with 3+ teams)
 > - **learned_patterns: 0+ rows** (adaptive learning - grows weekly)
 > - **staging_rejected: 84,045 rows** (V1 migration rejects)
 > - seasons: 3 rows
 >
-> **Session 85 Universal SoccerView ID Architecture:**
-> - Match uniqueness changed from `source_match_key` to semantic key `(match_date, home_team_id, away_team_id)`
-> - 8,251 duplicate matches removed, 0 remaining
-> - `dataQualityEngine.js` updated to use semantic ON CONFLICT
-> - `verifyDataIntegrity.js` updated with semantic duplicate check
-> - All entities now use SoccerView IDs as uniqueness anchor
+> **Sessions 85-87.2 Changes:**
+> - Match uniqueness: semantic key `(match_date, home_team_id, away_team_id)`
+> - Soft-delete pattern: `deleted_at` + `deletion_reason` columns (Session 86)
+> - All queries MUST filter `WHERE deleted_at IS NULL` for active matches
+> - `fastProcessStaging.cjs`: Universal bulk processor, 240x faster than DQE
+> - Gender constraint on fuzzy matching (Session 87)
 >
 > **⚠️ GUARDRAIL:** Always verify canonical registry health before deduplication work!
 > See [GUARDRAILS](1.1-GUARDRAILS_v2.md) for mandatory pre-flight checklist.
@@ -137,7 +137,7 @@ ANY Source → staging_games → dataQualityEngine.js → matches_v2
 |-----------|--------|--------|
 | `inferEventLinkage.js` | ✅ Working | PRESERVE - integrate with |
 | `recalculate_elo_v2.js` | ✅ Working | PRESERVE - runs after quality |
-| `validationPipeline.js` | ⚠️ May need enhancement | ENHANCE - don't replace |
+| `dataQualityEngine.js` | ✅ Working (replaced validationPipeline.js) | THE processor |
 | `coreScraper.js` | ✅ Working | PRESERVE - feeds staging |
 | `refresh_app_views()` | ✅ Working | PRESERVE - runs last |
 
@@ -932,7 +932,7 @@ node scripts/maintenance/mergeEvents.js --type league --find "Heartland"
 **Deliverables:**
 - [x] Update .github/workflows/daily-data-sync.yml
 - [x] Replace validation-pipeline step with dataQualityEngine.js
-- [x] Add legacy fallback to validationPipeline.js if engine fails
+- [x] ~~Add legacy fallback to validationPipeline.js~~ (archived Session 79 - no fallback needed)
 - [x] Add Phase 2.25 (weekly-dedup-check job - runs Sundays)
 - [x] Add `run_dedup` workflow input for manual dedup trigger
 - [x] Update workflow summary with engine info and dedup results

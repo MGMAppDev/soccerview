@@ -84,6 +84,7 @@ export async function detectDuplicates(client, options = {}) {
         created_at
       ) as away_scores
     FROM matches_v2
+    WHERE deleted_at IS NULL  -- Exclude soft-deleted matches (Session 86)
     GROUP BY match_date, home_team_id, away_team_id
     HAVING COUNT(*) > 1
     ORDER BY count DESC
@@ -207,19 +208,22 @@ export async function resolveDuplicates(duplicateGroups, client, options = {}) {
       }
 
       if (!dryRun && decision.deleteIds.length > 0) {
-        // Log to audit before deletion
+        // Log to audit before soft delete
         await client.query(`
           INSERT INTO audit_log (table_name, record_id, action, old_data, changed_by, changed_at)
-          SELECT 'matches_v2', id, 'DELETE', row_to_json(matches_v2), 'matchDedup', NOW()
+          SELECT 'matches_v2', id, 'SOFT_DELETE', row_to_json(matches_v2), 'matchDedup', NOW()
           FROM matches_v2
           WHERE id = ANY($1)
         `, [decision.deleteIds]);
 
-        // Delete duplicates
+        // SOFT DELETE duplicates (Session 86: Use soft delete instead of hard delete)
+        // This preserves data and allows recovery if needed
         const { rowCount } = await client.query(`
-          DELETE FROM matches_v2
+          UPDATE matches_v2
+          SET deleted_at = NOW(),
+              deletion_reason = 'Semantic duplicate of ' || $2
           WHERE id = ANY($1)
-        `, [decision.deleteIds]);
+        `, [decision.deleteIds, decision.keepId]);
 
         stats.matchesDeleted += rowCount;
       } else {

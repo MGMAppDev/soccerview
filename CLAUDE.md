@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 9.1** | Last Updated: February 3, 2026 | Session 82 Complete
+> **Version 10.0** | Last Updated: February 4, 2026 | Session 87.2 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -75,7 +75,7 @@ Scrapers → SoccerView DB → ELO Calculation → App
 ### 3. V2 Architecture Data Flow
 
 ```
-Scrapers → staging_games → validationPipeline.js → matches_v2 → app_views → App
+Scrapers → staging_games → dataQualityEngine.js → matches_v2 → app_views → App
 ```
 
 See [docs/1-ARCHITECTURE.md](docs/1-ARCHITECTURE.md) for full details.
@@ -844,6 +844,44 @@ Lesson: Check discrepancies, not just volume.
 - ❌ ON CONFLICT clauses that don't use SoccerView Team IDs
 - ❌ Creating matches without resolving to canonical team IDs first
 
+### 30. Soft Delete for Matches - NEVER Hard Delete (Session 86)
+
+**Match deduplication MUST use soft delete, not hard delete.**
+
+Session 85 hard-deleted 9,160 matches as "duplicates". These were NOT duplicates - they were the same real-world match from different sources with different `source_match_key` values. Hard deletion caused ALL match history to disappear.
+
+**Soft Delete Architecture:**
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `deleted_at` | TIMESTAMPTZ | NULL = active, timestamp = soft-deleted |
+| `deletion_reason` | TEXT | Why deleted (e.g., "Semantic duplicate of {id}") |
+
+**In matchDedup.js:**
+```javascript
+// ❌ WRONG - Hard delete
+DELETE FROM matches_v2 WHERE id = ANY($1);
+
+// ✅ CORRECT - Soft delete
+UPDATE matches_v2
+SET deleted_at = NOW(),
+    deletion_reason = 'Semantic duplicate of ' || $2
+WHERE id = ANY($1);
+```
+
+**In queries:**
+```sql
+-- Always exclude soft-deleted in active queries
+SELECT * FROM matches_v2 WHERE deleted_at IS NULL;
+```
+
+**Recovery:** All deleted data is preserved in `audit_log` AND in the table with `deleted_at` set. Recovery is always possible.
+
+**Anti-patterns:**
+- ❌ Using DELETE FROM matches_v2 in deduplication
+- ❌ Forgetting `WHERE deleted_at IS NULL` in queries
+- ❌ Assuming "duplicate" matches can be safely deleted
+
 ---
 
 ## Quick Reference
@@ -852,16 +890,16 @@ Lesson: Check discrepancies, not just volume.
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 157,331 | Team records (60,964 with matches) |
-| `matches_v2` | 412,138 | Match results (Session 84: -648 recreational) |
+| `teams_v2` | 161,231 | Team records (60,864 with ELO ratings) |
+| `matches_v2` | 410,319 active | Match results (1,660 soft-deleted dupes) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 279 | League metadata (Session 84: -3 recreational) |
+| `leagues` | 279 | League metadata |
 | `tournaments` | 1,728 | Tournament metadata |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
 | `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
-| `staging_games` | 86,491 | Staging area (7,940 unprocessed) |
+| `staging_games` | 86,491 | Staging area (0 unprocessed) |
 | `staging_rejected` | 1 | Rejected intake data (Session 79) |
 | `seasons` | 3 | Season definitions |
 
@@ -1144,6 +1182,10 @@ Diagnostics, audits, and utilities.
 |--------|---------|
 | `ensureViewIndexes.js` | **NIGHTLY** Universal index maintenance for all views (Session 69) |
 | `recalculateHistoricalRanks.cjs` | Recalculate rank_history with consistent baseline (Session 70) |
+| `fastProcessStaging.cjs` | **Universal bulk staging processor** - 7,200 matches/30s (Session 87.2) |
+| `recoverSession85Matches.cjs` | Recover matches from audit_log (Session 86) |
+| `recoverDeletedMatches.cjs` | General match recovery tool (Session 86) |
+| `bulkMergeDuplicateTeams.cjs` | Universal bulk team deduplication (Session 86) |
 | `completeBirthYearCleanup.js` | Merge duplicates, fix birth_year mismatches |
 | `linkUnlinkedMatches.js` | Link matches via exact source_match_key |
 | `linkByEventPattern.js` | Link HTGSports/Heartland by event ID pattern |
@@ -1220,8 +1262,12 @@ const { data } = await supabase.from('teams_v2').select('*').limit(10);
 # Start development
 npx expo start
 
-# Run data quality engine (replaces validation pipeline)
+# Run data quality engine
 node scripts/universal/dataQualityEngine.js --process-staging
+
+# Fast bulk staging processor (240x faster than DQE for bulk)
+node scripts/maintenance/fastProcessStaging.cjs --source gotsport
+node scripts/maintenance/fastProcessStaging.cjs --source htgsports
 
 # Run data quality engine (dry run)
 node scripts/universal/dataQualityEngine.js --process-staging --dry-run --limit 1000
@@ -1230,9 +1276,6 @@ node scripts/universal/dataQualityEngine.js --process-staging --dry-run --limit 
 node scripts/universal/deduplication/matchDedup.js --report
 node scripts/universal/deduplication/teamDedup.js --report
 node scripts/universal/deduplication/eventDedup.js --report
-
-# Legacy validation pipeline (fallback)
-node scripts/daily/validationPipeline.js --refresh-views
 
 # Recalculate ELO
 node scripts/daily/recalculate_elo_v2.js
@@ -1266,202 +1309,61 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
-### Session 82 - V1 Archive Migration to V2 (February 3, 2026) - COMPLETE ✅
+### Session 87.2 - HTGSports Scraping + Pipeline Fixes (February 4, 2026) - COMPLETE ✅
 
-**Goal:** Migrate 179,706 V1 archived matches to V2 through proper pipeline to reduce orphan teams.
-
-**User's Key Insight:** GotSport CANNOT rank teams without match data. Therefore, V1 archive likely contains the missing match history for orphan teams.
-
-**Results:**
-
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| **matches_v2** | 317,090 | **411,074** | **+93,984** ✅ |
-| **teams_v2** | 148,391 | **157,331** | +8,940 |
-| **Teams with matches** | ~50K | **85,572** | **+35K** ✅ |
-| **Teams GS-ranked + matched** | ~35K | **63,345** | **+28K** ✅ |
-| **Stats mismatches** | Unknown | **0** | ✅ |
-
-**Approach (Hybrid - User Requested):**
-1. Migrate V1 → staging_games: 179,706 records (2,744/sec)
-2. Fast SQL for clean data: 92,612 matches promoted (620/sec)
-3. Create missing teams: 7,964 teams (from V1 team IDs)
-4. Edge cases left for dataQualityEngine: 82,101 records
-
-**Scripts Created:**
-- `scripts/maintenance/migrateV1ToStaging.cjs` - V1 to staging migration
-- `scripts/maintenance/fastPromoteV1Staging.cjs` - Fast bulk promotion
-- `scripts/maintenance/fastV1MigrationComplete.cjs` - Complete fast migration
-- `scripts/maintenance/linkFromV1Archive.js` - V1 archive linking utility
-
-**Execution Plan:** [docs/SESSION_82_EXECUTION_PLAN.md](docs/SESSION_82_EXECUTION_PLAN.md)
-
-**Note on Orphan Count:** The orphan count increased from 16,823 to 51,826 because V1 data brought in teams with GotSport national_rank that we didn't have before. This is a **coverage gap** (teams play in leagues we don't scrape), not a data quality issue. The key metric is **healthy teams (ranked + matched)** which increased by 28K.
-
----
-
-### Session 81 - Pipeline Reliability & Unified Heartland Adapter (February 3, 2026) - COMPLETE ✅
-
-**Goal:** Fix validation pipeline reliability issues and unify Heartland adapter.
+**Goal:** Complete HTGSports scraping, fix staging pipeline constraints, create universal bulk processor.
 
 **Completed:**
 
 | Task | Status |
 |------|--------|
-| Unified Heartland adapter (CGI + Calendar) | ✅ `scripts/adapters/heartland.js` v2.0 |
-| Pipeline reliability fixes | ✅ Circuit breaker, retry logic, pool error handler |
-| Fixed `updated_at` column error | ✅ Removed from `matches_v2` UPDATE |
-| Validation Pipeline test | ✅ **24m 9s** (vs 30m+ failure before) |
+| Fix staging_games UNIQUE constraint | ✅ Deleted 87,638 dupes, added constraint |
+| Create fastProcessStaging.cjs | ✅ 7,200 matches in 30 seconds |
+| Update Heartland adapter v5.0 | ✅ Between-season detection |
+| Fix verifyDataIntegrity.js | ✅ Filter deleted_at IS NULL |
+| Process all staging backlog | ✅ 0 unprocessed |
 
-**Key Fixes:**
+**Key Innovation:** `fastProcessStaging.cjs` - Universal bulk processor that's 240x faster than DQE. Uses dedicated client for pipeline auth, bulk team resolution, and batch deduplication.
 
-1. **Unified Heartland Adapter** - Single adapter handles both data sources:
-   - CGI Results (Cheerio): `heartland-premier-2026`, `heartland-recreational-2026`
-   - Calendar (Puppeteer): `heartland-calendar-2026`
-   - Routes via `event.level` property
-
-2. **Pipeline Reliability** (`dataQualityEngine.js`):
-   - Added pool-level error handler to prevent unhandled crashes
-   - Added `refreshViewsWithRetry()` with 3 retries, exponential backoff, fresh connections
-   - 10-minute statement_timeout at pool level
-
-3. **Circuit Breaker** (`adaptiveLearning.js`):
-   - Prevents cascading failures when Supabase has issues
-   - Opens after 5 failures, resets after 60 seconds
-   - Limits error logging to first 3 failures
-
-**Commits:**
-- `396f8f9` - Session 81: Unify Heartland adapter with CGI + Calendar scraping
-- `ac01b45` - Session 81: Fix validation pipeline reliability issues
-- `df5ec21` - Session 81: Fix updated_at column reference + Heartland adapter cleanup
+**Database After Session 87.2:**
+- teams_v2: 161,231 | matches_v2: 410,319 active | 0 staging backlog
+- 0 semantic duplicates | 0 duplicate source_match_keys
+- ELO: 192,689 matches, 60,864 teams (range 1157-1781)
 
 ---
 
-### Session 80 - Heartland Data Coverage Gap (February 3, 2026) - COMPLETE ✅
+### Session 87 - Universal Canonical Resolver & Gender Fix (February 4, 2026) - COMPLETE ✅
 
-**Completed:**
-- ✅ Fixed ECONNRESET in view refresh (`scripts/refresh_views_manual.js`)
-- ✅ Committed 380 V2 architecture files (commit `4e6ea74`)
-- ✅ Added Git Hygiene Protocol to governance docs (GUARDRAILS §15, CLAUDE.md Principle 26)
-- ✅ Added Project Tools & Integrations section to CLAUDE.md
-- ✅ Identified Heartland calendar adapter gap (fixed in Session 81)
+**Goal:** Fix cross-gender team merging bug in teamDedup.js.
 
----
+**Problem:** teamDedup.js was merging teams across genders (Boys merged with Girls). Fixed by adding gender and birth_year as exact-match constraints before fuzzy name matching.
 
-### Session 79 - V2 Architecture Enforcement (February 2, 2026) - COMPLETE ✅
-
-**Goal:** Build a scalable, repeatable system that enforces ONE entry point and ONE processing path for all data.
-
-**Problem Statement:**
-- 48+ scripts write to the database
-- Multiple paths to production (validationPipeline, dataQualityEngine, batchProcessStaging, direct writes)
-- No intake validation (garbage data enters staging)
-- No integrity verification (issues caught by users, not system)
-
-**Completed Phases:**
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| Phase 1 | Create Intake Validation Gate | ✅ COMPLETE |
-| Phase 2 | Consolidate to ONE Processor | ✅ COMPLETE |
-| Phase 3 | Block Direct Writes | ✅ COMPLETE |
-| Phase 4 | Create Integrity Verification | ✅ COMPLETE |
-
-**Phase 1: Intake Validation Gate**
-Created `scripts/universal/intakeValidator.js`:
-- Validates data BEFORE it enters staging_games
-- Auto-fixes malformed source_match_keys (1,695 fixed)
-- Rejects truly invalid data (EMPTY_TEAM_NAME, INVALID_DATE, INVALID_BIRTH_YEAR, etc.)
-- Rejected data goes to `staging_rejected` table with reason
-
-```bash
-node scripts/universal/intakeValidator.js --report           # Data quality report
-node scripts/universal/intakeValidator.js --clean-staging    # Move invalid to rejected
-```
-
-**Phase 2: Consolidate to ONE Processor**
-- Archived `validationPipeline.js` → `scripts/_archive/`
-- Archived `batchProcessStaging.js` → `scripts/_archive/`
-- Archived `fastBulkProcess.js` → `scripts/_archive/`
-- Updated GitHub Actions to use `dataQualityEngine.js` ONLY (no fallback)
-- Updated workflow: intakeValidator → dataQualityEngine (single path)
-
-**Phase 3: Block Direct Writes (Database Triggers)**
-Created database triggers that block unauthorized writes to `teams_v2` and `matches_v2`:
-- Trigger checks for session variable `app.pipeline_authorized`
-- Authorized scripts call `SELECT authorize_pipeline_write()` before writes
-- Emergency override: `SELECT disable_write_protection()` / `SELECT enable_write_protection()`
-
-**Files Created:**
-- `scripts/migrations/070_create_write_protection_triggers.sql` - Trigger definitions
-- `scripts/migrations/run_migration_070.js` - Migration runner
-- `scripts/migrations/test_write_protection.js` - Test script
-- `scripts/universal/pipelineAuth.js` - Authorization helper module
-
-**Scripts Updated with Authorization:**
-- `dataQualityEngine.js` - Pipeline authorization added
-- `recalculate_elo_v2.js` - Pipeline authorization added
-- `mergeTeams.js` - Pipeline authorization added
-- `mergeEvents.js` - Pipeline authorization added
-- `inferEventLinkage.js` - Converted from Supabase to pg Pool + authorization
-- `teamDedup.js`, `matchDedup.js`, `eventDedup.js` - Authorization added
-
-**Usage:**
-```bash
-# Apply migration (required before triggers are active)
-node scripts/migrations/run_migration_070.js
-
-# Test the triggers
-node scripts/migrations/test_write_protection.js
-
-# In authorized scripts - call before writes
-await pool.query('SELECT authorize_pipeline_write()');
-
-# Emergency: Disable protection temporarily
-await pool.query('SELECT disable_write_protection()');
-await pool.query('SELECT enable_write_protection()');
-```
-
-**Phase 4: Integrity Verification System**
-Created `scripts/daily/verifyDataIntegrity.js`:
-- Runs after EVERY processing cycle
-- Checks: Team stats consistency, duplicate source_match_keys, canonical registry coverage, birth year validity, orphan rate, staging backlog
-- Added to GitHub Actions pipeline as Phase 2.75
-
-**Updated Pipeline Flow:**
-```
-Phase 1:   Scrapers → staging_games
-Phase 1.5: intakeValidator.js (reject garbage, fix malformed)
-Phase 2:   dataQualityEngine.js (normalize, resolve, promote)
-Phase 2.75: verifyDataIntegrity.js (automated checks)
-Phase 3:   recalculate_elo_v2.js
-Phase 4:   score_predictions.js
-Phase 5:   refresh_app_views()
-```
-
-**Files Created:**
-- [scripts/universal/intakeValidator.js](scripts/universal/intakeValidator.js) - Pre-staging validation
-- [scripts/daily/verifyDataIntegrity.js](scripts/daily/verifyDataIntegrity.js) - Post-processing checks
-- [scripts/migrations/060_create_staging_rejected.sql](scripts/migrations/060_create_staging_rejected.sql) - Rejected data table
-- [scripts/migrations/070_create_write_protection_triggers.sql](scripts/migrations/070_create_write_protection_triggers.sql) - Write protection triggers
-- [scripts/migrations/run_migration_070.js](scripts/migrations/run_migration_070.js) - Migration runner
-- [scripts/migrations/test_write_protection.js](scripts/migrations/test_write_protection.js) - Trigger test script
-- [scripts/universal/pipelineAuth.js](scripts/universal/pipelineAuth.js) - Authorization helper module
-
-**Files Archived:**
-- `validationPipeline.js` - Replaced by dataQualityEngine.js
-- `batchProcessStaging.js` - Emergency tool, no longer needed
-- `fastBulkProcess.js` - Emergency tool, no longer needed
-
-**Key Metrics:**
-- Malformed keys fixed: 1,695
-- Records rejected: 1
-- Unprocessed staging: 7,940 (clean, ready for dataQualityEngine)
-- Write protection triggers: 6 (INSERT/UPDATE/DELETE on teams_v2 and matches_v2)
+**Key Principle:** Fuzzy matching MUST be constrained by exact-match fields (gender, birth_year) before comparing names.
 
 ---
 
-### Previous Sessions (78 and Earlier)
+### Session 86 - Match Recovery & Soft Delete Architecture (February 4, 2026) - COMPLETE ✅
+
+**Problem:** Session 85's matchDedup.js hard-deleted 9,160 matches. These were NOT duplicates -- they were the same match from different sources.
+
+**Recovery:**
+- Recovered 6,053 matches from audit_log
+- Added soft-delete columns: `deleted_at`, `deletion_reason`
+- Updated matchDedup.js to use `UPDATE SET deleted_at` instead of `DELETE`
+- Ran semantic dedup: 1,660 true duplicates soft-deleted
+- Recalculated ELO + refreshed all views
+
+**Key Architecture Change:** Match deduplication MUST use soft delete, not hard delete. See Principle 30.
+
+---
+
+### Session 85 - Universal SoccerView ID Architecture (February 4, 2026) - COMPLETE ✅
+
+Changed match uniqueness from `source_match_key` to semantic `(match_date, home_team_id, away_team_id)`. See Principle 29. Note: Hard-delete approach was corrected in Session 86 with soft-delete pattern.
+
+---
+
+### Previous Sessions (84 and Earlier)
 
 **For detailed session history, see [docs/1.3-SESSION_HISTORY.md](docs/1.3-SESSION_HISTORY.md).**
 
@@ -1469,28 +1371,16 @@ Phase 5:   refresh_app_views()
 
 | Session | Date | Focus | Key Outcome |
 |---------|------|-------|-------------|
-| 78 | Feb 2 | Orphan Root Cause Analysis | Orphans are coverage gaps, not duplicates (Principle 24) |
-| 77 | Feb 2 | NULL Metadata Fix | 10,571 teams fixed, 1,707 orphans merged |
-| 76 | Feb 2 | GotSport Rankings Bypass | +118,977 canonical_teams entries |
-| 75 | Feb 2 | Real-Time Data Consistency | Season Stats now query source tables |
-| 74 | Feb 2 | HTGSports Division Detection | Fixed regex `/U-?\d{1,2}\b/` (Principles 20-22) |
-| 73 | Feb 2 | VS Battle Page Fixes | 8 UI issues resolved |
-| 72 | Feb 2 | NULL Score Fix | 9,210 scheduled matches preserved |
-| 71 | Feb 1 | Compare Chart Fix | Switched to chart-kit for multi-line |
-| 70 | Feb 1 | Rank Calculation Methodology | Consistent baseline (GotSport-inspired) |
-| 69 | Feb 1 | Index Maintenance | 9 missing indexes fixed, backlog cleared |
-| 68 | Jan 31 | Rating Journey Redesign | Source/Scope selectors |
-| 67 | Jan 31 | Team Details UI | Season Stats layout, custom icons |
-| 66 | Jan 31 | V1→V2 UI Migration | Fixed Team Details crash |
-| 65 | Jan 31 | Ranking Journey Chart | ELO history backfill |
-| 64 | Jan 31 | Adaptive Learning | Pipeline integration |
-| 63 | Jan 30 | Universal Discovery | Database-based event discovery |
-| 62 | Jan 30 | Canonical Registries | Self-learning system seeded |
-| 61 | Jan 30 | Alphanumeric Team ID Fix | 64 matches recovered (Principle 10) |
-| 60 | Jan 30 | Universal Data Quality | Full pipeline integration |
-| 57-59 | Jan 30 | Universal Pipeline | Adapter-based framework |
-| 53-56 | Jan 29 | Data Integrity | Birth year cleanup, unlinked matches |
-| 48-52 | Jan 28 | V2 Architecture | Database restructure complete |
+| 84 | Feb 3 | Premier-Only Data Policy | Removed recreational data |
+| 83 | Feb 3 | Foundation First Principle | Complete V1 extraction |
+| 82 | Feb 3 | V1 Archive Migration | +93,984 matches to V2 |
+| 81 | Feb 3 | Pipeline Reliability | Unified Heartland adapter |
+| 80 | Feb 3 | Git Hygiene | 380 files committed |
+| 79 | Feb 2 | V2 Architecture Enforcement | Write protection triggers |
+| 78 | Feb 2 | Orphan Root Cause Analysis | Coverage gaps, not duplicates |
+| 77 | Feb 2 | NULL Metadata Fix | 10,571 teams fixed |
+| 76 | Feb 2 | GotSport Rankings Bypass | +118,977 canonical_teams |
+| 75 | Feb 2 | Real-Time Data Consistency | Source table queries |
 
 ---
 
@@ -1498,7 +1388,7 @@ Phase 5:   refresh_app_views()
 
 ```
 Layer 1: Staging (staging_games, staging_teams, staging_events)
-    ↓ validationPipeline.js
+    ↓ dataQualityEngine.js (or fastProcessStaging.cjs for bulk)
 Layer 2: Production (teams_v2, matches_v2, leagues, tournaments)
     ↓ refresh_app_views()
 Layer 3: App Views (app_rankings, app_matches_feed, etc.)

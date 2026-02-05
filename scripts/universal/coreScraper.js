@@ -21,6 +21,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import pg from "pg";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
@@ -30,21 +31,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ===========================================
-// SUPABASE CLIENT
+// DATABASE CLIENTS
 // ===========================================
 
+// pg Pool for staging writes (bypasses SERVICE_ROLE_KEY issues)
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  statement_timeout: 600000, // 10 minutes
+});
+
+// Supabase client for reads (works with any key)
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  console.error("❌ Missing SUPABASE_URL or SUPABASE_KEY");
   process.exit(1);
 }
 
-// Verify SERVICE_ROLE_KEY (longer than anon key)
-if (SUPABASE_KEY.length < 100) {
-  console.warn("⚠️ WARNING: May be using ANON key instead of SERVICE_ROLE key!");
-  console.warn("   Database writes may fail due to RLS policies.\n");
+if (!process.env.DATABASE_URL) {
+  console.error("❌ Missing DATABASE_URL (required for staging writes)");
+  process.exit(1);
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -109,7 +117,7 @@ class CoreScraperEngine {
   // =========================================
 
   async initializeTechnology() {
-    if (this.adapter.technology === "puppeteer") {
+    if (this.adapter.technology === "puppeteer" || this.adapter.technology === "mixed") {
       console.log("🌐 Launching Puppeteer browser...");
       const puppeteer = await import("puppeteer");
       this.browser = await puppeteer.default.launch({
@@ -126,59 +134,47 @@ class CoreScraperEngine {
   // =========================================
 
   async testDatabaseWrite() {
-    console.log("🔍 Testing database write capability...");
+    console.log("🔍 Testing database write capability (using pg Pool)...");
 
-    // Test read
-    const { count, error: readError } = await supabase
-      .from("staging_games")
-      .select("*", { count: "exact", head: true });
+    try {
+      // Test read via pg Pool
+      const { rows: countResult } = await pool.query(
+        `SELECT COUNT(*) as count FROM staging_games`
+      );
+      console.log(`   Current staging_games count: ${countResult[0].count}`);
 
-    if (readError) {
-      console.error(`   ❌ Cannot read staging_games: ${readError.message}`);
+      // Test write with dummy record
+      const testKey = `test_${Date.now()}`;
+      await pool.query(
+        `INSERT INTO staging_games (source_platform, source_match_key, home_team_name, away_team_name, processed)
+         VALUES ($1, $2, $3, $4, $5)`,
+        ["test_delete_me", testKey, "Test Home", "Test Away", false]
+      );
+
+      // Verify write
+      const { rows: verify } = await pool.query(
+        `SELECT id FROM staging_games WHERE source_match_key = $1`,
+        [testKey]
+      );
+
+      if (verify.length === 0) {
+        console.error("   ❌ Write succeeded but data not found!");
+        return false;
+      }
+
+      // Clean up
+      await pool.query(
+        `DELETE FROM staging_games WHERE source_match_key = $1`,
+        [testKey]
+      );
+
+      console.log("   ✅ Database write test PASSED (pg Pool)\n");
+      return true;
+
+    } catch (error) {
+      console.error(`   ❌ Database write test failed: ${error.message}`);
       return false;
     }
-
-    console.log(`   Current staging_games count: ${count}`);
-
-    // Test write with dummy record
-    const testRecord = {
-      source_platform: "test_delete_me",
-      source_match_key: `test_${Date.now()}`,
-      home_team_name: "Test Home",
-      away_team_name: "Test Away",
-      processed: false,
-    };
-
-    const { error: writeError } = await supabase
-      .from("staging_games")
-      .insert([testRecord]);
-
-    if (writeError) {
-      console.error(`   ❌ Cannot write to staging_games: ${writeError.message}`);
-      console.error("   This is likely due to RLS policies. Use SERVICE_ROLE_KEY.");
-      return false;
-    }
-
-    // Verify write
-    const { data: verify } = await supabase
-      .from("staging_games")
-      .select("id")
-      .eq("source_match_key", testRecord.source_match_key)
-      .single();
-
-    if (!verify) {
-      console.error("   ❌ Write succeeded but data not found!");
-      return false;
-    }
-
-    // Clean up
-    await supabase
-      .from("staging_games")
-      .delete()
-      .eq("source_match_key", testRecord.source_match_key);
-
-    console.log("   ✅ Database write test PASSED\n");
-    return true;
   }
 
   // =========================================
@@ -510,23 +506,58 @@ class CoreScraperEngine {
       return stagingGames.length;
     }
 
-    // Batch insert (500 at a time)
+    // SESSION 87: Use pg Pool instead of Supabase for staging writes
+    // This bypasses the SERVICE_ROLE_KEY validation issue
     const BATCH_SIZE = 500;
     let totalInserted = 0;
 
     for (let i = 0; i < stagingGames.length; i += BATCH_SIZE) {
       const batch = stagingGames.slice(i, i + BATCH_SIZE);
 
-      const { data, error } = await supabase
-        .from("staging_games")
-        .insert(batch)
-        .select();
+      try {
+        // Build parameterized INSERT with ON CONFLICT DO NOTHING
+        const columns = [
+          "match_date", "match_time", "home_team_name", "away_team_name",
+          "home_score", "away_score", "event_name", "event_id",
+          "venue_name", "field_name", "division", "source_platform",
+          "source_match_key", "raw_data", "processed"
+        ];
 
-      if (error) {
+        const values = [];
+        const placeholders = batch.map((game, idx) => {
+          const base = idx * columns.length;
+          values.push(
+            game.match_date,
+            game.match_time,
+            game.home_team_name,
+            game.away_team_name,
+            game.home_score,
+            game.away_score,
+            game.event_name,
+            game.event_id,
+            game.venue_name,
+            game.field_name,
+            game.division,
+            game.source_platform,
+            game.source_match_key,
+            JSON.stringify(game.raw_data),
+            game.processed
+          );
+          return `(${columns.map((_, j) => `$${base + j + 1}`).join(", ")})`;
+        });
+
+        const sql = `
+          INSERT INTO staging_games (${columns.join(", ")})
+          VALUES ${placeholders.join(", ")}
+          ON CONFLICT (source_match_key) DO NOTHING
+        `;
+
+        const result = await pool.query(sql, values);
+        totalInserted += result.rowCount || batch.length;
+
+      } catch (error) {
         console.error(`   ❌ Staging insert error: ${error.message}`);
         this.stats.errors.push(`Staging: ${error.message}`);
-      } else {
-        totalInserted += data?.length || 0;
       }
     }
 
@@ -540,21 +571,26 @@ class CoreScraperEngine {
 
   async registerEventToStaging(event, matchCount) {
     try {
-      await supabase
-        .from("staging_events")
-        .insert({
-          event_name: event.name,
-          event_type: event.type || "tournament",
-          source_platform: this.adapter.id,
-          source_event_id: event.id.toString(),
-          state: this.adapter.transform.inferState ? this.adapter.transform.inferState() : null,
-          raw_data: {
-            year: event.year,
-            match_count: matchCount,
-            scraped_at: new Date().toISOString(),
-          },
-          processed: false,
-        });
+      // SESSION 87: Use pg Pool instead of Supabase
+      const rawData = JSON.stringify({
+        year: event.year,
+        match_count: matchCount,
+        scraped_at: new Date().toISOString(),
+      });
+
+      await pool.query(`
+        INSERT INTO staging_events (event_name, event_type, source_platform, source_event_id, state, raw_data, processed)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT DO NOTHING
+      `, [
+        event.name,
+        event.type || "tournament",
+        this.adapter.id,
+        event.id.toString(),
+        this.adapter.transform.inferState ? this.adapter.transform.inferState() : null,
+        rawData,
+        false
+      ]);
     } catch (e) {
       // Ignore duplicate errors in staging
     }
@@ -830,6 +866,13 @@ class CoreScraperEngine {
     // Clear checkpoint if all successful
     if (this.stats.eventsFailed === 0 && this.stats.eventsProcessed > 0) {
       this.clearCheckpoint();
+    }
+
+    // Close pg Pool (SESSION 87)
+    try {
+      await pool.end();
+    } catch (e) {
+      // Pool may already be closed
     }
   }
 
