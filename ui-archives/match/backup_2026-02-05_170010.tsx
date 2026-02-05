@@ -12,8 +12,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
-import { getGenderDisplay } from "../../lib/supabase.types";
-import { getMatchStatus, getEventTypeBadge } from "../../lib/matchUtils";
 
 // ============================================================
 // TYPES - Uses v2 app_matches_feed view with embedded team data
@@ -73,6 +71,13 @@ function isValidValue(v: any): boolean {
   return str.length > 0 && str !== "??" && str !== "TBD";
 }
 
+function formatGender(gender: string): string {
+  const g = gender.toUpperCase();
+  if (g === "M" || g === "MALE") return "Boys";
+  if (g === "F" || g === "FEMALE") return "Girls";
+  return gender;
+}
+
 function formatDate(value: any): string {
   if (!value) return "";
   const d = new Date(value);
@@ -103,6 +108,36 @@ function formatTime(value: any): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// Get match type badge (no platform branding)
+function getMatchTypeBadge(
+  sourceType: string | null,
+): { emoji: string; label: string } | null {
+  if (!sourceType) return null;
+  const type = sourceType.toLowerCase();
+  if (type === "league") return { emoji: "⚽", label: "League Match" };
+  if (type === "tournament") return { emoji: "🏆", label: "Tournament" };
+  return null;
+}
+
+// Determine actual match status based on data
+function getMatchStatus(match: MatchRow): "completed" | "upcoming" | "live" {
+  const hasScore = match.home_score !== null && match.away_score !== null;
+
+  // If we have scores, match is completed
+  if (hasScore) return "completed";
+
+  // Check date - v2 schema doesn't have status field, determine from date
+  if (match.match_date) {
+    const matchDate = new Date(match.match_date);
+    const now = new Date();
+    if (matchDate > now) return "upcoming";
+    // Past date without scores = completed (no scores recorded)
+    return "completed";
+  }
+
+  return "upcoming";
 }
 
 // Get team initials for badge
@@ -288,7 +323,7 @@ export default function MatchDetailScreen() {
   const dateStr = formatDate(match.match_date);
   const timeStr = formatTime(match.match_time);
   const location = null; // v2 has venue object, but full location not available
-  const matchTypeBadge = getEventTypeBadge(match.event?.type);
+  const matchTypeBadge = getMatchTypeBadge(match.event?.type);
 
   // FIXED: Determine actual status based on scores/date, not just status field
   const matchStatus = getMatchStatus(match);
@@ -467,7 +502,7 @@ export default function MatchDetailScreen() {
               <View style={styles.infoItem}>
                 <Ionicons name="football-outline" size={20} color="#f59e0b" />
                 <Text style={styles.infoLabel}>Division</Text>
-                <Text style={styles.infoValue}>{getGenderDisplay(match.gender)}</Text>
+                <Text style={styles.infoValue}>{formatGender(match.gender)}</Text>
               </View>
             )}
           </View>

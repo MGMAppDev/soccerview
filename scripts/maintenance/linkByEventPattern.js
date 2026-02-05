@@ -17,7 +17,11 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { createRequire } from 'module';
 import dotenv from 'dotenv';
+
+const require = createRequire(import.meta.url);
+const { isGeneric } = require('../universal/resolveEventName.cjs');
 
 dotenv.config();
 
@@ -144,7 +148,12 @@ async function main() {
   const eventsNeedingCreation = [];
   for (const [eventId, matchIds] of htgEventCounts) {
     if (!tournamentByEventId.has(eventId)) {
-      const name = eventNamesFromStaging.get(eventId) || `HTGSports Event ${eventId}`;
+      const rawName = eventNamesFromStaging.get(eventId);
+      const name = (rawName && !isGeneric(rawName)) ? rawName : null;
+      if (!name) {
+        console.log(`  Skipping event ${eventId}: no real name available`);
+        continue;
+      }
       const eventData = htgEventData.get(eventId);
       const sortedDates = eventData.dates.sort();
       const startDate = sortedDates[0] || '2024-01-01';

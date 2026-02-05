@@ -18,7 +18,6 @@ import { LineChart as ChartKitLineChart } from "react-native-chart-kit";
 import { LineChart } from "react-native-gifted-charts";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
-import { getGenderDisplay } from "../../lib/supabase.types";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -1081,7 +1080,11 @@ export default function TeamDetailScreen() {
     const parts: string[] = [];
     if (isValidValue(team.state)) parts.push(team.state!);
     if (isValidValue(team.gender)) {
-      parts.push(getGenderDisplay(team.gender!));
+      // Convert M/F to Boys/Girls for display
+      const g = team.gender!.toUpperCase();
+      if (g === "M" || g === "MALE") parts.push("Boys");
+      else if (g === "F" || g === "FEMALE") parts.push("Girls");
+      else parts.push(team.gender!);
     }
     const normalizedAge = normalizeAgeGroup(team.age_group);
     if (normalizedAge) parts.push(normalizedAge);

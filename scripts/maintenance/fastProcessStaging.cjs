@@ -8,6 +8,7 @@
  */
 require("dotenv").config();
 const { Pool } = require("pg");
+const { resolveEventName } = require("../universal/resolveEventName.cjs");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Season year - default fallback, updated from DB at startup
@@ -276,9 +277,17 @@ async function main() {
 
     for (const row of staging) {
       if (!row.event_id || uniqueEvents.has(row.event_id)) continue;
+      // Use centralized resolver — never fall back to generic names
+      const resolvedName = await resolveEventName(client, {
+        sourceEventId: row.event_id,
+        sourcePlatform: row.source_platform,
+        rawName: row.event_name,
+        skipWeb: true, // Speed-critical bulk path — skip HTTP fetches
+      });
+      if (!resolvedName) continue; // Skip events we can't name — DB CHECK would reject them
       uniqueEvents.set(row.event_id, {
         id: row.event_id,
-        name: row.event_name || row.event_id,
+        name: resolvedName,
         platform: row.source_platform,
       });
     }

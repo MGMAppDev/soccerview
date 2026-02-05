@@ -24,8 +24,12 @@ import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
 import * as fs from "fs";
 import * as path from "path";
+import { createRequire } from "module";
 import { fileURLToPath, pathToFileURL } from "url";
 import "dotenv/config";
+
+const require = createRequire(import.meta.url);
+const { isGeneric } = require("./resolveEventName.cjs");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -747,10 +751,12 @@ class CoreScraperEngine {
       if (found) {
         events = [found];
       } else {
-        // Fallback: create basic event object
+        // Fallback: use event ID but with non-generic name
+        // DB CHECK constraint blocks generic names — log warning
+        console.warn(`⚠️ Event ${options.eventId} not in static list — scraping without event name`);
         events = [{
           id: options.eventId,
-          name: `Event ${options.eventId}`,
+          name: `${this.adapter.name} Tournament #${options.eventId}`,
           type: "tournament",
         }];
       }

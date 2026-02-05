@@ -17,8 +17,12 @@
  */
 
 import pg from 'pg';
+import { createRequire } from 'module';
 import 'dotenv/config';
 import { authorizePipelineWrite } from '../universal/pipelineAuth.js';
+
+const require = createRequire(import.meta.url);
+const { isGeneric } = require('../universal/resolveEventName.cjs');
 
 const { Pool } = pg;
 
@@ -178,10 +182,11 @@ async function main() {
     let createdEvents = 0;
 
     for (const [eventId, eventData] of byEvent) {
-      // Clean up event name - use event ID if null/empty/generic
+      // Clean up event name — reject generic names, skip if unresolvable
       let eventName = eventData.eventName;
-      if (!eventName || eventName === 'null' || eventName === 'GotSport' || eventName.trim() === '') {
-        eventName = `GotSport Event ${eventId}`;
+      if (!eventName || eventName === 'null' || eventName.trim() === '' || isGeneric(eventName)) {
+        console.log(`  Skipping event ${eventId}: no real name available`);
+        continue;
       }
 
       // Determine if league or tournament based on source_type or name
