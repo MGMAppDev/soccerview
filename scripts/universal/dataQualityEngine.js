@@ -1173,11 +1173,15 @@ async function promoteRecords(records, client, dryRun) {
           VALUES ${values}
           ON CONFLICT (match_date, home_team_id, away_team_id) DO UPDATE SET
             home_score = CASE
-              WHEN matches_v2.home_score IS NOT NULL THEN matches_v2.home_score
+              WHEN EXCLUDED.home_score IS NOT NULL THEN EXCLUDED.home_score
+              WHEN matches_v2.home_score IS DISTINCT FROM 0 OR matches_v2.away_score IS DISTINCT FROM 0
+                THEN matches_v2.home_score
               ELSE EXCLUDED.home_score
             END,
             away_score = CASE
-              WHEN matches_v2.away_score IS NOT NULL THEN matches_v2.away_score
+              WHEN EXCLUDED.away_score IS NOT NULL THEN EXCLUDED.away_score
+              WHEN matches_v2.home_score IS DISTINCT FROM 0 OR matches_v2.away_score IS DISTINCT FROM 0
+                THEN matches_v2.away_score
               ELSE EXCLUDED.away_score
             END,
             league_id = COALESCE(matches_v2.league_id, EXCLUDED.league_id),

@@ -430,8 +430,18 @@ async function main() {
               home_score, away_score, league_id, tournament_id, source_platform, source_match_key)
             VALUES ${phs.join(', ')}
             ON CONFLICT (match_date, home_team_id, away_team_id) DO UPDATE SET
-              home_score = COALESCE(EXCLUDED.home_score, matches_v2.home_score),
-              away_score = COALESCE(EXCLUDED.away_score, matches_v2.away_score),
+              home_score = CASE
+                WHEN EXCLUDED.home_score IS NOT NULL THEN EXCLUDED.home_score
+                WHEN matches_v2.home_score IS DISTINCT FROM 0 OR matches_v2.away_score IS DISTINCT FROM 0
+                  THEN matches_v2.home_score
+                ELSE EXCLUDED.home_score
+              END,
+              away_score = CASE
+                WHEN EXCLUDED.away_score IS NOT NULL THEN EXCLUDED.away_score
+                WHEN matches_v2.home_score IS DISTINCT FROM 0 OR matches_v2.away_score IS DISTINCT FROM 0
+                  THEN matches_v2.away_score
+                ELSE EXCLUDED.away_score
+              END,
               tournament_id = COALESCE(EXCLUDED.tournament_id, matches_v2.tournament_id),
               source_match_key = COALESCE(EXCLUDED.source_match_key, matches_v2.source_match_key)
             WHERE matches_v2.deleted_at IS NULL
