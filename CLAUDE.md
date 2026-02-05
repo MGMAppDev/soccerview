@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 12.0** | Last Updated: February 5, 2026 | Session 89 Complete
+> **Version 13.0** | Last Updated: February 5, 2026 | Session 90 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -30,6 +30,7 @@
 | [docs/SESSION_88_UNIVERSAL_QC_FIX.md](docs/SESSION_88_UNIVERSAL_QC_FIX.md) | Session 88: QC Issues #1-2 (birth year, rank badge) |
 | [docs/SESSION_88_QC3_STATE_FIX.md](docs/SESSION_88_QC3_STATE_FIX.md) | Session 88: QC Issue #3 (wrong state assignment) |
 | [docs/SESSION_88_QC4_DUPLICATE_MATCHES.md](docs/SESSION_88_QC4_DUPLICATE_MATCHES.md) | Session 88: QC Issue #4 (duplicate matches) |
+| [docs/SESSION_90_CROSS_IMPORT_DUPLICATES.md](docs/SESSION_90_CROSS_IMPORT_DUPLICATES.md) | Session 90: Cross-import duplicate fix |
 | [docs/_archive/](docs/_archive/) | Completed project documents |
 
 ---
@@ -995,7 +996,7 @@ CREATE TABLE source_entity_map (
 | Table | Rows | Purpose |
 |-------|------|---------|
 | `teams_v2` | 158,043 | Team records (~59,401 with ELO ratings) |
-| `matches_v2` | 405,595 active | Match results (~2,941 soft-deleted) |
+| `matches_v2` | 403,068 active | Match results (~5,468 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
 | `leagues` | 280 | League metadata |
 | `tournaments` | 1,711 | Tournament metadata (17 dupes merged) |
@@ -1415,6 +1416,28 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 90 - Fix Cross-Import Duplicate Matches (February 5, 2026) - COMPLETE ✅
+
+**Goal:** Fix duplicate matches in Team Detail tournament sections caused by V1 migration + scraper cross-import.
+
+**Root Cause:** V1 migration (Session 82) and scrapers both imported the same real-world games, but resolved opponent teams to different `teams_v2` records (different name normalization → different IDs). Semantic uniqueness constraint couldn't catch these.
+
+**Fix:** `scripts/maintenance/fixCrossImportDuplicates.cjs` — 6-layer false-positive protection, soft-delete legacy copies.
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Active matches | 405,595 | 403,068 |
+| Cross-import duplicates soft-deleted | 0 | 2,527 |
+| SBV Pre-NAL 15 tournament matches | 6 | 3 |
+| ELO matches | 192,689 | 187,913 |
+| ELO teams | 60,864 | 59,295 |
+
+**Files Created:** `fixCrossImportDuplicates.cjs`, `SESSION_90_CROSS_IMPORT_DUPLICATES.md`
+
+**Prevention:** Already handled by `source_entity_map` (Session 89). This fix is purely retroactive.
+
+---
 
 ### Session 89 - Universal Entity Resolution + Source ID Architecture (February 5, 2026) - COMPLETE ✅
 
