@@ -1,6 +1,6 @@
 # SoccerView UI Patterns & Standards
 
-> **Version 1.8** | Last Updated: February 2, 2026 | Session 75 (Real-Time Data Queries)
+> **Version 1.9** | Last Updated: February 5, 2026 | Session 90 (Match Tap Navigation Fix)
 >
 > Universal UI patterns that must be applied consistently across ALL screens.
 
@@ -858,7 +858,7 @@ const handlePress = () => {
 />
 ```
 
-**Expanded Matches List:**
+**Expanded Matches List (MUST be tappable - Session 90 fix):**
 ```typescript
 // Sort matches newest to oldest
 const sortedMatches = [...group.matches].sort((a, b) => {
@@ -867,8 +867,15 @@ const sortedMatches = [...group.matches].sort((a, b) => {
   return dateB - dateA;
 });
 
-// Render each match row
-<View style={styles.expandedMatchRow}>
+// Render each match row - MUST use TouchableOpacity for navigation
+<TouchableOpacity
+  style={styles.expandedMatchRow}
+  activeOpacity={0.7}
+  onPress={() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/match/${match.id}`);
+  }}
+>
   <Text style={[styles.expandedMatchResult, { color: resultColor }]}>
     {resultIcon}  {/* ✓ green, ✗ red, − amber, ⏳ gray */}
   </Text>
@@ -876,8 +883,10 @@ const sortedMatches = [...group.matches].sort((a, b) => {
   <Text style={styles.expandedMatchVs}>vs</Text>
   <Text style={styles.expandedMatchOpponent}>{opponentName}</Text>
   <Text style={styles.expandedMatchScore}>{score}</Text>
-</View>
+</TouchableOpacity>
 ```
+
+**CRITICAL:** All match rows everywhere in the app MUST navigate to `/match/[id]` on tap. Never use plain `<View>` for match rows.
 
 **Styles:**
 ```typescript

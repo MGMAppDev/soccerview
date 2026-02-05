@@ -1,6 +1,6 @@
 # UI Protection Protocol
 
-> **Version 1.2** | Updated: February 2, 2026 | Session 76
+> **Version 1.3** | Updated: February 5, 2026 | Session 90
 >
 > **🚨 Read [GUARDRAILS](1.1-GUARDRAILS_v2.md) first - UI protection is Rule #1.**
 
@@ -111,3 +111,11 @@ node scripts/ui-restore.js team-details golden
 Session 66 lost hours of UI work when `git checkout` was run to fix a database issue. The League/Tournament grouping feature had to be completely rebuilt.
 
 **Prevention > Recovery**: Always backup before editing.
+
+---
+
+## Change Log
+
+| Session | File | Change | Impact |
+|---------|------|--------|--------|
+| 90 | `app/team/[id].tsx` | `renderExpandedMatch()`: `View` → `TouchableOpacity` with match navigation | ZERO design change — adds tap handler only |

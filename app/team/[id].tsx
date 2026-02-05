@@ -1250,12 +1250,17 @@ export default function TeamDetailScreen() {
         : "";
 
       return (
-        <View
+        <TouchableOpacity
           key={match.id}
           style={[
             styles.expandedMatchRow,
             isLast && { borderBottomWidth: 0 },
           ]}
+          activeOpacity={0.7}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push(`/match/${match.id}`);
+          }}
         >
           <Text style={[styles.expandedMatchResult, { color: resultColor }]}>
             {resultIcon}
@@ -1266,7 +1271,7 @@ export default function TeamDetailScreen() {
           <Text style={styles.expandedMatchScore}>
             {hasScores ? `${teamScore}-${opponentScore}` : "—"}
           </Text>
-        </View>
+        </TouchableOpacity>
       );
     };
 
