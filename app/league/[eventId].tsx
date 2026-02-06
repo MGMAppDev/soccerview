@@ -28,6 +28,7 @@ import {
   getLeaguePointsTable,
   getLeagueMatches,
   getLeagueAgeGroups,
+  getLeagueDivisions,
   LeagueInfo,
   LeagueTeam,
   LeaguePointsTableTeam,
@@ -57,6 +58,7 @@ export default function LeagueStandingsScreen() {
 
   // State
   const [loading, setLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false); // Session 91: Inline loader for filter changes
   const [refreshing, setRefreshing] = useState(false);
   const [leagueInfo, setLeagueInfo] = useState<LeagueInfo | null>(null);
   const [standings, setStandings] = useState<LeagueTeam[]>([]);
@@ -69,60 +71,88 @@ export default function LeagueStandingsScreen() {
   // Filters
   const [selectedAgeGroup, setSelectedAgeGroup] = useState('All');
   const [selectedGender, setSelectedGender] = useState('All');
+  const [divisions, setDivisions] = useState<string[]>([]);
+  const [selectedDivision, setSelectedDivision] = useState('All');
 
-  // Load data
-  const loadData = useCallback(async (showLoading = true) => {
+  // Session 91: Split loading — static data (once) vs filter-dependent data (on change)
+  // Pattern from Rankings tab (rankings.tsx:491-593)
+
+  // Load static data ONCE on mount (league info + age groups don't change with filters)
+  const loadStaticData = useCallback(async () => {
     if (!eventId) return;
-
-    if (showLoading) setLoading(true);
-
+    setLoading(true);
     try {
-      // Load league info
-      const info = await getLeagueInfo(eventId);
+      const [info, ages] = await Promise.all([
+        getLeagueInfo(eventId),
+        getLeagueAgeGroups(eventId),
+      ]);
       setLeagueInfo(info);
-
-      // Load age groups for filter
-      const ages = await getLeagueAgeGroups(eventId);
       setAgeGroups(['All', ...ages]);
-
-      // Load points table (traditional standings)
-      const pointsData = await getLeaguePointsTable(eventId, {
-        ageGroup: selectedAgeGroup,
-        gender: selectedGender,
-      });
-      setPointsTable(pointsData);
-
-      // Load power ratings (ELO-based standings)
-      const standingsData = await getLeagueStandings(eventId, {
-        ageGroup: selectedAgeGroup,
-        gender: selectedGender,
-      });
-      setStandings(standingsData);
-
-      // Load matches
-      const matchesData = await getLeagueMatches(eventId, {
-        ageGroup: selectedAgeGroup,
-        gender: selectedGender,
-      });
-      setMatches(matchesData);
     } catch (error) {
-      console.error('Error loading league data:', error);
+      console.error('Error loading static league data:', error);
     } finally {
       setLoading(false);
+    }
+  }, [eventId]);
+
+  // Load filter-dependent data (standings + matches — changes with age/gender/division filter)
+  const loadFilteredData = useCallback(async (isRefresh = false) => {
+    if (!eventId) return;
+    if (!isRefresh) setFilterLoading(true);
+    try {
+      const filters = {
+        ageGroup: selectedAgeGroup,
+        gender: selectedGender,
+        division: selectedDivision,
+      };
+
+      // Fetch divisions for current age+gender (parallel with standings data)
+      const [pointsData, standingsData, matchesData, divisionData] = await Promise.all([
+        getLeaguePointsTable(eventId, filters),
+        getLeagueStandings(eventId, filters),
+        getLeagueMatches(eventId, filters),
+        getLeagueDivisions(eventId, {
+          ageGroup: selectedAgeGroup,
+          gender: selectedGender,
+        }),
+      ]);
+      setPointsTable(pointsData);
+      setStandings(standingsData);
+      setMatches(matchesData);
+      setDivisions(divisionData);
+
+      // Reset division selection if previous selection is no longer valid
+      if (selectedDivision !== 'All' && !divisionData.includes(selectedDivision)) {
+        setSelectedDivision('All');
+      }
+    } catch (error) {
+      console.error('Error loading filtered league data:', error);
+    } finally {
+      setFilterLoading(false);
       setRefreshing(false);
     }
-  }, [eventId, selectedAgeGroup, selectedGender]);
+  }, [eventId, selectedAgeGroup, selectedGender, selectedDivision]);
 
+  // Mount: load static data once
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadStaticData();
+  }, [loadStaticData]);
 
-  // Refresh handler
+  // Filter changes: 300ms debounce (proven pattern from rankings.tsx:491-498)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadFilteredData();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [loadFilteredData]);
+
+  // Refresh handler — reloads everything
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    loadData(false);
-  }, [loadData]);
+    loadStaticData();
+    loadFilteredData(true);
+  }, [loadStaticData, loadFilteredData]);
 
   // Tab change
   const handleTabChange = (tab: TabType) => {
@@ -158,7 +188,6 @@ export default function LeagueStandingsScreen() {
 
     return (
       <Ionicons
-        key={Math.random()}
         name={badge.icon as any}
         size={16}
         color={badge.color}
@@ -209,11 +238,11 @@ export default function LeagueStandingsScreen() {
             </Text>
           </View>
 
-          {/* Form Badges */}
+          {/* Form Badges — last 5 match results */}
           {team.form.length > 0 && (
             <View style={styles.formContainer}>
               {team.form.map((result, index) => (
-                <View key={index}>{renderFormBadge(result)}</View>
+                <View key={`form-${index}`}>{renderFormBadge(result)}</View>
               ))}
             </View>
           )}
@@ -267,13 +296,13 @@ export default function LeagueStandingsScreen() {
             </Text>
           </View>
 
-          {/* W-L-D */}
+          {/* W-L-D — consistent format with Points Table */}
           <Text style={styles.recordText}>
-            <Text style={{ color: COLORS.success }}>{team.wins}</Text>
+            <Text style={{ color: COLORS.success }}>{team.wins}W</Text>
             <Text style={styles.recordSeparator}>-</Text>
-            <Text style={{ color: COLORS.error }}>{team.losses}</Text>
+            <Text style={{ color: COLORS.error }}>{team.losses}L</Text>
             <Text style={styles.recordSeparator}>-</Text>
-            <Text style={{ color: COLORS.textSecondary }}>{team.draws}</Text>
+            <Text style={{ color: COLORS.textSecondary }}>{team.draws}D</Text>
           </Text>
 
           {/* National Rank */}
@@ -408,16 +437,16 @@ export default function LeagueStandingsScreen() {
 
           <Text style={styles.leagueName}>{leagueInfo?.event_name || 'Unknown Event'}</Text>
 
-          {/* Explanatory text */}
+          {/* Explanatory text — updates with active standings view */}
           <Text style={styles.leagueExplanation}>
-            {isLeague 
-              ? 'Teams ranked by SoccerView Power Rating within this league. W-L-D reflects league play only.'
-              : 'Teams ranked by SoccerView Power Rating within this tournament.'}
+            {standingsView === 'points'
+              ? 'Teams ranked by points within this league. W-L-D reflects league play only.'
+              : 'Teams ranked by SoccerView Power Rating within this league.'}
           </Text>
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>~{leagueInfo?.team_count || standings.length}</Text>
+              <Text style={styles.statValue}>{leagueInfo?.team_count || pointsTable.length || 0}</Text>
               <Text style={styles.statLabel}>Teams</Text>
             </View>
             <View style={styles.statDivider} />
@@ -508,6 +537,7 @@ export default function LeagueStandingsScreen() {
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setSelectedGender(gender);
+                  setSelectedDivision('All'); // Reset division when gender changes
                 }}
               >
                 <Text style={[
@@ -521,8 +551,8 @@ export default function LeagueStandingsScreen() {
 
             <View style={styles.filterDivider} />
 
-            {/* Age Group Filter */}
-            {ageGroups.slice(0, 8).map(age => (
+            {/* Age Group Filter — all valid groups scrollable */}
+            {ageGroups.map(age => (
               <TouchableOpacity
                 key={`age-${age}`}
                 style={[
@@ -532,6 +562,7 @@ export default function LeagueStandingsScreen() {
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setSelectedAgeGroup(age);
+                  setSelectedDivision('All'); // Reset division when age group changes
                 }}
               >
                 <Text style={[
@@ -542,8 +573,40 @@ export default function LeagueStandingsScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
+
+            {/* Division Filter — only shown when divisions exist for current age+gender */}
+            {divisions.length > 0 && (
+              <>
+                <View style={styles.filterDivider} />
+                {['All', ...divisions].map(div => (
+                  <TouchableOpacity
+                    key={`div-${div}`}
+                    style={[
+                      styles.filterChip,
+                      selectedDivision === div && styles.filterChipDivisionActive
+                    ]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelectedDivision(div);
+                    }}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      selectedDivision === div && styles.filterChipTextActive
+                    ]}>
+                      {div}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
           </ScrollView>
         </View>
+
+        {/* Session 91: Inline loading indicator for filter changes */}
+        {filterLoading && (
+          <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 8 }} />
+        )}
 
         {/* Content */}
         {activeTab === 'standings' ? (
@@ -750,6 +813,9 @@ const styles = StyleSheet.create({
   },
   filterChipActive: {
     backgroundColor: COLORS.primary,
+  },
+  filterChipDivisionActive: {
+    backgroundColor: COLORS.gold,
   },
   filterChipText: {
     color: COLORS.textSecondary,

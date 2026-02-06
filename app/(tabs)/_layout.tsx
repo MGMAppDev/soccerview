@@ -59,12 +59,25 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="leagues"
+        options={{
+          title: "Leagues",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "football" : "football-outline"}
+              size={size}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="matches"
         options={{
           title: "Matches",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? "football" : "football-outline"}
+              name={focused ? "calendar" : "calendar-outline"}
               size={size}
               color={color}
             />

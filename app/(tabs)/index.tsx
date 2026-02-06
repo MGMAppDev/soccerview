@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -190,15 +191,41 @@ async function withRetry<T>(
 async function fetchStats(): Promise<StatsData> {
   console.log("[Home] fetchStats: Starting...");
 
-  // Query stats from new schema views
-  // app_rankings for team count, app_matches_feed for match count
+  // Get current season boundaries for scoping
+  const { data: season } = await supabase
+    .from("seasons")
+    .select("start_date, end_date")
+    .eq("is_current", true)
+    .single();
+
+  // Fallback: Aug 1 → Jul 31 based on current date
+  const now = new Date();
+  const fallbackStart = now.getMonth() >= 7
+    ? `${now.getFullYear()}-08-01`
+    : `${now.getFullYear() - 1}-08-01`;
+  const fallbackEnd = now.getMonth() >= 7
+    ? `${now.getFullYear() + 1}-07-31`
+    : `${now.getFullYear()}-07-31`;
+
+  const startDate = season?.start_date ?? fallbackStart;
+  const endDate = season?.end_date ?? fallbackEnd;
+  console.log("[Home] fetchStats: Season boundaries:", startDate, "to", endDate);
+
+  // Season-scoped queries:
+  // - Teams: has_matches=true in app_rankings (ELO resets to 0 then replays current season only)
+  // - Matches: matches_v2 directly with season date range + deleted_at IS NULL + scored only
   const [teamsResult, matchesResult, lastUpdatedResult] = await Promise.all([
     supabase
       .from("app_rankings")
-      .select("id", { count: "estimated", head: true }),
+      .select("id", { count: "exact", head: true })
+      .eq("has_matches", true),
     supabase
-      .from("app_matches_feed")
-      .select("id", { count: "estimated", head: true }),
+      .from("matches_v2")
+      .select("id", { count: "exact", head: true })
+      .is("deleted_at", null)
+      .not("home_score", "is", null)
+      .gte("match_date", startDate)
+      .lte("match_date", endDate),
     supabase
       .from("app_team_profile")
       .select("updated_at")
@@ -544,9 +571,15 @@ export default function HomeScreen() {
       }
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.title}>SoccerView</Text>
+      <View style={styles.titleRow}>
+        <Image
+          source={require("../../assets/images/icon.png")}
+          style={styles.logo}
+        />
+        <Text style={styles.title}>SoccerView</Text>
+      </View>
       <Text style={styles.subtitle}>
-        National & State Youth Club Soccer Rankings
+        Premier Youth Soccer Rankings, Scores & Standings
       </Text>
       {stats.lastUpdated && (
         <Text style={styles.lastUpdated}>
@@ -658,7 +691,9 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   contentContainer: { padding: 16, paddingBottom: 32 },
-  title: { color: "#fff", fontSize: 32, fontWeight: "bold", marginBottom: 8 },
+  titleRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  logo: { width: 36, height: 36, marginRight: 10, borderRadius: 8 },
+  title: { color: "#fff", fontSize: 32, fontWeight: "bold" },
   subtitle: { color: "#9ca3af", fontSize: 16, marginBottom: 8 },
   lastUpdated: {
     color: "#6b7280",
