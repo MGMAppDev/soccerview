@@ -98,11 +98,12 @@ async function main() {
       const division = row.division || '';
       const birthYear = extractBirthYear(division, row.home_team_name);
       const gender = extractGender(division, row.home_team_name);
+      const tier = extractDivisionTier(division, row.raw_data);
 
       const homeKey = makeTeamKey(row.home_team_name, birthYear, gender);
       const awayKey = makeTeamKey(row.away_team_name, birthYear, gender);
 
-      rowTeamKeys.set(row.id, { homeKey, awayKey, birthYear, gender });
+      rowTeamKeys.set(row.id, { homeKey, awayKey, birthYear, gender, tier });
 
       if (!uniqueTeams.has(homeKey)) {
         uniqueTeams.set(homeKey, { name: row.home_team_name, birth_year: birthYear, gender });
@@ -386,6 +387,7 @@ async function main() {
           tournament_id: eventInfo.tournament_id,
           source_platform: row.source_platform,
           source_match_key: row.source_match_key,
+          division: keys.tier,
         });
         batchSuccessIds.push(row.id);
       }
@@ -426,17 +428,17 @@ async function main() {
       if (matchRecords.length > 0 && !dryRun) {
         const vals = [];
         const phs = matchRecords.map((m, idx) => {
-          const o = idx * 10;
+          const o = idx * 11;
           vals.push(m.match_date, m.match_time, m.home_team_id, m.away_team_id,
             m.home_score, m.away_score, m.league_id, m.tournament_id,
-            m.source_platform, m.source_match_key);
-          return `($${o+1}, $${o+2}, $${o+3}, $${o+4}, $${o+5}, $${o+6}, $${o+7}, $${o+8}, $${o+9}, $${o+10})`;
+            m.source_platform, m.source_match_key, m.division);
+          return `($${o+1}, $${o+2}, $${o+3}, $${o+4}, $${o+5}, $${o+6}, $${o+7}, $${o+8}, $${o+9}, $${o+10}, $${o+11})`;
         });
 
         try {
           const result = await client.query(`
             INSERT INTO matches_v2 (match_date, match_time, home_team_id, away_team_id,
-              home_score, away_score, league_id, tournament_id, source_platform, source_match_key)
+              home_score, away_score, league_id, tournament_id, source_platform, source_match_key, division)
             VALUES ${phs.join(', ')}
             ON CONFLICT (match_date, home_team_id, away_team_id) DO UPDATE SET
               home_score = CASE
@@ -452,7 +454,8 @@ async function main() {
                 ELSE EXCLUDED.away_score
               END,
               tournament_id = COALESCE(EXCLUDED.tournament_id, matches_v2.tournament_id),
-              source_match_key = COALESCE(EXCLUDED.source_match_key, matches_v2.source_match_key)
+              source_match_key = COALESCE(EXCLUDED.source_match_key, matches_v2.source_match_key),
+              division = COALESCE(EXCLUDED.division, matches_v2.division)
             WHERE matches_v2.deleted_at IS NULL
           `, vals);
           totalInserted += result.rowCount;
@@ -519,6 +522,65 @@ function extractGender(division, teamName) {
   const text = ((division || '') + ' ' + (teamName || '')).toLowerCase();
   if (/\bgirls?\b|\bgu\d|\bfemale/i.test(text)) return 'F';
   if (/\bboys?\b|\bbu\d|\bmale/i.test(text)) return 'M';
+  return null;
+}
+
+/**
+ * Extract competitive division/tier from raw division text.
+ * Universal: works for ANY source with zero source-specific logic.
+ * Inline copy of matchNormalizer.js extractDivisionTier (CJS/ESM boundary).
+ */
+function extractDivisionTier(divisionText, rawData) {
+  // Check both camelCase and snake_case variants (sources may use either)
+  const subdivNumber =
+    rawData?.original?.heartlandSubdivision ||
+    rawData?.original?.heartland_subdivision ||
+    rawData?.original?.subdivision ||
+    rawData?.heartland_subdivision ||
+    rawData?.heartlandSubdivision ||
+    rawData?.subdivision ||
+    rawData?.tier;
+  if (subdivNumber && /^\d{1,2}$/.test(String(subdivNumber))) {
+    return `Division ${subdivNumber}`;
+  }
+  if (!divisionText) return null;
+  let remaining = divisionText.trim();
+  remaining = remaining.replace(/\bU-?\d{1,2}\b/gi, '');
+  remaining = remaining.replace(/\b20[01]\d\b/g, '');
+  remaining = remaining.replace(/\b(boys?|girls?|male|female|coed|co-ed)\b/gi, '');
+  remaining = remaining.replace(/\(\d*v?\d*\)/gi, '');
+  remaining = remaining.replace(/\b\d{1,2}v\d{1,2}\b/gi, '');
+  remaining = remaining.replace(/[-·|\/]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!remaining || remaining.length < 1) return null;
+  const divMatch = remaining.match(/\b(?:div(?:ision)?\.?)\s*(\d+)\b/i);
+  if (divMatch) return `Division ${divMatch[1]}`;
+  const groupMatch = remaining.match(/\b(flight|group|pool|bracket)\s+([A-Za-z0-9]+)\b/i);
+  if (groupMatch) {
+    const label = groupMatch[1].charAt(0).toUpperCase() + groupMatch[1].slice(1).toLowerCase();
+    return `${label} ${groupMatch[2].toUpperCase()}`;
+  }
+  if (/^[A-Da-d]$/.test(remaining)) return `Division ${remaining.toUpperCase()}`;
+  if (/^[A-Da-d]\d$/.test(remaining)) return remaining.toUpperCase();
+  const KNOWN_TIERS = new Set([
+    'premier', 'elite', 'classic', 'championship', 'select', 'academy', 'reserve',
+    'platinum', 'gold', 'silver', 'bronze',
+    'red', 'blue', 'white', 'green', 'orange', 'black', 'navy', 'gray', 'grey',
+    'top', 'first', 'second', 'third',
+  ]);
+  const titleCase = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+  const fixRomanNumerals = (str) =>
+    str.replace(/\b(Ii|Iii|Iv|Vi|Vii|Viii)\b/g, m => m.toUpperCase());
+  const words = remaining.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+  if (words.length > 0 && words.length <= 3 && words.every(w => KNOWN_TIERS.has(w))) {
+    return fixRomanNumerals(words.map(titleCase).join(' '));
+  }
+  const tierWords = words.filter(w => KNOWN_TIERS.has(w) || /^\d{1,2}$/.test(w));
+  if (tierWords.length > 0 && tierWords.length === words.length) {
+    return fixRomanNumerals(tierWords.map(w => /^\d+$/.test(w) ? `Division ${w}` : titleCase(w)).join(' '));
+  }
+  if (words.length >= 1 && words.length <= 3 && remaining.length <= 30) {
+    return fixRomanNumerals(words.map(titleCase).join(' '));
+  }
   return null;
 }
 

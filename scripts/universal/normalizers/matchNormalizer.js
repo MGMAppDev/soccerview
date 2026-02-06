@@ -249,6 +249,116 @@ function determineIfScheduled(matchDate, homeScore, awayScore) {
 }
 
 /**
+ * Extract competitive division/tier from raw division text.
+ * Universal: works for ANY source with zero source-specific logic.
+ *
+ * Strategy:
+ *   1. Check raw_data for explicit subdivision/tier number (any source can provide this)
+ *   2. Strip age group patterns (U-11, U11, 2014, etc.)
+ *   3. Strip gender patterns (Boys, Girls, Male, Female)
+ *   4. Normalize what remains into a clean tier name
+ *
+ * @param {string} divisionText - The staging_games.division value
+ * @param {object} rawData - The staging_games.raw_data JSONB (parsed)
+ * @returns {string|null} The tier name (e.g., "Division 3", "Red", "Premier") or null
+ */
+export function extractDivisionTier(divisionText, rawData) {
+  // Priority 1: Check raw_data for explicit subdivision/tier number
+  // Generic keys — any source can provide these in raw_data.original
+  // Check both camelCase and snake_case variants (sources may use either)
+  const subdivNumber =
+    rawData?.original?.heartlandSubdivision ||
+    rawData?.original?.heartland_subdivision ||
+    rawData?.original?.subdivision ||
+    rawData?.heartland_subdivision ||
+    rawData?.heartlandSubdivision ||
+    rawData?.subdivision ||
+    rawData?.tier;
+  if (subdivNumber && /^\d{1,2}$/.test(String(subdivNumber))) {
+    return `Division ${subdivNumber}`;
+  }
+
+  if (!divisionText) return null;
+
+  let remaining = divisionText.trim();
+
+  // Strip age group patterns: U-11, U11, U-9, 2014, etc.
+  remaining = remaining.replace(/\bU-?\d{1,2}\b/gi, '');
+  remaining = remaining.replace(/\b20[01]\d\b/g, '');
+
+  // Strip gender patterns
+  remaining = remaining.replace(/\b(boys?|girls?|male|female|coed|co-ed)\b/gi, '');
+
+  // Strip match format indicators: (11v11), (9v9), (7v7), (4v4), ()
+  remaining = remaining.replace(/\(\d*v?\d*\)/gi, '');
+  // Also strip standalone format: "11v11", "9v9", "7v7"
+  remaining = remaining.replace(/\b\d{1,2}v\d{1,2}\b/gi, '');
+
+  // Strip common separators and normalize whitespace
+  remaining = remaining.replace(/[-·|\/]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // If nothing meaningful remains, no tier info
+  if (!remaining || remaining.length < 1) return null;
+
+  // Normalize "Division N", "Div N", "Div. N" patterns
+  const divMatch = remaining.match(/\b(?:div(?:ision)?\.?)\s*(\d+)\b/i);
+  if (divMatch) return `Division ${divMatch[1]}`;
+
+  // Normalize "Flight A", "Group B", "Pool C", "Bracket D" patterns
+  const groupMatch = remaining.match(/\b(flight|group|pool|bracket)\s+([A-Za-z0-9]+)\b/i);
+  if (groupMatch) {
+    const label = groupMatch[1].charAt(0).toUpperCase() + groupMatch[1].slice(1).toLowerCase();
+    return `${label} ${groupMatch[2].toUpperCase()}`;
+  }
+
+  // Single letter tier: "A", "B", "C", "D" (standalone)
+  if (/^[A-Da-d]$/.test(remaining)) {
+    return `Division ${remaining.toUpperCase()}`;
+  }
+
+  // Alphanumeric tier codes: "A1", "B2", "C1"
+  if (/^[A-Da-d]\d$/.test(remaining)) {
+    return remaining.toUpperCase();
+  }
+
+  // Known tier words (single or compound)
+  const KNOWN_TIERS = new Set([
+    'premier', 'elite', 'classic', 'championship', 'select', 'academy', 'reserve',
+    'platinum', 'gold', 'silver', 'bronze',
+    'red', 'blue', 'white', 'green', 'orange', 'black', 'navy', 'gray', 'grey',
+    'top', 'first', 'second', 'third',
+  ]);
+
+  // Title-case helper that preserves Roman numerals (I, II, III, IV, V, VI, VII, VIII)
+  const titleCase = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+  const fixRomanNumerals = (str) =>
+    str.replace(/\b(Ii|Iii|Iv|Vi|Vii|Viii)\b/g, m => m.toUpperCase());
+
+  const words = remaining.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+
+  // Check if ALL remaining words are known tier words
+  if (words.length > 0 && words.length <= 3 && words.every(w => KNOWN_TIERS.has(w))) {
+    return fixRomanNumerals(words.map(titleCase).join(' '));
+  }
+
+  // Check if ANY word is a known tier (for mixed text like "1 Red")
+  const tierWords = words.filter(w => KNOWN_TIERS.has(w) || /^\d{1,2}$/.test(w));
+  if (tierWords.length > 0 && tierWords.length === words.length) {
+    return fixRomanNumerals(tierWords.map(w => {
+      if (/^\d+$/.test(w)) return `Division ${w}`;
+      return titleCase(w);
+    }).join(' '));
+  }
+
+  // If remaining is short (1-3 words) and doesn't look like garbage, treat as tier
+  if (words.length >= 1 && words.length <= 3 && remaining.length <= 30) {
+    return fixRomanNumerals(words.map(titleCase).join(' '));
+  }
+
+  return null;
+}
+
+/**
  * Bulk normalize multiple matches
  *
  * @param {Array} matches - Array of raw match data
@@ -341,7 +451,55 @@ export function runTests() {
   return failed === 0;
 }
 
+// ============================================
+// extractDivisionTier TESTS
+// ============================================
+
+export function runDivisionTests() {
+  console.log('\nRunning extractDivisionTier tests...\n');
+
+  const tests = [
+    { div: 'U-11 Boys', raw: null, expected: null, name: 'Plain age+gender → null' },
+    { div: 'U-11 Boys Premier', raw: null, expected: 'Premier', name: 'Appended tier word' },
+    { div: 'U-11 Boys Division 1', raw: null, expected: 'Division 1', name: 'Explicit Division N' },
+    { div: 'U-11 Boys Div 2', raw: null, expected: 'Division 2', name: 'Abbreviated Div N' },
+    { div: 'U-11 Boys Red', raw: null, expected: 'Red', name: 'Color tier (HTGSports)' },
+    { div: 'U-09 Girls Elite', raw: null, expected: 'Elite', name: 'Named tier' },
+    { div: 'U13 Boys', raw: { original: { heartlandSubdivision: '3' } }, expected: 'Division 3', name: 'Heartland subdivision camelCase' },
+    { div: 'U13 Boys', raw: { original: { heartland_subdivision: '5' } }, expected: 'Division 5', name: 'Heartland subdivision snake_case' },
+    { div: 'U10 Boys', raw: { heartland_subdivision: '9' }, expected: 'Division 9', name: 'Heartland subdivision top-level snake_case' },
+    { div: null, raw: null, expected: null, name: 'Null input → null' },
+    { div: 'U13 Boys', raw: null, expected: null, name: 'No tier info → null' },
+    { div: 'U-11 Boys - Flight A', raw: null, expected: 'Flight A', name: 'Flight pattern' },
+    { div: '2014 Girls Gold', raw: null, expected: 'Gold', name: 'Birth year + color tier' },
+    { div: 'U15 Boys A', raw: null, expected: 'Division A', name: 'Single letter → Division A' },
+    { div: 'U12 Girls B1', raw: null, expected: 'B1', name: 'Alphanumeric tier code' },
+    { div: null, raw: { original: { subdivision: '7' } }, expected: 'Division 7', name: 'Generic subdivision key' },
+    { div: 'U-11 Boys White II', raw: null, expected: 'White II', name: 'Roman numeral II preserved' },
+    { div: 'U-11 Boys Silver III', raw: null, expected: 'Silver III', name: 'Roman numeral III preserved' },
+  ];
+
+  let passed = 0, failed = 0;
+  for (const t of tests) {
+    const result = extractDivisionTier(t.div, t.raw);
+    if (result === t.expected) {
+      console.log(`  PASS: ${t.name} → ${JSON.stringify(result)}`);
+      passed++;
+    } else {
+      console.log(`  FAIL: ${t.name}`);
+      console.log(`    Expected: ${JSON.stringify(t.expected)}`);
+      console.log(`    Got:      ${JSON.stringify(result)}`);
+      failed++;
+    }
+  }
+
+  console.log(`\nDivision tests: ${passed} passed, ${failed} failed`);
+  return failed === 0;
+}
+
 // Run tests if executed directly
 if (process.argv[1].includes('matchNormalizer')) {
-  runTests();
+  const matchOk = runTests();
+  const divOk = runDivisionTests();
+  process.exit(matchOk && divOk ? 0 : 1);
 }

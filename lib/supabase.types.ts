@@ -302,8 +302,9 @@ export interface AppLeagueStandingsRow {
   goals_against: number;
   goal_difference: number;
   points: number;
+  division: string | null; // Competitive tier (e.g., "Division 1", "Red", "Elite")
   form: FormResult[];      // Array of last 5 results ['W', 'D', 'L', ...]
-  position: number;        // Rank in league standings
+  position: number;        // Rank in league standings (per division)
 }
 
 // ============================================================

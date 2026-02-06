@@ -27,7 +27,7 @@ import 'dotenv/config';
 // Import normalizers
 import { normalizeTeam, normalizeTeamsBulk, initializeLearnedPatterns as initTeamPatterns, initializeSeasonYear as initSeasonYear, inferStateFromName } from './normalizers/teamNormalizer.js';
 import { normalizeEvent, normalizeEventsBulk, initializeLearnedPatterns as initEventPatterns } from './normalizers/eventNormalizer.js';
-import { normalizeMatch, normalizeMatchesBulk } from './normalizers/matchNormalizer.js';
+import { normalizeMatch, normalizeMatchesBulk, extractDivisionTier } from './normalizers/matchNormalizer.js';
 import { normalizeClub, normalizeClubsBulk } from './normalizers/clubNormalizer.js';
 
 // Import adaptive learning for feedback loop
@@ -1054,6 +1054,12 @@ async function promoteRecords(records, client, dryRun) {
       // Build match record
       // CRITICAL: Keep NULL scores for scheduled matches - app uses NULL to identify
       // upcoming/unplayed matches vs actual 0-0 results. Per CLAUDE.md Principle 6.
+      // Extract division tier from staging record (universal normalizer)
+      const divisionTier = extractDivisionTier(
+        record.original?.division,
+        record.original?.raw_data
+      );
+
       const matchRecord = {
         match_date: record.normalized.match.match_date,
         match_time: record.normalized.match.match_time,
@@ -1065,6 +1071,7 @@ async function promoteRecords(records, client, dryRun) {
         tournament_id,
         source_platform: sourcePlatform,
         source_match_key: record.normalized.match.source_match_key,
+        division: divisionTier,
       };
 
       if (record.isDuplicate) {
@@ -1141,8 +1148,8 @@ async function promoteRecords(records, client, dryRun) {
       const batch = toInsert.slice(i, i + CONFIG.BATCH_SIZE);
 
       const values = batch.map((_, idx) => {
-        const offset = idx * 9;
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`;
+        const offset = idx * 10;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10})`;
       }).join(', ');
 
       const params = batch.flatMap(m => [
@@ -1155,6 +1162,7 @@ async function promoteRecords(records, client, dryRun) {
         m.league_id,
         m.tournament_id,
         m.source_match_key,
+        m.division,
       ]);
 
       try {
@@ -1168,7 +1176,7 @@ async function promoteRecords(records, client, dryRun) {
         const { rowCount } = await client.query(`
           INSERT INTO matches_v2 (
             match_date, match_time, home_team_id, away_team_id,
-            home_score, away_score, league_id, tournament_id, source_match_key
+            home_score, away_score, league_id, tournament_id, source_match_key, division
           )
           VALUES ${values}
           ON CONFLICT (match_date, home_team_id, away_team_id) DO UPDATE SET
@@ -1186,7 +1194,8 @@ async function promoteRecords(records, client, dryRun) {
             END,
             league_id = COALESCE(matches_v2.league_id, EXCLUDED.league_id),
             tournament_id = COALESCE(matches_v2.tournament_id, EXCLUDED.tournament_id),
-            source_match_key = COALESCE(matches_v2.source_match_key, EXCLUDED.source_match_key)
+            source_match_key = COALESCE(matches_v2.source_match_key, EXCLUDED.source_match_key),
+            division = COALESCE(EXCLUDED.division, matches_v2.division)
         `, params);
 
         stats.matchesInserted += rowCount;
