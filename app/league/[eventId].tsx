@@ -74,6 +74,15 @@ export default function LeagueStandingsScreen() {
   const [divisions, setDivisions] = useState<string[]>([]);
   const [selectedDivision, setSelectedDivision] = useState('All');
 
+  // Clear all filters
+  const clearAllFilters = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSelectedGender('All');
+    setSelectedAgeGroup('All');
+    setSelectedDivision('All');
+  };
+  const hasActiveFilters = selectedGender !== 'All' || selectedAgeGroup !== 'All' || selectedDivision !== 'All';
+
   // Session 91: Split loading — static data (once) vs filter-dependent data (on change)
   // Pattern from Rankings tab (rankings.tsx:491-593)
 
@@ -205,7 +214,7 @@ export default function LeagueStandingsScreen() {
 
     return (
       <TouchableOpacity
-        key={team.id}
+        key={`${team.id}-${team.position}`}
         style={[styles.pointsTableRow, isTopThree && styles.topThreeCard]}
         onPress={() => handleTeamPress(team.id)}
         activeOpacity={0.7}
@@ -268,7 +277,7 @@ export default function LeagueStandingsScreen() {
 
     return (
       <TouchableOpacity
-        key={team.id}
+        key={`${team.id}-${team.league_rank}`}
         style={[styles.teamCard, isTopThree && styles.topThreeCard]}
         onPress={() => handleTeamPress(team.id)}
         activeOpacity={0.7}
@@ -523,64 +532,75 @@ export default function LeagueStandingsScreen() {
           </View>
         )}
 
-        {/* Filter Bar */}
-        <View style={styles.filterBar}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {/* Gender Filter */}
-            {['All', 'Boys', 'Girls'].map(gender => (
-              <TouchableOpacity
-                key={`gender-${gender}`}
-                style={[
-                  styles.filterChip,
-                  selectedGender === gender && styles.filterChipActive
-                ]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setSelectedGender(gender);
-                  setSelectedDivision('All'); // Reset division when gender changes
-                }}
-              >
-                <Text style={[
-                  styles.filterChipText,
-                  selectedGender === gender && styles.filterChipTextActive
-                ]}>
-                  {gender}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Filter Section — Vertically stacked rows with labels */}
+        <View style={styles.filterSection}>
+          {/* Gender Row */}
+          <View style={styles.filterRow}>
+            <Text style={styles.filterLabel} numberOfLines={1}>Gender</Text>
+            <View style={styles.chipRowContent}>
+              {['All', 'Boys', 'Girls'].map(gender => (
+                <TouchableOpacity
+                  key={`gender-${gender}`}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.filterChip,
+                    selectedGender === gender && styles.filterChipActive
+                  ]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedGender(gender);
+                    setSelectedDivision('All');
+                  }}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    selectedGender === gender && styles.filterChipTextActive
+                  ]}>
+                    {gender}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
-            <View style={styles.filterDivider} />
+          {/* Age Group Row */}
+          <View style={styles.filterRow}>
+            <Text style={styles.filterLabel} numberOfLines={1}>Age</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled={true} contentContainerStyle={styles.chipScrollContent}>
+              {ageGroups.map(age => (
+                <TouchableOpacity
+                  key={`age-${age}`}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.filterChip,
+                    selectedAgeGroup === age && styles.filterChipActive
+                  ]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedAgeGroup(age);
+                    setSelectedDivision('All');
+                  }}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    selectedAgeGroup === age && styles.filterChipTextActive
+                  ]}>
+                    {age}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
 
-            {/* Age Group Filter — all valid groups scrollable */}
-            {ageGroups.map(age => (
-              <TouchableOpacity
-                key={`age-${age}`}
-                style={[
-                  styles.filterChip,
-                  selectedAgeGroup === age && styles.filterChipActive
-                ]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setSelectedAgeGroup(age);
-                  setSelectedDivision('All'); // Reset division when age group changes
-                }}
-              >
-                <Text style={[
-                  styles.filterChipText,
-                  selectedAgeGroup === age && styles.filterChipTextActive
-                ]}>
-                  {age}
-                </Text>
-              </TouchableOpacity>
-            ))}
-
-            {/* Division Filter — only shown when divisions exist for current age+gender */}
-            {divisions.length > 0 && (
-              <>
-                <View style={styles.filterDivider} />
+          {/* Division Row — only shown when divisions exist */}
+          {divisions.length > 0 && (
+            <View style={styles.filterRow}>
+              <Text style={[styles.filterLabel, { color: COLORS.gold }]} numberOfLines={1}>Div</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled={true} contentContainerStyle={styles.chipScrollContent}>
                 {['All', ...divisions].map(div => (
                   <TouchableOpacity
                     key={`div-${div}`}
+                    activeOpacity={0.7}
                     style={[
                       styles.filterChip,
                       selectedDivision === div && styles.filterChipDivisionActive
@@ -598,9 +618,26 @@ export default function LeagueStandingsScreen() {
                     </Text>
                   </TouchableOpacity>
                 ))}
-              </>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Results Bar — team count + active filter context + clear button */}
+          <View style={styles.resultsBar}>
+            <Text style={styles.resultsText}>
+              {filterLoading ? 'Loading...' : `${pointsTable.length} teams${
+                selectedGender !== 'All' || selectedAgeGroup !== 'All' || selectedDivision !== 'All'
+                  ? ` · ${selectedAgeGroup !== 'All' ? selectedAgeGroup + ' ' : ''}${selectedGender !== 'All' ? selectedGender : ''}${selectedDivision !== 'All' ? ' · ' + selectedDivision : ''}`
+                  : ''
+              }`}
+            </Text>
+            {hasActiveFilters && (
+              <TouchableOpacity style={styles.clearButton} onPress={clearAllFilters}>
+                <Ionicons name="close-circle" size={16} color="#EF4444" />
+                <Text style={styles.clearButtonText}>Clear</Text>
+              </TouchableOpacity>
             )}
-          </ScrollView>
+          </View>
         </View>
 
         {/* Session 91: Inline loading indicator for filter changes */}
@@ -799,38 +836,81 @@ const styles = StyleSheet.create({
     color: '#000',
   },
 
-  // Filters
-  filterBar: {
+  // Filters — vertically stacked rows with labels
+  filterSection: {
     paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
   },
+  filterLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+    width: 62,
+    flexShrink: 0,
+  },
+  chipRowContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chipScrollContent: {
+    paddingRight: 16,
+    alignItems: 'center',
+  },
   filterChip: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: COLORS.card,
+    borderRadius: 20,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#1F2937',
   },
   filterChipActive: {
     backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   filterChipDivisionActive: {
     backgroundColor: COLORS.gold,
+    borderColor: COLORS.gold,
   },
   filterChipText: {
-    color: COLORS.textSecondary,
+    color: '#fff',
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   filterChipTextActive: {
     color: '#000',
   },
-  filterDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: COLORS.cardBorder,
-    marginHorizontal: 8,
-    alignSelf: 'center',
+  resultsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 4,
+    paddingBottom: 4,
+  },
+  resultsText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    gap: 4,
+  },
+  clearButtonText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // Standings View Toggle

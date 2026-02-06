@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 14.0** | Last Updated: February 5, 2026 | Session 91 Complete
+> **Version 14.1** | Last Updated: February 5, 2026 | Session 91b Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1452,6 +1452,41 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 91b - League Standings Phase 9: Filter Polish + Division Data Backfill (February 5, 2026) - COMPLETE ✅
+
+**Goal:** Fix 3 QC issues on League Standings page: filter chip visual lag, label truncation, and teams showing 0 points due to division data gap.
+
+**Issues Fixed:**
+
+| # | Issue | Root Cause | Fix |
+|---|-------|-----------|-----|
+| 1 | Filter chips stay grayed out | Nested ScrollView touch conflict | Gender: `View` replaces `ScrollView`. Age/Div: `nestedScrollEnabled={true}`. All: `activeOpacity={0.7}` |
+| 2 | "Gender" label truncated | `filterLabel.width: 52` too narrow | Width 52→62, `numberOfLines={1}` on all labels |
+| 3 | Teams show 0 points | Matches split between `division='Div 1'` and `NULL` → view GROUP BY creates 2 rows | 3-layer fix: backfill (790) + inference (2,352) + view refresh |
+
+**Division Data Results:**
+
+| Source | Before | After |
+|--------|--------|-------|
+| Heartland with division | 3,643 | **5,963** |
+| HTGSports with division | ~6,000 | **6,292** |
+| View rows with division | 0 | **1,688** |
+| SBV Pre-NAL | Missing | **Division 1 \| 8GP \| 15pts \| #3** |
+
+**CRITICAL ARCHITECTURAL INSIGHT — League Standings Should Be Passthrough:**
+The current approach recomputes standings from match data via `app_league_standings` materialized view. This required complex division inference (7 iterative passes, COALESCE logic) that produced 176 multi-division artifacts and 5 NULL+division splits. **The league already publishes authoritative standings** (Heartland `subdiv_standings.cgi`). Next session should simplify: scrape standings directly, store as-is, display as-is. Don't reconstruct what the authority already publishes.
+
+**Known Residual (Not Blocking):**
+- 176 multi-division teams: inference assigns opponent's division for away matches
+- 5 NULL+named division splits: calendar-only teams with 1-2 incorrectly inferred matches
+- 161 Heartland league matches with NULL division (calendar-only, no CGI data for either team)
+
+**Files Created:** `inferMatchDivision.cjs`
+**Files Modified:** `app/league/[eventId].tsx` (UI fixes only)
+**Data Scripts Run:** `backfillDivisionTier.cjs`, `inferMatchDivision.cjs` (7 passes), Migration 093 view refresh
+
+---
 
 ### Session 91 - Generic Event Name Prevention + Display Utility Integration (February 5, 2026) - COMPLETE ✅
 

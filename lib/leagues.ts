@@ -271,7 +271,15 @@ export async function getLeaguePointsTable(
       elo_national_rank: row.national_rank ?? undefined,
     }));
 
-    // Session 91: Re-rank sequentially after filtering (view positions may have gaps)
+    // Sort by points (primary), then tiebreakers matching view ORDER BY
+    pointsTable.sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.goal_difference !== a.goal_difference) return b.goal_difference - a.goal_difference;
+      if (b.goals_for !== a.goals_for) return b.goals_for - a.goals_for;
+      return 0;
+    });
+
+    // Re-rank sequentially after sort
     pointsTable.forEach((team, index) => {
       team.position = index + 1;
     });
@@ -583,8 +591,7 @@ export async function getLeagueAgeGroups(eventId: string): Promise<string[]> {
   const { data, error } = await supabase
     .from('app_league_standings')
     .select('age_group')
-    .eq('league_id', eventId)
-    .limit(500);
+    .eq('league_id', eventId);
 
   if (error) {
     console.error('Error fetching age groups:', error);
@@ -616,8 +623,7 @@ export async function getLeagueDivisions(
     .from('app_league_standings')
     .select('division')
     .eq('league_id', eventId)
-    .not('division', 'is', null)
-    .limit(500);
+    .not('division', 'is', null);
 
   if (filters?.ageGroup && filters.ageGroup !== 'All') {
     query = query.eq('age_group', filters.ageGroup);
