@@ -11,13 +11,17 @@ name: Daily Data Sync (V2 Architecture)
 #      - GotSport active events       -> staging_games
 #      - HTGSports tournaments        -> staging_games
 #      - Heartland league             -> staging_games
+#   1.5. STANDINGS SCRAPING (parallel with Phase 1):
+#      - League standings (any adapter) -> staging_standings
 #   2. VALIDATION PIPELINE:
 #      - Process staging_games -> matches_v2
 #      - Create/link teams in teams_v2
 #      - Create/link events in leagues/tournaments
-#      - Refresh materialized views
+#   2.6. STANDINGS PROCESSING (lightweight resolver — NO fuzzy matching):
+#      - Process staging_standings -> league_standings (exact match + create-if-missing)
 #   3. ELO CALCULATION - Update power ratings in teams_v2
 #   4. PREDICTION SCORING - Score user predictions
+#   5. REFRESH VIEWS - Refresh all materialized views (including hybrid standings)
 #
 # SCRAPER FRAMEWORK:
 #   - Default: Universal Scraper Framework (scripts/universal/coreScraper.js)
@@ -303,6 +307,57 @@ jobs:
         continue-on-error: true
 
   # ============================================================================
+  # PHASE 1.5: STANDINGS SCRAPING (Parallel with match scraping)
+  # Scrape authoritative league standings → staging_standings
+  # Universal: works for ANY adapter with standings.enabled = true
+  # ============================================================================
+
+  scrape-standings:
+    name: "📋 Scrape Standings"
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.event.inputs.sync_type == 'full' ||
+        github.event.inputs.sync_type == 'heartland_only' ||
+        github.event.inputs.sync_type == null
+      }}
+    timeout-minutes: 30
+    outputs:
+      standings_staged: ${{ steps.scrape.outputs.standings }}
+      status: ${{ job.status }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Scrape League Standings (All Adapters)
+        id: scrape
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "📋 Scraping authoritative league standings"
+
+          # Scrape standings for each adapter that supports it
+          # Currently: heartland (live CGI for active season)
+          node scripts/universal/scrapeStandings.js --adapter heartland 2>&1 | tee standings_output.txt || true
+
+          # Extract count
+          STANDINGS=$(grep -oP 'Inserted \K\d+' standings_output.txt | tail -1 || echo "0")
+          echo "standings=$STANDINGS" >> $GITHUB_OUTPUT
+          echo "📋 Standings scraped: $STANDINGS"
+        timeout-minutes: 20
+        continue-on-error: true
+
+  # ============================================================================
   # PHASE 2: VALIDATION PIPELINE (After all data collected)
   # Process staging_games -> matches_v2, create/link teams, refresh views
   # ============================================================================
@@ -432,6 +487,62 @@ jobs:
           MATCHES=$(grep -oP 'Matches updated:\s+\K\d+' infer_output.txt | tail -1 || echo "0")
           echo "matches=$MATCHES" >> $GITHUB_OUTPUT
         timeout-minutes: 15
+        continue-on-error: true
+
+  # ============================================================================
+  # PHASE 2.6: STANDINGS PROCESSING (After validation + scraping)
+  # Process staging_standings → league_standings (production)
+  # Universal: works for ANY source that writes to staging_standings
+  # ============================================================================
+
+  process-standings:
+    name: "📋 Process Standings"
+    runs-on: ubuntu-latest
+    needs: [validation-pipeline, scrape-standings]
+    if: >-
+      ${{
+        always() &&
+        (github.event.inputs.sync_type == 'full' ||
+         github.event.inputs.sync_type == 'heartland_only' ||
+         github.event.inputs.sync_type == null) &&
+        (needs.validation-pipeline.result == 'success' ||
+         needs.validation-pipeline.result == 'skipped') &&
+        (needs.scrape-standings.result == 'success' ||
+         needs.scrape-standings.result == 'skipped')
+      }}
+    timeout-minutes: 15
+    outputs:
+      standings_resolved: ${{ steps.process.outputs.resolved }}
+      standings_skipped: ${{ steps.process.outputs.skipped }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Process Standings (staging → production)
+        id: process
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "📋 Processing standings: staging_standings → league_standings"
+          node scripts/maintenance/processStandings.cjs --verbose 2>&1 | tee process_output.txt || true
+
+          # Extract metrics
+          RESOLVED=$(grep -oP 'Resolved & upserted:\s*\K\d+' process_output.txt | tail -1 || echo "0")
+          SKIPPED_TEAM=$(grep -oP 'Skipped \(no team\):\s*\K\d+' process_output.txt | tail -1 || echo "0")
+          SKIPPED_LEAGUE=$(grep -oP 'Skipped \(no league\):\s*\K\d+' process_output.txt | tail -1 || echo "0")
+          TOTAL_SKIPPED=$((SKIPPED_TEAM + SKIPPED_LEAGUE))
+          echo "resolved=$RESOLVED" >> $GITHUB_OUTPUT
+          echo "skipped=$TOTAL_SKIPPED" >> $GITHUB_OUTPUT
+          echo "📋 Standings resolved: $RESOLVED, skipped: $TOTAL_SKIPPED"
+        timeout-minutes: 10
         continue-on-error: true
 
   # ============================================================================
@@ -807,7 +918,9 @@ jobs:
       - sync-gotsport
       - sync-htgsports
       - sync-heartland
+      - scrape-standings
       - validation-pipeline
+      - process-standings
       - infer-event-linkage
       - weekly-dedup-check
       - verify-integrity
@@ -844,7 +957,15 @@ jobs:
           echo "| Heartland | ${{ needs.sync-heartland.result || '⏭️ skipped' }} | ${{ needs.sync-heartland.outputs.matches_staged || '-' }} | ${{ needs.sync-heartland.outputs.framework_used || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "## 🚪 Phase 1.5: Intake Validation Gate" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Phase 1.5: Standings Scraping" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ needs.scrape-standings.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Standings Staged | ${{ needs.scrape-standings.outputs.standings_staged || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 🚪 Phase 1.75: Intake Validation Gate" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -861,6 +982,15 @@ jobs:
           echo "| Records Promoted | ${{ needs.validation-pipeline.outputs.matches_validated || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Matches Inserted | ${{ needs.validation-pipeline.outputs.matches_inserted || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Teams Created | ${{ needs.validation-pipeline.outputs.teams_created || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 📋 Phase 2.6: Standings Processing" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ needs.process-standings.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Standings Resolved | ${{ needs.process-standings.outputs.standings_resolved || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Standings Skipped | ${{ needs.process-standings.outputs.standings_skipped || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "## 🔍 Phase 2.25: Weekly Dedup Check" >> $GITHUB_STEP_SUMMARY
@@ -938,4 +1068,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "*V2 Architecture: staging_games → dataQualityEngine → matches_v2 → app_* views*" >> $GITHUB_STEP_SUMMARY
+          echo "*Standings: staging_standings → processStandings → league_standings → app_league_standings (hybrid)*" >> $GITHUB_STEP_SUMMARY
           echo "*Scraper: Universal Framework | Data Quality: Universal Engine | Weekly Dedup: Sundays*" >> $GITHUB_STEP_SUMMARY

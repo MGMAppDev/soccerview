@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 4.1** | Updated: February 5, 2026 | V2 Architecture + Session 90 (Cross-Import Duplicate Fix)
+> **Version 5.0** | Updated: February 6, 2026 | Dual-System Architecture (Session 92 QC)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -15,14 +15,40 @@
 > SoccerView ONLY includes premier/competitive youth soccer data.
 > **DO NOT scrape:** Recreational leagues, community programs, development leagues.
 > The `intakeValidator.js` will reject any recreational data that slips through.
+>
+> **⚠️ CRITICAL (Session 92 QC): DUAL-SYSTEM ARCHITECTURE**
+> SoccerView has TWO independent data pipelines. See "Dual-System Overview" below.
+> Match data → Heavy pipeline → Rankings/ELO. Standings data → Lightweight absorption → League Standings page.
+
+---
+
+## Dual-System Overview (Session 92 QC)
+
+SoccerView has TWO independent data pipelines. Choose the right one:
+
+| | System 1: Match Pipeline | System 2: Standings Absorption |
+|-|--------------------------|-------------------------------|
+| **Purpose** | Rankings, ELO, Teams, Matches | League Standings page |
+| **Input** | staging_games | staging_standings |
+| **Processor** | DQE / fastProcessStaging | processStandings.cjs |
+| **Resolver** | Heavy 3-tier (source map → canonical → fuzzy) | Lightweight (source map → exact → create) |
+| **Output** | matches_v2, teams_v2 (ELO) | league_standings |
+| **View** | app_rankings, app_matches_feed, etc. | app_league_standings (PART 1) |
+| **Fuzzy matching** | YES (cross-source dedup needed) | NO (authoritative data) |
+
+**Shared resource:** `teams_v2` — standings reads/enriches, never overwrites.
+
+See [ARCHITECTURE.md](1.2-ARCHITECTURE.md) for full dual-system diagram.
 
 ---
 
 ## Quick Start
 
+### Match Data (Rankings/ELO)
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    V2 DATA SCRAPING WORKFLOW                            │
+│                    MATCH DATA WORKFLOW                                   │
 │                                                                         │
 │   1. SCRAPE → node scripts/universal/coreScraper.js --adapter {name}   │
 │   2. PROCESS (Option A - fast bulk):                                    │
@@ -32,6 +58,23 @@
 │   3. ELO → node scripts/daily/recalculate_elo_v2.js                    │
 │   4. VIEWS → node scripts/refresh_views_manual.js                      │
 │   5. VERIFY → node scripts/daily/verifyDataIntegrity.js                │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### League Standings Data (League Standings Page)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    STANDINGS DATA WORKFLOW                               │
+│                                                                         │
+│   1. SCRAPE → node scripts/universal/scrapeStandings.js --adapter {n}  │
+│   2. PROCESS → node scripts/maintenance/processStandings.cjs           │
+│   3. VIEWS → REFRESH MATERIALIZED VIEW app_league_standings            │
+│   4. VERIFY → node scripts/_debug/verify_standings_completeness.cjs    │
+│                                                                         │
+│   Lightweight resolver: NO fuzzy matching. Trust the league data.       │
+│   Universal: zero custom code per source. Add adapter config only.      │
+│   Scale: designed for 200-400 league sources.                           │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -270,7 +313,123 @@ node scripts/universal/coreScraper.js --adapter htgsports --active --useUniversa
 
 ---
 
-## V2 Architecture Overview
+## League Standings Pipeline (Session 92 QC)
+
+### Architecture
+
+League standings are a **SEPARATE system** from the match pipeline. Standings data is authoritative — the league publishes exactly which teams are in which division with their W-L-T record. This data is ABSORBED with lightweight resolution, not forced through the heavy match pipeline.
+
+```
+  Adapter config (standings section)      scrapeStandings.js (universal)
+  e.g. heartland.js                 ───►  staging_standings (raw TEXT)
+                                                │
+                                                ▼
+                                     processStandings.cjs
+                                     LIGHTWEIGHT team resolution:
+                                       Step 1: source_entity_map + metadata verify
+                                       Step 2: Exact name + birth_year + gender
+                                       Step 3: Create new team (NO fuzzy matching)
+                                                │
+                                                ▼
+                                     league_standings (production, UUID FKs)
+                                                │
+                                                ▼
+                                     app_league_standings (hybrid view)
+                                     PART 1: Scraped standings (authoritative)
+                                     PART 2: Computed fallback (non-scraped leagues)
+```
+
+### Lightweight Team Resolver vs Heavy Match Resolver
+
+The standings resolver is intentionally simpler than the match pipeline's resolver:
+
+**Step 1: source_entity_map + Metadata Verification**
+- Look up source team ID in `source_entity_map`
+- If found, VERIFY metadata compatibility (birth_year, gender)
+- If metadata compatible → enrich NULLs → use it
+- If metadata INCOMPATIBLE → find enriched alternative or redirect
+
+**Step 2: Exact Name + Metadata Match**
+- Find teams_v2 record by (name, birth_year, gender) exactly
+- Prefer records WITH metadata over those with NULL
+- Register in source_entity_map for future Tier 1
+
+**Step 3: Create New Team (Trust the League)**
+- INSERT INTO teams_v2 with full metadata from standings
+- Register in source_entity_map
+- **NO FUZZY MATCHING** — creating is safer than matching wrong
+
+### Adding Standings for Any New League Source
+
+**1. Add standings config to adapter** (e.g., `scripts/adapters/mls_next.js`):
+```javascript
+standings: {
+  staticSources: [
+    { type: 'archive', url: 'https://...', season: '2025_fall', params: {...} }
+  ],
+  // OR dynamic discovery:
+  discoverSources: async (engine) => { /* return sources */ },
+  scrapeSource: async (engine, source) => {
+    // Return array of standings objects:
+    return [{
+      team_name: 'Team A',
+      team_source_id: 'src-123',     // REQUIRED for Tier 1 resolution
+      league_source_id: 'league-1',   // Links to leagues table
+      age_group: 'U-11',              // e.g. U-11, U-12
+      gender: 'Boys',                 // Boys or Girls
+      division: 'Division 1',         // Subdivision/division name
+      played: 8, wins: 6, losses: 1, draws: 1,
+      goals_for: 20, goals_against: 8, points: 19,
+      position: 1, red_cards: 0,
+    }];
+  },
+}
+```
+
+**2. Run the pipeline:**
+```bash
+# Scrape
+node scripts/universal/scrapeStandings.js --adapter mls_next
+
+# Process (lightweight resolver — no fuzzy matching)
+node scripts/maintenance/processStandings.cjs
+
+# Refresh view
+psql $DATABASE_URL -c "REFRESH MATERIALIZED VIEW app_league_standings;"
+
+# Verify 1:1 completeness
+node scripts/_debug/verify_standings_completeness.cjs
+```
+
+**3. That's it.** Zero custom code. The lightweight resolver handles all sources universally.
+
+### Standings-Specific Tables
+
+| Layer | Table | Purpose |
+|-------|-------|---------|
+| **Staging** | `staging_standings` | Raw standings (TEXT fields, no FKs) |
+| **Production** | `league_standings` | Validated standings (UUID FKs to teams_v2, leagues) |
+| **View** | `app_league_standings` | Hybrid: PART 1 (scraped) UNION PART 2 (computed fallback) |
+
+### Daily Pipeline Integration
+
+Standings scraping and processing runs as part of the nightly GitHub Actions workflow:
+- **Phase 1.5:** `scrapeStandings.js --adapter heartland` (parallel with match scraping)
+- **Phase 2.6:** `processStandings.cjs` (after match pipeline completes)
+- **Phase 5:** `REFRESH MATERIALIZED VIEW app_league_standings` (with all other views)
+
+### Scale: 200-400 League Sources
+
+The standings pipeline is designed for massive scale:
+- **Per-source work:** Add ~20 lines of adapter config (standings section)
+- **Processing:** Universal lightweight resolver handles ALL sources
+- **No fuzzy matching:** Avoids O(n²) name comparison scaling issues
+- **source_entity_map:** O(1) lookup per team after first resolution
+- **Future optimization:** Bulk SQL operations when row count exceeds 10K+
+
+---
+
+## V2 Architecture Overview (Match Pipeline)
 
 ### Data Flow
 
@@ -824,20 +983,20 @@ Staging tables are NOT auto-cleared. This allows:
 
 ## Quick Reference
 
-### Daily Sync Workflow (Session 57)
+### Daily Sync Workflow (Session 92 QC — Dual-System)
 
 ```yaml
 # GitHub Actions: daily-data-sync.yml
-# Workflow Inputs:
-#   use_universal_framework: true (default)
-#   fallback_on_error: true (default)
+# TWO INDEPENDENT PIPELINES running in the same workflow
 
-# Phase 1: Scrape (parallel) - Universal Framework + Fallback
+# ═══════════ SYSTEM 1: MATCH PIPELINE (Rankings/ELO) ═══════════
+
+# Phase 1: Scrape matches (parallel) — Universal Framework + Fallback
 sync-gotsport:   coreScraper.js --adapter gotsport (fallback: syncActiveEvents.js)
 sync-htgsports:  coreScraper.js --adapter htgsports (fallback: scrapeHTGSports.js)
 sync-heartland:  coreScraper.js --adapter heartland (fallback: legacy scripts)
 
-# Phase 2: Validate (sequential)
+# Phase 2: Validate matches (sequential) — Heavy 3-tier resolver
 validation-pipeline → matches_v2, teams_v2, leagues, tournaments
 
 # Phase 2.5: Self-healing inference linkage
@@ -846,8 +1005,18 @@ infer-event-linkage → Links orphaned matches by team patterns
 # Phase 3: ELO Calculation
 recalculate-elo → Updates power ratings
 
-# Phase 4: Refresh Views
-refresh-views → app_rankings, app_matches_feed, etc.
+# ═══════════ SYSTEM 2: STANDINGS ABSORPTION (League Page) ═══════════
+
+# Phase 1.5: Scrape standings (parallel with Phase 1)
+scrape-standings: scrapeStandings.js --adapter heartland
+
+# Phase 2.6: Process standings — Lightweight resolver (NO fuzzy matching)
+process-standings: processStandings.cjs → league_standings
+
+# ═══════════ SHARED ═══════════
+
+# Phase 5: Refresh ALL views (both systems)
+refresh-views → app_rankings, app_matches_feed, app_league_standings, etc.
 ```
 
 ### Commands

@@ -1,12 +1,18 @@
 # SoccerView Data Expansion Roadmap
 
-> **Version 4.0** | Updated: February 5, 2026 | V2 Architecture + Session 89 (Source Entity Resolution)
+> **Version 5.0** | Updated: February 6, 2026 | Dual-System Architecture (Session 92 QC)
 >
-> Strategic guide for adding new data sources using the V2 three-layer architecture.
-> **Session 57:** Adding a new source now takes ~1-2 hours (adapter config only) instead of ~1-2 days (custom script).
+> Strategic guide for adding new data sources using the V2 dual-system architecture.
+> **Session 57:** Adding a new match source takes ~1-2 hours (adapter config only).
+> **Session 92 QC:** Adding a new standings source takes ~1-2 hours (adapter config only).
 >
 > **⚠️ CRITICAL (Session 84): All new data sources MUST be PREMIER/COMPETITIVE level only.**
 > Recreational, community, and development leagues are EXCLUDED from SoccerView.
+>
+> **⚠️ DUAL-SYSTEM (Session 92 QC):** Each new league source provides TWO data types:
+> - **Match data** → Heavy pipeline → Rankings/ELO (staging_games → DQE → matches_v2)
+> - **Standings data** → Lightweight absorption → League Standings page (staging_standings → processStandings → league_standings)
+> Both are configured in the same adapter file. See [DATA_SCRAPING_PLAYBOOK.md](3-DATA_SCRAPING_PLAYBOOK.md).
 
 ---
 
@@ -100,15 +106,23 @@ Nightly Pipeline:
 
 **"Events" is BANNED** - Always use specific terminology.
 
-### Rule 4: V2 Architecture
+### Rule 4: Dual-System V2 Architecture (Session 92 QC)
 
-All new scrapers MUST follow V2 architecture:
+All new sources provide TWO data types through TWO independent pipelines:
 
 ```
-Scraper → staging_games → dataQualityEngine.js → matches_v2 → app_views
+MATCH DATA (Rankings/ELO):
+  Scraper → staging_games → DQE/fastProcess → matches_v2 → app_views
+  Heavy 3-tier resolver (source map → canonical → fuzzy)
+
+STANDINGS DATA (League Standings page):
+  Scraper → staging_standings → processStandings → league_standings → app_league_standings
+  Lightweight resolver (source map → exact → create, NO fuzzy matching)
 ```
 
-**See:** [docs/DATA_SCRAPING_PLAYBOOK.md](DATA_SCRAPING_PLAYBOOK.md)
+Both are configured in the same adapter file (e.g., `scripts/adapters/heartland.js`).
+
+**See:** [docs/DATA_SCRAPING_PLAYBOOK.md](3-DATA_SCRAPING_PLAYBOOK.md)
 
 ### Rule 5: Source Entity IDs Required (Session 89)
 
@@ -141,11 +155,11 @@ The pipeline (`dataQualityEngine.js` and `fastProcessStaging.cjs`) automatically
 
 ## Currently Integrated Sources
 
-| Platform | Type | States | Status |
-|----------|------|--------|--------|
-| **GotSport** | Primary | 50 | ✅ Production |
-| **HTGSports** | Secondary | KS, MO | ✅ Production |
-| **Heartland CGI** | Secondary | KS, MO | ✅ Production (V2) |
+| Platform | Type | States | Matches | Standings | Status |
+|----------|------|--------|---------|-----------|--------|
+| **GotSport** | Primary | 50 | ✅ Production | - | Rankings data |
+| **HTGSports** | Secondary | KS, MO | ✅ Production | Planned | Match data |
+| **Heartland** | Secondary | KS, MO | ✅ Production | ✅ Production (1,211 teams) | Dual-system pioneer |
 
 ---
 

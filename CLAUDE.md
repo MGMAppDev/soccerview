@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 14.1** | Last Updated: February 5, 2026 | Session 91b Complete
+> **Version 15.2** | Last Updated: February 7, 2026 | Session 92 QC Part 2 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1020,6 +1020,51 @@ CREATE TABLE source_entity_map (
 - Using raw event names without `isGeneric()` check
 - Treating generic names as INVALID (wrong layer — they're INCOMPLETE)
 
+### 36. Standings Data = Lightweight Absorption, Not Heavy Processing (Session 92 QC)
+
+**Problem:** League standings page showed only 7 of 11 teams for U-11 Boys Division 1. 439 of 1,173 standings teams (37%) had NULL metadata, making them invisible in filtered views.
+
+**Root Cause:** `processStandings.cjs` used the SAME heavy 3-tier entity resolution designed for messy match data, including pg_trgm fuzzy matching. This caused false positives and resolved teams to wrong records with NULL birth_year/gender.
+
+**Solution: Dual-System Architecture — Two Pipelines, Two Resolvers**
+
+| | System 1: Match Pipeline | System 2: Standings Absorption |
+|-|--------------------------|-------------------------------|
+| **Purpose** | Rankings, ELO, Teams, Matches | League Standings page ONLY |
+| **Processor** | DQE / fastProcessStaging | processStandings.cjs |
+| **Resolver** | Heavy 3-tier (source map → canonical → fuzzy) | Lightweight (source map + verify → exact → create) |
+| **Fuzzy matching** | YES | NO (authoritative data) |
+| **On failure** | Skip (importable later) | Create new team (safer) |
+
+**Lightweight Resolver (processStandings.cjs):**
+1. source_entity_map lookup + **METADATA VERIFICATION** (birth_year, gender)
+2. Exact name + birth_year + gender match (prefer records WITH metadata)
+3. Create new team with full metadata (trust the league — NO fuzzy matching)
+
+**Metadata Enrichment:** When resolved team has NULL birth_year/gender, fill from authoritative standings data. Only fills NULLs — never overwrites existing data.
+
+**Results:** NULL metadata: 439 → 17 (96% improvement). U-11 Boys Division 1: 7 → 11 teams.
+
+**Anti-patterns:**
+- Using pg_trgm fuzzy matching on authoritative standings data
+- Resolving standings teams through the match pipeline's 3-tier system
+- Allowing NULL-metadata resolution that makes teams invisible in filters
+
+**Scale:** Designed for 200-400 league sources. Zero custom code per source.
+
+### 37. CONCURRENTLY Requires Unique Index — No Exceptions (Session 92 QC Part 2)
+
+**Problem:** `refresh_app_views()` SQL function used `REFRESH MATERIALIZED VIEW CONCURRENTLY` on `app_league_standings`, but the hybrid UNION ALL view (migration 094) has NO UNIQUE INDEX. CONCURRENTLY requires a unique index → the statement fails → PL/pgSQL rolls back the entire function → ALL 5 views stay stale → app shows "0 Matches" and timeouts.
+
+**Fix:** Migration 095 — use non-concurrent refresh for `app_league_standings` only. All other views retain CONCURRENTLY (they have unique indexes).
+
+**Prevention Rule:** When creating or redefining a materialized view:
+1. Check if `refresh_app_views()` uses CONCURRENTLY for that view
+2. If the view has no UNIQUE index → update the function to use non-concurrent
+3. UNION ALL views typically cannot have unique indexes (row overlap risk)
+
+**Related:** `refresh_views_manual.js` (line 49) already handled this correctly. The SQL function was the gap.
+
 ---
 
 ## Quick Reference
@@ -1028,17 +1073,21 @@ CREATE TABLE source_entity_map (
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 158,043 | Team records (~59,401 with ELO ratings) |
+| `teams_v2` | 158,072 | Team records (~51,796 with computed ELO) |
 | `matches_v2` | 403,068 active | Match results (~5,468 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 280 | League metadata |
-| `tournaments` | 1,711 | Tournament metadata (17 dupes merged, 0 generic names) |
-| `source_entity_map` | 3,253 | **NEW** Universal source ID mappings (Session 89) |
+| `leagues` | 279 | League metadata |
+| `tournaments` | 1,750 | Tournament metadata (0 generic names) |
+| `league_standings` | 1,208 | **STANDINGS** Scraped from Heartland (Session 92 QC) |
+| `staging_standings` | 1,211 | **STANDINGS** Raw standings staging (Session 92) |
+| `source_entity_map` | 4,464 | Universal source ID mappings (Session 89+92QC) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
 | `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
 | `staging_games` | 86,491 | Staging area (0 unprocessed) |
+| `staging_standings` | 1,211 | **NEW** Standings staging (Session 92) |
+| `league_standings` | 1,176 | **NEW** Production standings (Session 92) |
 | `staging_rejected` | 1 | Rejected intake data (Session 79) |
 | `seasons` | 3 | Season definitions |
 
@@ -1048,7 +1097,7 @@ CREATE TABLE source_entity_map (
 |------|---------|
 | `app_rankings` | Rankings & Teams tabs |
 | `app_matches_feed` | Matches tab |
-| `app_league_standings` | League standings |
+| `app_league_standings` | League standings (hybrid: scraped UNION computed — Session 92) |
 | `app_team_profile` | Team detail |
 | `app_upcoming_schedule` | Future games |
 
@@ -1242,10 +1291,11 @@ eas build --platform android
 | Script | Purpose |
 |--------|---------|
 | `scripts/universal/coreScraper.js` | Core engine + `discoverEventsFromDatabase()` |
+| `scripts/universal/scrapeStandings.js` | **NEW** Universal standings scraper engine (Session 92) |
 | `scripts/universal/adaptiveLearning.js` | **NEW** Adaptive learning engine (Session 63) |
 | `scripts/adapters/gotsport.js` | GotSport adapter config |
 | `scripts/adapters/htgsports.js` | HTGSports adapter (Puppeteer for SPA) |
-| `scripts/adapters/heartland.js` | Heartland adapter (Cheerio for CGI) |
+| `scripts/adapters/heartland.js` | Heartland adapter (Cheerio for CGI + standings) |
 | `scripts/adapters/_template.js` | Template for creating new adapters |
 
 **Usage:**
@@ -1255,6 +1305,10 @@ node scripts/universal/coreScraper.js --adapter gotsport --active
 
 # Scrape specific event
 node scripts/universal/coreScraper.js --adapter htgsports --event 12345
+
+# Scrape league standings (Session 92)
+node scripts/universal/scrapeStandings.js --adapter heartland
+node scripts/maintenance/processStandings.cjs --verbose
 
 # Learn patterns from existing data
 node scripts/universal/adaptiveLearning.js --learn-teams --source htgsports
@@ -1314,6 +1368,7 @@ Performance: 4.6ms per 1000 records.
 | `deduplicateMatchKeys.js` | Removed 3,562 duplicate source_match_key records |
 | `applyConstraint.js` | Added UNIQUE constraint on source_match_key |
 | `091_block_generic_event_names.sql` | **NEW (Session 91)** CHECK constraints blocking generic tournament/league names |
+| `094_league_standings_passthrough.sql` | **NEW (Session 92)** staging_standings + league_standings + hybrid view |
 
 ### Maintenance (`scripts/maintenance/`)
 
@@ -1323,6 +1378,7 @@ Diagnostics, audits, and utilities.
 |--------|---------|
 | `ensureViewIndexes.js` | **NIGHTLY** Universal index maintenance for all views (Session 69) |
 | `recalculateHistoricalRanks.cjs` | Recalculate rank_history with consistent baseline (Session 70) |
+| `processStandings.cjs` | **NEW** Universal standings processor: staging → production (Session 92) |
 | `fastProcessStaging.cjs` | **Universal bulk staging processor** - 7,200 matches/30s (Session 87.2) |
 | `fixReverseMatches.cjs` | **Retroactive reverse match dedup** (Session 88) |
 | `fixTeamStates.cjs` | **Retroactive state correction** from team names (Session 88) |
@@ -1452,6 +1508,132 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 92 QC Part 2 - Fix Broken Views + Architecture Verification (February 7, 2026) - COMPLETE ✅
+
+**Goal:** Fix critical app errors (Home: "0 Matches", Teams: timeout) caused by broken `refresh_app_views()` function + resolve Supabase security lint errors + prove entire architecture is sound.
+
+**Root Cause:** Migration 094 (hybrid UNION ALL standings view) had NO UNIQUE INDEX on `app_league_standings`. The `refresh_app_views()` SQL function used `REFRESH MATERIALIZED VIEW CONCURRENTLY` on this view, which requires a unique index. The statement failed, and since `refresh_app_views()` is a PL/pgSQL function (transactional), ALL view refreshes rolled back — keeping all 5 views stale.
+
+**Key Insight:** `refresh_views_manual.js` (line 49) already handled this correctly (`const useConcurrent = view !== 'app_league_standings'`), so the nightly pipeline kept views fresh. But any script calling `refresh_app_views()` directly would fail.
+
+**Completed:**
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1 | Diagnose view/DB state | Views populated (nightly OK), `refresh_app_views()` FAILS, no unique index on standings view |
+| 2 | Migration 095: Fix refresh function | Non-concurrent for `app_league_standings` only |
+| 3 | Migration 095: Enable RLS | `staging_standings` + `league_standings` RLS ENABLED |
+| 4 | Verify refresh_app_views() | SUCCESS — 145.8s |
+| 5 | Full app verification | ALL PASSED — 52K teams, 366K matches, RLS enabled |
+| 6 | Architecture health check | **50/50 ALL GREEN** — every layer verified |
+| 7 | Update ARCHITECTURE.md | refresh_app_views() section updated with non-concurrent note |
+
+**Architecture Health Report (50/50 GREEN):**
+
+| Category | Checks | Status |
+|----------|--------|--------|
+| Layer 1: Intake | 8 | All GREEN — 3 source platforms, 0 backlog, adapter template ready |
+| Layer 2: Processing | 15 | All GREEN — 158K teams, 403K matches, 4.4K source entity mappings |
+| Layer 3: Presentation | 8 | All GREEN — all 5 views populated, hybrid standings (scraped + computed) |
+| Security | 3 | All GREEN — RLS enabled, 5 write protection triggers on teams_v2 |
+| Dual-System | 3 | All GREEN — both pipelines verified end-to-end |
+| Nightly Pipeline | 7 | All GREEN — all workflow phases configured |
+| Scale Readiness | 6 | All GREEN — 3 adapters, template ready, universal processStandings |
+
+**Files Created:** `diagnose_view_health.cjs`, `verify_architecture_health.cjs`, `095_fix_refresh_views_and_rls.sql`
+**Files Modified:** `1.2-ARCHITECTURE.md` (refresh function section), `CLAUDE.md`
+**Zero Match Pipeline Impact:** Rankings, ELO, Teams, Matches — completely untouched
+
+---
+
+### Session 92 QC - Dual-System Architecture: Lightweight Standings Resolver (February 6, 2026) - COMPLETE ✅
+
+**Goal:** Fix standings page showing only 7 of 11 teams for U-11 Boys Division 1. 439 of 1,173 teams (37%) had NULL metadata, making them invisible in filtered views.
+
+**Root Cause:** `processStandings.cjs` used the same heavy 3-tier entity resolution as the match pipeline, including pg_trgm fuzzy matching. Standings data is authoritative — it doesn't need fuzzy matching.
+
+**ARCHITECTURAL PRINCIPLE (Principle 36): Two Pipelines, Two Resolvers, One Shared Team Registry**
+
+| | System 1: Match Pipeline | System 2: Standings Absorption |
+|-|--------------------------|-------------------------------|
+| **Purpose** | Rankings, ELO, Teams, Matches | League Standings page ONLY |
+| **Processor** | DQE / fastProcessStaging | processStandings.cjs |
+| **Resolver** | Heavy 3-tier (fuzzy) | Lightweight (exact + create) |
+| **Shared** | teams_v2 (standings reads/enriches NULL fields, never overwrites) |
+
+**Completed:**
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1 | Diagnostic (gap analysis) | 439 NULL metadata teams, 0% resolution in filters |
+| 2 | Rewrite processStandings.cjs resolver | 3-step lightweight (source map → exact → create, NO fuzzy) |
+| 3 | Add metadata verification | Step 1 verifies birth_year/gender, redirects if incompatible |
+| 4 | Add metadata enrichment | Safe: only fills NULLs, never overwrites |
+| 5 | Handle unique_team_identity conflicts | Redirect to existing enriched record |
+| 6 | Reprocess all 1,211 standings | 1,211 resolved, 0 skipped (was 35 skipped) |
+| 7 | Verify U-11 Boys Division 1 | 11 teams showing (was 7) |
+| 8 | Update all architecture docs | ARCHITECTURE.md, PLAYBOOK.md, ROADMAP.md, CLAUDE.md |
+
+**Results:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| NULL metadata teams | 439 (37%) | 17 (1.4%) |
+| U-11 Boys Division 1 | 7 teams | **11 teams** |
+| Sporting City 15 Pre MLSN-East | Missing | **#2, 19pts** |
+| Teams resolved | 1,176 (35 skipped) | **1,211 (0 skipped)** |
+| Source entity map corrections | 0 | **~100 redirected** |
+| Teams enriched | 0 | **~300 NULL fields filled** |
+| New teams created | 0 | **~20 (trust the league)** |
+
+**Files Modified:** `processStandings.cjs` (major rewrite), `1.2-ARCHITECTURE.md`, `3-DATA_SCRAPING_PLAYBOOK.md`, `3-DATA_EXPANSION_ROADMAP.md`, `CLAUDE.md`
+**Files Created:** `diagnose_standings_gaps.cjs`, `verify_standings_completeness.cjs`
+**Zero Match Pipeline Impact:** Rankings, ELO, Teams, Matches — completely untouched
+
+---
+
+### Session 92 - League Standings Passthrough Architecture (February 6, 2026) - COMPLETE ✅
+
+**Goal:** Replace over-engineered standings computation with a hybrid passthrough architecture. Scrape authoritative league standings, store as-is, display as-is. Computed fallback for leagues without scraped data.
+
+**CRITICAL ARCHITECTURAL FIX:** The league IS the authority on its own standings. Don't reconstruct what the authority already publishes.
+
+**Completed:**
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1 | Migration 094 (tables + hybrid view) | staging_standings + league_standings + hybrid UNION ALL view |
+| 2 | Verify zero behavior change | 15,928 rows, SBV Pre-NAL 15 unchanged (Division 1, 8GP, 15pts) |
+| 3 | Universal standings scraper engine | `scrapeStandings.js` — source-agnostic, reads adapter config |
+| 4 | Universal standings processor | `processStandings.cjs` — lightweight entity resolution (Session 92 QC) |
+| 5 | Heartland adapter standings config | Archives (static HTML) + live CGI scraping |
+| 6 | Scrape Heartland Fall 2025 | 1,211 staging rows from 132 divisions (73 Boys + 59 Girls) |
+| 7 | Process standings | **1,211 resolved, 0 skipped** (after Session 92 QC fix) |
+| 8 | Refresh views, verify | 1,208 scraped + computed fallback view rows |
+| 9 | Update daily pipeline | Phase 1.5 (scrape standings) + Phase 2.6 (process standings) |
+
+**Hybrid View Architecture:**
+
+```
+app_league_standings = PART 1 (scraped, authoritative) UNION ALL PART 2 (computed fallback)
+  PART 1: league_standings → teams_v2 → leagues (1,208 rows for Heartland)
+  PART 2: matches_v2 CTE (for non-Heartland leagues)
+  WHERE l.id NOT IN (SELECT DISTINCT league_id FROM league_standings)
+```
+
+**Universal Design (CLAUDE.md Principle 11 + 36 compliance):**
+- `scrapeStandings.js`: Source-agnostic engine, reads any adapter with `standings.enabled`
+- `processStandings.cjs`: **Lightweight resolver** — separate from match pipeline (Principle 36)
+- `staging_standings` → `league_standings` → `app_league_standings`: Same three-layer pattern
+- Adding a new standings source = adapter config only (1-2 hours, zero custom code)
+- Designed for 200-400 league sources with zero per-source custom code
+
+**Files Created:** `094_league_standings_passthrough.sql`, `scrapeStandings.js`, `processStandings.cjs`
+**Files Modified:** `heartland.js` (adapter), `daily-data-sync.yml`, `1.2-ARCHITECTURE.md`
+**No App Changes Required:** View schema identical, all `lib/leagues.ts` queries work unchanged
+
+---
 
 ### Session 91b - League Standings Phase 9: Filter Polish + Division Data Backfill (February 5, 2026) - COMPLETE ✅
 

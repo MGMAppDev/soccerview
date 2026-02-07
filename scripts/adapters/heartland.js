@@ -364,6 +364,45 @@ export default {
   },
 
   // =========================================
+  // STANDINGS SCRAPING (Session 92)
+  // Universal pattern: discoverSources() + scrapeSource()
+  // Supports Season Archives (static HTML) + live CGI standings
+  // =========================================
+
+  standings: {
+    enabled: true,
+
+    /**
+     * Available seasons in Heartland archives.
+     * URL pattern: /reports/seasoninfo/archives/standings/{year}_{season}/
+     * Files: boys_prem.html, girls_prem.html (Premier-only per Session 84)
+     */
+    staticSources: [
+      { id: '2025_fall', name: 'Heartland Fall 2025', season: '2025_fall', snapshot_date: '2025-12-15', league_source_id: 'heartland-premier-2025' },
+      { id: '2025_spring', name: 'Heartland Spring 2025', season: '2025_spring', snapshot_date: '2025-07-15', league_source_id: 'heartland-premier-2025' },
+      { id: '2024_fall', name: 'Heartland Fall 2024', season: '2024_fall', snapshot_date: '2024-12-15', league_source_id: 'heartland-premier-2024' },
+      { id: '2024_spring', name: 'Heartland Spring 2024', season: '2024_spring', snapshot_date: '2024-07-15', league_source_id: 'heartland-premier-2024' },
+      { id: '2023_fall', name: 'Heartland Fall 2023', season: '2023_fall', snapshot_date: '2023-12-15', league_source_id: 'heartland-premier-2023' },
+    ],
+
+    /**
+     * Scrape standings from a single source (season archive file or live CGI).
+     * Returns array of universal standings objects for staging_standings.
+     *
+     * @param {object} engine - Scraper engine context (fetchWithCheerio, sleep, etc.)
+     * @param {object} source - Source descriptor from staticSources or discoverSources
+     * @returns {Array} Universal standings objects
+     */
+    scrapeSource: async (engine, source) => {
+      // Route: live CGI for current season, archives for historical
+      if (source.live_cgi) {
+        return scrapeHeartlandCGIStandings(engine, source);
+      }
+      return scrapeHeartlandArchiveStandings(engine, source);
+    },
+  },
+
+  // =========================================
   // CUSTOM SCRAPING LOGIC
   // Routes to CGI or Calendar scraping based on event level
   // =========================================
@@ -1004,4 +1043,309 @@ function parseCalendarDivision(teamName) {
   }
 
   return { gender, ageGroup };
+}
+
+// =========================================
+// SEASON ARCHIVE STANDINGS SCRAPING (Session 92)
+// Adapter-specific parsing for Heartland archives.
+// Produces UNIVERSAL standings objects for staging_standings.
+// =========================================
+
+/**
+ * Scrape standings from Heartland Season Archives (static HTML).
+ * URL: /reports/seasoninfo/archives/standings/{season}/{gender}_prem.html
+ *
+ * HTML structure:
+ *   <h4>U-9 Boys Premier Subdivision 1</h4>
+ *   <table> 8 columns: Team | Win | Lose | Tie | GF | GA | RC | Pts </table>
+ *   Team cell format: "{ID} {TEAM_NAME}" (e.g., "7916 SPORTING BV Academy 16")
+ *
+ * @param {object} engine - Scraper engine context
+ * @param {object} source - Source descriptor (id, season, league_source_id, snapshot_date)
+ * @returns {Array} Universal standings objects for staging_standings
+ */
+async function scrapeHeartlandArchiveStandings(engine, source) {
+  const baseUrl = `https://www.heartlandsoccer.net/reports/seasoninfo/archives/standings/${source.season}`;
+  const allStandings = [];
+
+  // Premier only (Session 84) — scrape boys_prem.html and girls_prem.html
+  const files = [
+    { file: 'boys_prem.html', gender: 'Boys' },
+    { file: 'girls_prem.html', gender: 'Girls' },
+  ];
+
+  for (const { file, gender } of files) {
+    const url = `${baseUrl}/${file}`;
+    console.log(`  Fetching ${url}...`);
+
+    const $ = await engine.fetchWithCheerio(url);
+    if (!$) {
+      console.log(`  ⚠️ Could not fetch ${file} — skipping`);
+      continue;
+    }
+
+    // Parse all division headings and their tables
+    const standings = parseArchiveStandingsHtml($, gender, source);
+    console.log(`  ${file}: ${standings.length} team standings from ${countDivisions(standings)} divisions`);
+    allStandings.push(...standings);
+
+    await engine.applyRateLimit();
+  }
+
+  return allStandings;
+}
+
+/**
+ * Parse Heartland archive HTML into universal standings objects.
+ *
+ * Structure: <h4>U-9 Boys Premier Subdivision 1</h4> followed by <table>
+ * Table columns: Team | Win | Lose | Tie | GF | GA | RC | Pts
+ */
+function parseArchiveStandingsHtml($, gender, source) {
+  const standings = [];
+
+  // Find all h4 headings (division headers)
+  $('h4').each((_, heading) => {
+    const headingText = $(heading).text().trim();
+
+    // Parse: "U-9 Boys Premier Subdivision 1"
+    const match = headingText.match(/U-?(\d+)\s+(?:Boys|Girls)\s+Premier\s+Subdivision\s+(\d+)/i);
+    if (!match) return; // Skip non-standings headings
+
+    const ageGroup = `U-${match[1]}`;
+    const subdivision = match[2];
+    const division = `Subdivision ${subdivision}`;
+
+    // Find the next table after this heading
+    const $table = $(heading).nextAll('table').first();
+    if (!$table.length) return;
+
+    // Parse data rows (skip header rows)
+    let position = 0;
+    $table.find('tr').each((rowIdx, row) => {
+      const cells = $(row).find('td');
+      if (cells.length < 8) return;
+
+      const teamCell = $(cells[0]).text().trim();
+      const winsText = $(cells[1]).text().trim();
+      const lossesText = $(cells[2]).text().trim();
+      const drawsText = $(cells[3]).text().trim();
+      const gfText = $(cells[4]).text().trim();
+      const gaText = $(cells[5]).text().trim();
+      const rcText = $(cells[6]).text().trim();
+      const ptsText = $(cells[7]).text().trim();
+
+      // Skip header rows ("Team", "Win", etc.)
+      if (teamCell.toLowerCase() === 'team' || winsText.toLowerCase() === 'win') return;
+      // Skip title rows ("Subdivision Standings")
+      if (teamCell.toLowerCase().includes('standings')) return;
+
+      // Parse team: "{ID} {NAME}" → extract ID and name
+      const teamMatch = teamCell.match(/^([A-Za-z0-9]+)\s+(.+)$/);
+      if (!teamMatch) return;
+
+      const teamSourceId = teamMatch[1];
+      const teamName = teamMatch[2].trim();
+
+      const wins = parseInt(winsText, 10) || 0;
+      const losses = parseInt(lossesText, 10) || 0;
+      const draws = parseInt(drawsText, 10) || 0;
+      const goalsFor = parseInt(gfText, 10) || 0;
+      const goalsAgainst = parseInt(gaText, 10) || 0;
+      const redCards = parseInt(rcText, 10) || null;
+      const points = parseInt(ptsText, 10) || 0;
+      const played = wins + losses + draws;
+
+      position++;
+
+      standings.push({
+        league_source_id: source.league_source_id,
+        division,
+        team_name: teamName,
+        team_source_id: `heartland-${teamSourceId}`,
+        played,
+        wins,
+        losses,
+        draws,
+        goals_for: goalsFor,
+        goals_against: goalsAgainst,
+        points,
+        position,
+        red_cards: redCards,
+        season: source.season,
+        age_group: ageGroup,
+        gender,
+        extra_data: {
+          heartland_team_number: teamSourceId,
+          heartland_subdivision: subdivision,
+          raw_heading: headingText,
+        },
+      });
+    });
+  });
+
+  return standings;
+}
+
+/**
+ * Scrape live standings from subdiv_standings.cgi via Puppeteer.
+ * Uses same-origin AJAX from within the Score-Standings page context.
+ * ALIVE during active season, EMPTY between seasons.
+ *
+ * @param {object} engine - Scraper engine context
+ * @param {object} source - Source descriptor with live_cgi: true
+ * @returns {Array} Universal standings objects for staging_standings
+ */
+async function scrapeHeartlandCGIStandings(engine, source) {
+  const standingsUrl = "https://www.heartlandsoccer.net/league/score-standings/";
+  console.log(`  Opening Score-Standings page for CGI AJAX...`);
+
+  let page;
+  try {
+    page = await engine.fetchWithPuppeteer(standingsUrl, {
+      waitForSelector: "#results-premier-b_g",
+    });
+    await engine.sleep(5000);
+  } catch (error) {
+    console.log(`  ❌ Failed to open Score-Standings page: ${error.message}`);
+    return [];
+  }
+
+  // Probe: check if CGI has data (between-season check)
+  try {
+    const probeResult = await page.evaluate(async () => {
+      try {
+        const resp = await fetch(
+          "https://heartlandsoccer.net/reports/cgi-jrb/subdiv_standings.cgi?level=Premier&b_g=Boys&age=U-13&subdivison=1"
+        );
+        const text = await resp.text();
+        return { status: resp.status, length: text.length, hasTable: text.includes("<table") };
+      } catch (e) {
+        return { error: e.message };
+      }
+    });
+
+    if (probeResult.error || probeResult.length === 0 || !probeResult.hasTable) {
+      console.log(`  ⚠️ Standings CGI empty — between seasons`);
+      await page.close();
+      return [];
+    }
+  } catch (error) {
+    console.log(`  ❌ Probe failed: ${error.message}`);
+    await page.close();
+    return [];
+  }
+
+  console.log(`  ✅ CGI has data — scraping all divisions...`);
+
+  const allStandings = [];
+  const genders = ["Boys", "Girls"];
+  const ages = ["U-9", "U-10", "U-11", "U-12", "U-13", "U-14", "U-15", "U-16", "U-17", "U-18"];
+  const subdivisions = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
+  let divisionsScraped = 0;
+  let divisionsWithData = 0;
+
+  try {
+    for (const gender of genders) {
+      for (const age of ages) {
+        process.stdout.write(`\r  ${gender} ${age}...                    `);
+
+        for (const subdiv of subdivisions) {
+          divisionsScraped++;
+
+          const html = await fetchStandingsAjax(
+            engine, page, "Premier", gender, age, subdiv,
+            { gender: "b_g", age: "age", subdiv: "subdivison" }
+          );
+
+          if (html && html.includes("<table")) {
+            divisionsWithData++;
+            const cgiCheerio = cheerio.load(html);
+            const standings = parseCGIStandingsHtml(cgiCheerio, gender, age, subdiv, source);
+            allStandings.push(...standings);
+          }
+
+          await engine.sleep(engine.adapter.rateLimiting.iterationDelay);
+        }
+        await engine.sleep(engine.adapter.rateLimiting.itemDelay);
+      }
+    }
+  } finally {
+    await page.close();
+  }
+
+  console.log(`\n  Scraped ${divisionsScraped} divisions, ${divisionsWithData} with data`);
+  console.log(`  ${allStandings.length} team standings`);
+  return allStandings;
+}
+
+/**
+ * Parse live CGI standings HTML into universal standings objects.
+ * Same table structure as archives: Team | Win | Lose | Tie | GF | GA | RC | Pts
+ */
+function parseCGIStandingsHtml($, gender, age, subdiv, source) {
+  const standings = [];
+  const division = `Subdivision ${subdiv}`;
+  let position = 0;
+
+  $('table tr').each((_, row) => {
+    const cells = $(row).find('td');
+    if (cells.length < 8) return;
+
+    const teamCell = $(cells[0]).text().trim();
+    const winsText = $(cells[1]).text().trim();
+
+    // Skip header/title rows
+    if (teamCell.toLowerCase() === 'team' || winsText.toLowerCase() === 'win') return;
+    if (teamCell.toLowerCase().includes('standings')) return;
+
+    const teamMatch = teamCell.match(/^([A-Za-z0-9]+)\s+(.+)$/);
+    if (!teamMatch) return;
+
+    const teamSourceId = teamMatch[1];
+    const teamName = teamMatch[2].trim();
+
+    const wins = parseInt($(cells[1]).text().trim(), 10) || 0;
+    const losses = parseInt($(cells[2]).text().trim(), 10) || 0;
+    const draws = parseInt($(cells[3]).text().trim(), 10) || 0;
+    const goalsFor = parseInt($(cells[4]).text().trim(), 10) || 0;
+    const goalsAgainst = parseInt($(cells[5]).text().trim(), 10) || 0;
+    const redCards = parseInt($(cells[6]).text().trim(), 10) || null;
+    const points = parseInt($(cells[7]).text().trim(), 10) || 0;
+    const played = wins + losses + draws;
+
+    position++;
+
+    standings.push({
+      league_source_id: source.league_source_id,
+      division,
+      team_name: teamName,
+      team_source_id: `heartland-${teamSourceId}`,
+      played,
+      wins,
+      losses,
+      draws,
+      goals_for: goalsFor,
+      goals_against: goalsAgainst,
+      points,
+      position,
+      red_cards: redCards,
+      season: source.season,
+      age_group: age,
+      gender,
+      extra_data: {
+        heartland_team_number: teamSourceId,
+        heartland_subdivision: subdiv,
+      },
+    });
+  });
+
+  return standings;
+}
+
+/**
+ * Count unique divisions in standings array.
+ */
+function countDivisions(standings) {
+  return new Set(standings.map(s => `${s.age_group}-${s.gender}-${s.division}`)).size;
 }
