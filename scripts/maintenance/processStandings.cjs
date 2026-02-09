@@ -35,6 +35,7 @@
 
 require('dotenv').config();
 const { Pool } = require('pg');
+const { removeDuplicatePrefix } = require('../universal/normalizers/cleanTeamName.cjs');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -171,6 +172,8 @@ async function resolveLeague(client, sourcePlatform, leagueSourceId) {
  *   Step 3: Create new team (trust the source — no fuzzy matching)
  */
 async function resolveTeam(client, sourcePlatform, teamSourceId, teamName, birthYear, gender) {
+  // Clean duplicate prefix BEFORE any lookup or creation (single source of truth: cleanTeamName.cjs)
+  teamName = removeDuplicatePrefix(teamName);
   const normalizedName = teamName.trim().toLowerCase();
 
   // -----------------------------------------------------------------------

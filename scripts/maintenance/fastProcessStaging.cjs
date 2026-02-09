@@ -9,6 +9,7 @@
 require("dotenv").config();
 const { Pool } = require("pg");
 const { resolveEventName } = require("../universal/resolveEventName.cjs");
+const { removeDuplicatePrefix } = require("../universal/normalizers/cleanTeamName.cjs");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Season year - default fallback, updated from DB at startup
@@ -106,10 +107,10 @@ async function main() {
       rowTeamKeys.set(row.id, { homeKey, awayKey, birthYear, gender, tier });
 
       if (!uniqueTeams.has(homeKey)) {
-        uniqueTeams.set(homeKey, { name: row.home_team_name, birth_year: birthYear, gender });
+        uniqueTeams.set(homeKey, { name: removeDuplicatePrefix(row.home_team_name), birth_year: birthYear, gender });
       }
       if (!uniqueTeams.has(awayKey)) {
-        uniqueTeams.set(awayKey, { name: row.away_team_name, birth_year: birthYear, gender });
+        uniqueTeams.set(awayKey, { name: removeDuplicatePrefix(row.away_team_name), birth_year: birthYear, gender });
       }
     }
     console.log(`  ${uniqueTeams.size} unique team combinations`);

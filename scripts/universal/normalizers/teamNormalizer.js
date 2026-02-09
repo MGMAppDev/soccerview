@@ -9,6 +9,9 @@
  * Call initializeLearnedPatterns() before bulk operations to enable.
  */
 
+// Single source of truth for duplicate prefix removal (shared with CJS processors)
+import { removeDuplicatePrefix as _removeDup } from './cleanTeamName.cjs';
+
 // Current season year for age group calculations
 // Default fallback; callers should call initializeSeasonYear() with DB value
 let SEASON_YEAR = 2026;
@@ -140,29 +143,16 @@ export function normalizeTeam(input) {
 /**
  * Remove duplicate club prefix
  * "KC Fusion KC Fusion 15B Gold" → "KC Fusion 15B Gold"
+ *
+ * Delegates to shared algorithm in cleanTeamName.cjs (single source of truth).
+ * Handles any prefix length: 1-word through 5-word clubs.
  */
 function removeDuplicatePrefix(name, transformations) {
-  // Find repeated word patterns at start
-  const words = name.split(/\s+/);
-
-  if (words.length >= 4) {
-    // Check for 2-word duplicate prefix
-    if (words[0].toLowerCase() === words[2].toLowerCase() &&
-        words[1].toLowerCase() === words[3].toLowerCase()) {
-      transformations.push('removed_duplicate_prefix');
-      return words.slice(2).join(' ');
-    }
+  const cleaned = _removeDup(name);
+  if (cleaned !== name) {
+    transformations.push('removed_duplicate_prefix');
   }
-
-  if (words.length >= 2) {
-    // Check for 1-word duplicate prefix
-    if (words[0].toLowerCase() === words[1].toLowerCase()) {
-      transformations.push('removed_duplicate_prefix');
-      return words.slice(1).join(' ');
-    }
-  }
-
-  return name;
+  return cleaned;
 }
 
 /**
@@ -480,6 +470,12 @@ export function runTests() {
       name: 'Empty input',
       input: { raw_name: '', source_platform: 'gotsport' },
       expect: { normalized: false },
+    },
+    // N-word duplicate prefix (3-word club name)
+    {
+      name: '3-word duplicate prefix removal',
+      input: { raw_name: 'Sporting Blue Valley Sporting Blue Valley Pre-NAL 15', source_platform: 'gotsport' },
+      expect: { canonical_name: 'sporting blue valley pre-nal 15', birth_year: 2015 },
     },
     // NEW: Trailing 2-digit year without B/G suffix
     {

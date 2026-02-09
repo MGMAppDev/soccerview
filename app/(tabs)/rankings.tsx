@@ -155,12 +155,23 @@ async function fetchTeams(
   if (mode === "leaderboard") {
     // Official Rankings: Show all teams with official national rank
     query = query.not("national_rank", "is", null);
-    query = query.order("national_rank", { ascending: true });
+    if (states.length > 0) {
+      // State filter active: sort by state_rank to match displayed rank
+      query = query.not("state_rank", "is", null);
+      query = query.order("state_rank", { ascending: true });
+    } else {
+      query = query.order("national_rank", { ascending: true });
+    }
   } else {
     // SoccerView Power Rating: Only teams with match history (meaningful ELO)
     // Use the pre-computed has_matches flag from the view
     query = query.eq("has_matches", true);
-    query = query.order("elo_rating", { ascending: false });
+    if (states.length > 0) {
+      // State filter active: sort by elo_state_rank to match displayed rank
+      query = query.order("elo_state_rank", { ascending: true });
+    } else {
+      query = query.order("elo_rating", { ascending: false });
+    }
   }
 
   if (states.length > 0) {

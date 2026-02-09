@@ -1065,6 +1065,35 @@ CREATE TABLE source_entity_map (
 
 **Related:** `refresh_views_manual.js` (line 49) already handled this correctly. The SQL function was the gap.
 
+### 38. Single Source of Truth for Team Name Normalization (Session 93)
+
+**Problem:** Three code paths create teams. Only one (DQE via `teamNormalizer.js`) removes duplicate prefixes. The normalizer itself only handled 1-2 word prefixes, missing 3+ word clubs like "Sporting Blue Valley".
+
+**3-Gap Fix:**
+
+| Gap | Component | Fix |
+|-----|-----------|-----|
+| Algorithm too narrow | `removeDuplicatePrefix()` only 1-2 words | N-word sliding window (1-5 words) |
+| fastProcessStaging bypass | Creates teams with raw names | Imports shared `removeDuplicatePrefix` |
+| processStandings bypass | Creates teams with raw names | Imports shared `removeDuplicatePrefix` |
+
+**Architecture: One algorithm, one file, all paths unified.**
+
+```
+cleanTeamName.cjs  ← THE algorithm (N-word sliding window)
+       │
+       ├── teamNormalizer.js      imports it (ESM can import CJS)
+       ├── fastProcessStaging.cjs requires it (CJS native)
+       └── processStandings.cjs   requires it (CJS native)
+```
+
+**Why CJS:** `teamNormalizer.js` uses ESM (`export`). CJS files cannot `require()` ESM modules. Algorithm lives in CJS where all files can access it. Zero code duplication.
+
+**Anti-patterns:**
+- ❌ Duplicating the algorithm in multiple files
+- ❌ Creating teams without calling `removeDuplicatePrefix` first
+- ❌ Adding a new processor that doesn't import `cleanTeamName.cjs`
+
 ---
 
 ## Quick Reference
@@ -1073,8 +1102,8 @@ CREATE TABLE source_entity_map (
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 158,072 | Team records (~51,796 with computed ELO) |
-| `matches_v2` | 403,068 active | Match results (~5,468 soft-deleted) |
+| `teams_v2` | 145,356 | Team records (Session 93: -12,716 duplicates merged) |
+| `matches_v2` | 402,948 active | Match results (~5,297 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
 | `leagues` | 279 | League metadata |
 | `tournaments` | 1,750 | Tournament metadata (0 generic names) |
@@ -1350,6 +1379,7 @@ Performance: 4.6ms per 1000 records.
 | `eventNormalizer.js` | Standardize event names, reject generics, detect league/tournament | 6/6 |
 | `matchNormalizer.js` | Parse dates/scores, generate source_match_key | 7/7 |
 | `clubNormalizer.js` | Extract club name from team name | 7/7 |
+| `cleanTeamName.cjs` | **Single source of truth** — N-word duplicate prefix removal (Session 93) | - |
 | `testWithStagingData.js` | Integration test with real staging data | - |
 
 **Canonical Registry Functions (DB):**
@@ -1391,6 +1421,7 @@ Diagnostics, audits, and utilities.
 | `linkFromV1Archive.js` | Link legacy gotsport via V1 archived data (67% success) |
 | `inferEventLinkage.js` | **NIGHTLY** Infer event from team activity patterns |
 | `fixGenericEventNames.cjs` | **Retroactive generic tournament name fix** (Session 91) |
+| `fixDoublePrefix.cjs` | **Retroactive double-prefix team name fix** (Session 93) |
 | `cleanupGarbageMatches.js` | Delete future-dated matches (2027+) |
 | `mergeHeartlandLeagues.js` | Merge duplicate league entries (Session 59) |
 
@@ -1508,6 +1539,71 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 93 - Double-Prefix Fix + Duplicate Team Merge + Rankings Sort (February 7, 2026) - COMPLETE ✅
+
+**Goal:** Fix three QC issues: (1) Rankings sort order jumbled when state filter applied, (2) Double-prefix team names ("Kansas Rush Kansas Rush Pre-ECNL 14B"), (3) Duplicate team records causing duplicates in rankings (same team as two UUIDs).
+
+**Issue 1 — Rankings Sort Order (UI fix):**
+Rankings displayed state_rank but sorted by national_rank when state filter was active. Fixed in `rankings.tsx` with state-aware sort logic.
+
+**Issue 2 — Double-Prefix Team Names (3-layer universal fix):**
+
+Root cause: GotSport importer (Session 76, archived) concatenated club + team when API already included club. Normalizer only caught 1-2 word prefixes. Two bulk processors bypassed normalizer entirely.
+
+**Architecture: Single Source of Truth (Principle 38)**
+
+```
+cleanTeamName.cjs  ← THE algorithm (N-word sliding window, 1-5 words)
+       ├── teamNormalizer.js      (ESM import)
+       ├── fastProcessStaging.cjs (CJS require)
+       └── processStandings.cjs   (CJS require)
+```
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1 | Create `cleanTeamName.cjs` | Single source of truth, N-word algorithm |
+| 2 | Rewire all 3 consumers | teamNormalizer, fastProcessStaging, processStandings |
+| 3 | Create `fixDoublePrefix.cjs` | Retroactive fix with conflict avoidance + --case-insensitive |
+| 4 | Execute retroactive fix (case-sensitive) | **18,135 teams_v2 + 14,434 canonical_teams fixed** |
+| 5 | Execute retroactive fix (case-insensitive) | **1,266 teams_v2 + 57 canonical_teams fixed** |
+| 6 | Cleanup remaining prefix teams | **421 renamed + 376 merged** (after duplicates cleared collision path) |
+
+**Issue 3 — Duplicate Team Records (PRIMARY — data layer merge):**
+
+Root cause: Same real-world team existed as TWO `teams_v2` UUIDs — one from GotSport rankings import (has rank data, 0 matches) and one from match scraping (has matches, no rank). Both appeared in app_rankings.
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1 | Create `mergeDuplicateRankedTeams.cjs` | Universal merge: same display_name + birth_year + gender |
+| 2 | Keeper selection | ROW_NUMBER by matches_played DESC, national_rank ASC, elo_rating DESC |
+| 3 | Transfer GS rank to keepers | COALESCE — only fills NULLs |
+| 4 | Collision-safe match re-pointing | Temp `_merge_map` table + comprehensive CTE projecting post-merge semantic keys |
+| 5 | Handle all FK cascades | matches, source_entity_map, canonical_teams, league_standings, rank_history_v2 |
+| 6 | Execute | **12,715 duplicate teams merged** (12,339 + 376 prefix residuals) |
+
+**Collision Handling (critical for future reference):**
+- `unique_match_semantic` — Project ALL post-merge semantic keys, rank, soft-delete non-winners before re-pointing
+- `different_teams_match` CHECK — Detect intra-squad matches (both teams → same keeper), soft-delete before re-pointing
+- `league_standings` FK — Delete conflicting entries, re-point rest (standings DATA untouched per Principle 36)
+
+**Results:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| teams_v2 | 158,072 | **145,356** (-12,716 duplicates merged) |
+| matches_v2 (active) | 403,068 | **402,948** (-120 collision soft-deletes) |
+| Double-prefix teams | 18,513 | **0** |
+| Duplicate display_name groups | 11,689 | **0** |
+| KS U11 Boys duplicates in rankings | 5+ pairs | **0** |
+| Rank gaps in GotSport mode | Visible | **Sequential** |
+| league_standings | 1,208 | **1,207** (1 collision, data untouched) |
+
+**Files Created:** `cleanTeamName.cjs`, `fixDoublePrefix.cjs`, `mergeDuplicateRankedTeams.cjs`
+**Files Modified:** `teamNormalizer.js`, `fastProcessStaging.cjs`, `processStandings.cjs`, `rankings.tsx`
+**Zero UI Design Changes (except rankings sort).** Zero data loss. Pure data quality improvement.
+
+---
 
 ### Session 92 QC Part 2 - Fix Broken Views + Architecture Verification (February 7, 2026) - COMPLETE ✅
 
