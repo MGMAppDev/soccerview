@@ -376,8 +376,8 @@ async function executeMerges(matches, dryRun) {
     )
     UPDATE teams_v2 t
     SET
-      national_rank = COALESCE(t.national_rank, md.gs_rank),
-      state_rank = COALESCE(t.state_rank, md.state_rank),
+      national_rank = LEAST(t.national_rank, md.gs_rank),
+      state_rank = LEAST(t.state_rank, md.state_rank),
       updated_at = NOW()
     FROM merge_data md
     WHERE t.id = md.target_id

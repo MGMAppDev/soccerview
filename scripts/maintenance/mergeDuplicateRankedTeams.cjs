@@ -186,12 +186,14 @@ async function main() {
         WHERE national_rank IS NOT NULL
         GROUP BY display_name, birth_year, gender
       )
+      -- RANK PRESERVATION: LEAST keeps best (lowest) rank, GREATEST keeps best points
+      -- PostgreSQL LEAST/GREATEST skip NULLs: LEAST(NULL, 4) = 4
       UPDATE teams_v2 t
-      SET national_rank = COALESCE(t.national_rank, br.best_national_rank),
-          state_rank = COALESCE(t.state_rank, br.best_state_rank),
-          regional_rank = COALESCE(t.regional_rank, br.best_regional_rank),
-          gotsport_rank = COALESCE(t.gotsport_rank, br.best_gotsport_rank),
-          gotsport_points = COALESCE(t.gotsport_points, br.best_gotsport_points),
+      SET national_rank = LEAST(t.national_rank, br.best_national_rank),
+          state_rank = LEAST(t.state_rank, br.best_state_rank),
+          regional_rank = LEAST(t.regional_rank, br.best_regional_rank),
+          gotsport_rank = LEAST(t.gotsport_rank, br.best_gotsport_rank),
+          gotsport_points = GREATEST(t.gotsport_points, br.best_gotsport_points),
           updated_at = NOW()
       FROM ranked r
       JOIN best_rank br ON r.display_name = br.display_name
@@ -199,7 +201,6 @@ async function main() {
         AND r.gender IS NOT DISTINCT FROM br.gender
       WHERE t.id = r.id
         AND r.rn = 1
-        AND t.national_rank IS NULL
         AND br.best_national_rank IS NOT NULL
     `);
     console.log(`Transferred GotSport rank to ${transferQ.rowCount} keepers`);

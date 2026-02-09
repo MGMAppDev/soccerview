@@ -467,9 +467,9 @@ async function mergeOrphans(dryRun) {
       // Transfer GS points/rank to the team with matches (use authorized client)
       await authorizedClient.query(`
         UPDATE teams_v2
-        SET gotsport_points = COALESCE($1, gotsport_points),
-            gotsport_rank = COALESCE($2, gotsport_rank),
-            national_rank = COALESCE($2, national_rank),
+        SET gotsport_points = GREATEST($1::decimal, gotsport_points),
+            gotsport_rank = LEAST($2::int, gotsport_rank),
+            national_rank = LEAST($2::int, national_rank),
             updated_at = NOW()
         WHERE id = $3
       `, [c.gotsport_points, c.gotsport_rank, c.keep_id]);

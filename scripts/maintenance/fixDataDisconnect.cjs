@@ -346,10 +346,11 @@ async function phase3_mergeDuplicates() {
     WITH merge_map AS (
       SELECT unnest($1::uuid[]) as keep_id, unnest($2::uuid[]) as merge_id
     )
+    -- RANK PRESERVATION: LEAST keeps best (lowest) rank
     UPDATE teams_v2 t SET
-      gotsport_rank = COALESCE(m2.gotsport_rank, t.gotsport_rank),
-      national_rank = COALESCE(m2.national_rank, t.national_rank),
-      state_rank = COALESCE(m2.state_rank, t.state_rank),
+      gotsport_rank = LEAST(t.gotsport_rank, m2.gotsport_rank),
+      national_rank = LEAST(t.national_rank, m2.national_rank),
+      state_rank = LEAST(t.state_rank, m2.state_rank),
       updated_at = NOW()
     FROM merge_map mm JOIN teams_v2 m2 ON m2.id = mm.merge_id
     WHERE t.id = mm.keep_id

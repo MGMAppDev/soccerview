@@ -547,6 +547,33 @@ export async function mergeTeamGroup(group, client, options = {}) {
       WHERE id = ANY($3::uuid[])
     `, [decision.keepId, decision.reason, decision.deleteIds]);
 
+    // 5b. RANK PRESERVATION: Always keep best (lowest) rank, highest points
+    // Uses LEAST for ranks (lower = better) and GREATEST for points (higher = better)
+    // PostgreSQL LEAST/GREATEST skip NULLs: LEAST(NULL, 4) = 4
+    await client.query(`
+      UPDATE teams_v2 keeper
+      SET national_rank  = LEAST(keeper.national_rank, loser.best_national_rank),
+          state_rank     = LEAST(keeper.state_rank, loser.best_state_rank),
+          regional_rank  = LEAST(keeper.regional_rank, loser.best_regional_rank),
+          gotsport_rank  = LEAST(keeper.gotsport_rank, loser.best_gotsport_rank),
+          gotsport_points = GREATEST(keeper.gotsport_points, loser.best_gotsport_points),
+          updated_at = NOW()
+      FROM (
+        SELECT MIN(national_rank) as best_national_rank,
+               MIN(state_rank) as best_state_rank,
+               MIN(regional_rank) as best_regional_rank,
+               MIN(gotsport_rank) as best_gotsport_rank,
+               MAX(gotsport_points) as best_gotsport_points
+        FROM teams_v2
+        WHERE id = ANY($2::uuid[])
+          AND (national_rank IS NOT NULL OR state_rank IS NOT NULL
+               OR gotsport_rank IS NOT NULL OR gotsport_points IS NOT NULL)
+      ) loser
+      WHERE keeper.id = $1::uuid
+        AND (loser.best_national_rank IS NOT NULL OR loser.best_state_rank IS NOT NULL
+             OR loser.best_gotsport_rank IS NOT NULL OR loser.best_gotsport_points IS NOT NULL)
+    `, [decision.keepId, decision.deleteIds]);
+
     // 6. SESSION 87 FIX: Delete FK references BEFORE deleting teams
     // canonical_teams has FK constraint to teams_v2, must delete first
     await client.query(`
