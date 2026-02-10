@@ -89,7 +89,17 @@
       "Bash(then echo \"✅ $f\")",
       "Bash(else echo \"❌ $f MISSING\")",
       "Bash(fi)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(eas build:*)",
+      "Bash(eas submit:*)",
+      "Bash(pip install:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:capgo.app)",
+      "WebFetch(domain:www.mobileaction.co)",
+      "WebFetch(domain:adapty.io)",
+      "WebFetch(domain:www.luciq.ai)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.kodeco.com)"
     ]
   }
 }

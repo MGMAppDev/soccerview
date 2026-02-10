@@ -50,3 +50,9 @@ backup_*.json
 # Scraper checkpoint files
 scripts/.*_checkpoint.json
 scripts/.heartland_checkpoint.json
+
+# Debug cache files (large JSON data dumps)
+scripts/_debug/*.json
+
+# Raw screenshots (large image files)
+screenshots/
