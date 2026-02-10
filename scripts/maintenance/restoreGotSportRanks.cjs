@@ -13,8 +13,11 @@
  *   node scripts/maintenance/restoreGotSportRanks.cjs --execute --ages=11  # Just U11
  */
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const { Pool } = require('pg');
 const { authorizePipelineWrite } = require('../universal/pipelineAuthCJS.cjs');
+const { removeDuplicatePrefix } = require('../universal/normalizers/cleanTeamName.cjs');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -120,45 +123,59 @@ async function main() {
   console.log(`Genders: Boys, Girls`);
   console.log(`Parallel: ${CONCURRENCY} concurrent pages, ${DELAY_MS}ms between batches\n`);
 
-  // Phase 1: Fetch all rankings from GotSport API
+  // Phase 1: Fetch all rankings from GotSport API (or load from cache)
+  const cacheFile = path.join(__dirname, '..', '_debug', 'gotsport_rank_cache.json');
+  const useCache = args.includes('--cached') && fs.existsSync(cacheFile);
+
   console.log('--- Phase 1: Fetching from GotSport API ---');
   const startFetch = Date.now();
-  const allTeams = [];
-  const seenIds = new Set();
-  let totalPages = 0;
+  let allTeams = [];
 
-  for (const gender of GENDERS) {
-    for (const age of ages) {
-      const birthYear = SEASON_YEAR - age;
-      const catStart = Date.now();
-      process.stdout.write(`  U${age} ${gender.label}: `);
+  if (useCache) {
+    allTeams = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+    console.log(`  Loaded ${allTeams.length} teams from cache: ${cacheFile}`);
+  } else {
+    const seenIds = new Set();
 
-      const teams = await fetchCategory(age, gender.code);
-      if (teams.length === 0) { console.log('0 teams'); await sleep(DELAY_MS); continue; }
+    for (const gender of GENDERS) {
+      for (const age of ages) {
+        const birthYear = SEASON_YEAR - age;
+        const catStart = Date.now();
+        process.stdout.write(`  U${age} ${gender.label}: `);
 
-      let added = 0;
-      for (const t of teams) {
-        if (seenIds.has(t.id)) continue;
-        seenIds.add(t.id);
-        allTeams.push({
-          name: `${(t.club_name || '').trim()} ${(t.team_name || '').trim()} (U${age} ${gender.label})`.trim(),
-          clubName: (t.club_name || '').trim(),
-          teamName: (t.team_name || '').trim(),
-          birthYear,
-          gender: gender.db,
-          state: getState(t.team_association),
-          nationalRank: t.national_rank || null,
-          stateRank: t.association_rank || null,
-          regionalRank: t.regional_rank || null,
-          gotsportPoints: t.total_points || null,
-          gotsportTeamId: t.team_id?.toString() || null,
-        });
-        added++;
+        const teams = await fetchCategory(age, gender.code);
+        if (teams.length === 0) { console.log('0 teams'); await sleep(DELAY_MS); continue; }
+
+        let added = 0;
+        for (const t of teams) {
+          if (seenIds.has(t.id)) continue;
+          seenIds.add(t.id);
+          allTeams.push({
+            name: `${(t.club_name || '').trim()} ${(t.team_name || '').trim()} (U${age} ${gender.label})`.trim(),
+            clubName: (t.club_name || '').trim(),
+            teamName: (t.team_name || '').trim(),
+            birthYear,
+            gender: gender.db,
+            state: getState(t.team_association),
+            nationalRank: t.national_rank || null,
+            stateRank: t.association_rank || null,
+            regionalRank: t.regional_rank || null,
+            gotsportPoints: t.total_points || null,
+            gotsportTeamId: t.team_id?.toString() || null,
+          });
+          added++;
+        }
+        const catSec = ((Date.now() - catStart) / 1000).toFixed(1);
+        console.log(`${added} teams in ${catSec}s`);
+        await sleep(DELAY_MS);
       }
-      const catSec = ((Date.now() - catStart) / 1000).toFixed(1);
-      console.log(`${added} teams in ${catSec}s`);
-      await sleep(DELAY_MS);
     }
+
+    // Save cache for future --cached runs
+    try {
+      fs.writeFileSync(cacheFile, JSON.stringify(allTeams));
+      console.log(`  Cached ${allTeams.length} teams to ${cacheFile}`);
+    } catch (e) { /* non-critical */ }
   }
 
   const fetchSec = ((Date.now() - startFetch) / 1000).toFixed(0);
@@ -211,6 +228,7 @@ async function main() {
 
     // Match all teams using in-memory indexes
     const updates = [];
+    const newSemMappings = []; // GotSport team ID → SV UUID for source_entity_map backfill
     let tier1 = 0, tier2 = 0, tier3 = 0, notFound = 0;
 
     for (const t of withRank) {
@@ -223,22 +241,53 @@ async function main() {
       }
 
       // Tier 2: Exact display_name + birth_year + gender
+      // Apply removeDuplicatePrefix to handle "Club Club Team" → "Club Team" normalization
       if (!teamId) {
-        const key2 = `${t.name}|${t.birthYear}|${t.gender}`;
-        teamId = teamIndex.get(key2) || null;
+        // 2a: Full name with suffix (GotSport-imported teams keep suffix in display_name)
+        const fullNorm = removeDuplicatePrefix(t.name);
+        const key2a = `${fullNorm}|${t.birthYear}|${t.gender}`;
+        teamId = teamIndex.get(key2a) || null;
+
+        // 2b: Without suffix (pipeline-created teams don't have it)
+        if (!teamId) {
+          const baseName = removeDuplicatePrefix(`${t.clubName} ${t.teamName}`.trim());
+          const key2b = `${baseName}|${t.birthYear}|${t.gender}`;
+          teamId = teamIndex.get(key2b) || null;
+        }
+
+        // 2c: team_name only (handles "Captains Soccer Club" + "Captains SC Boys 15/16 Blue"
+        //     where club_name isn't an exact prefix repeat of team_name)
+        if (!teamId && t.teamName) {
+          const key2c = `${t.teamName}|${t.birthYear}|${t.gender}`;
+          teamId = teamIndex.get(key2c) || null;
+        }
         if (teamId) tier2++;
       }
 
-      // Tier 3: canonical_name match (club + team = canonical-like)
+      // Tier 3: canonical_name match (lowercase, dedup prefix)
       if (!teamId && t.clubName && t.teamName) {
-        // Build canonical-like name: "clubname teamname" lowercase
-        const canonical = `${t.clubName} ${t.teamName}`.toLowerCase().replace(/\s+/g, ' ').trim();
+        // 3a: Full club + team deduped
+        const raw = `${t.clubName} ${t.teamName}`;
+        const deduped = removeDuplicatePrefix(raw);
+        const canonical = deduped.toLowerCase().replace(/\s+/g, ' ').trim();
         const key3 = `${canonical}|${t.birthYear}|${t.gender}`;
         teamId = canonIndex.get(key3) || null;
+
+        // 3b: team_name only canonical
+        if (!teamId) {
+          const canonTeam = t.teamName.toLowerCase().replace(/\s+/g, ' ').trim();
+          const key3b = `${canonTeam}|${t.birthYear}|${t.gender}`;
+          teamId = canonIndex.get(key3b) || null;
+        }
         if (teamId) tier3++;
       }
 
       if (!teamId) { notFound++; continue; }
+
+      // Track for source_entity_map backfill
+      if (t.gotsportTeamId && !semMap.has(t.gotsportTeamId)) {
+        newSemMappings.push([t.gotsportTeamId, teamId]);
+      }
 
       updates.push({
         teamId,
@@ -337,6 +386,27 @@ async function main() {
 
     await client.query('COMMIT');
     console.log(`\nUpdated ${updated} teams with LEAST/GREATEST rank preservation`);
+
+    // Backfill source_entity_map for future Tier 1 matching
+    if (newSemMappings.length > 0) {
+      console.log(`\nBackfilling ${newSemMappings.length} GotSport team IDs to source_entity_map...`);
+      const SEM_BATCH = 500;
+      let semInserted = 0;
+      for (let i = 0; i < newSemMappings.length; i += SEM_BATCH) {
+        const batch = newSemMappings.slice(i, i + SEM_BATCH);
+        const vals = batch.map((_, idx) =>
+          `('team', 'gotsport', $${idx*2+1}, $${idx*2+2}::uuid)`
+        ).join(',');
+        const params = batch.flatMap(([gsId, svId]) => [gsId, svId]);
+        const res = await client.query(`
+          INSERT INTO source_entity_map (entity_type, source_platform, source_entity_id, sv_id)
+          VALUES ${vals}
+          ON CONFLICT (entity_type, source_platform, source_entity_id) DO NOTHING
+        `, params);
+        semInserted += res.rowCount;
+      }
+      console.log(`  Registered ${semInserted} new GotSport team IDs`);
+    }
 
     // Phase 3: Verify KS U11 Boys
     console.log('\n--- Verification: KS U11 Boys ---');

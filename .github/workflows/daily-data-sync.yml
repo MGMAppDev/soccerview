@@ -19,6 +19,8 @@ name: Daily Data Sync (V2 Architecture)
 #      - Create/link events in leagues/tournaments
 #   2.6. STANDINGS PROCESSING (lightweight resolver — NO fuzzy matching):
 #      - Process staging_standings -> league_standings (exact match + create-if-missing)
+#   2.7. GOTSPORT RANKINGS REFRESH (Session 94):
+#      - Fetch rankings from GotSport API -> teams_v2 (LEAST/GREATEST safe)
 #   3. ELO CALCULATION - Update power ratings in teams_v2
 #   4. PREDICTION SCORING - Score user predictions
 #   5. REFRESH VIEWS - Refresh all materialized views (including hybrid standings)
@@ -782,13 +784,61 @@ jobs:
         continue-on-error: true
 
   # ============================================================================
+  # PHASE 2.7: GOTSPORT RANKINGS REFRESH (Session 94)
+  # Fetch current GotSport rankings and update teams_v2 using LEAST/GREATEST
+  # Only enhances data — never overwrites better values
+  # ============================================================================
+
+  refresh-gotsport-rankings:
+    name: "🏅 Refresh GotSport Rankings"
+    runs-on: ubuntu-latest
+    needs: validation-pipeline
+    if: >-
+      ${{
+        always() &&
+        (github.event.inputs.sync_type == 'full' ||
+         github.event.inputs.sync_type == null) &&
+        (needs.validation-pipeline.result == 'success' ||
+         needs.validation-pipeline.result == 'skipped')
+      }}
+    timeout-minutes: 75
+    outputs:
+      teams_matched: ${{ steps.rankings.outputs.matched }}
+      teams_not_found: ${{ steps.rankings.outputs.not_found }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh GotSport Rankings
+        id: rankings
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "🏅 Refreshing GotSport rankings (LEAST/GREATEST safe)"
+          node scripts/maintenance/restoreGotSportRanks.cjs --execute 2>&1 | tee rankings_output.txt
+
+          MATCHED=$(grep -oP 'Total matched:\s*\K\d+' rankings_output.txt | tail -1 || echo "0")
+          NOT_FOUND=$(grep -oP 'Not found:\s*\K\d+' rankings_output.txt | tail -1 || echo "0")
+          echo "matched=$MATCHED" >> $GITHUB_OUTPUT
+          echo "not_found=$NOT_FOUND" >> $GITHUB_OUTPUT
+          echo "🏅 Rankings refreshed: $MATCHED matched, $NOT_FOUND not found"
+        timeout-minutes: 70
+        continue-on-error: true
+
+  # ============================================================================
   # PHASE 3: ELO CALCULATION (Uses matches_v2)
   # ============================================================================
 
   recalculate-elo:
     name: "📈 Recalculate ELO"
     runs-on: ubuntu-latest
-    needs: [validation-pipeline, infer-event-linkage, verify-integrity, verify-adaptive-learning]
+    needs: [validation-pipeline, infer-event-linkage, verify-integrity, verify-adaptive-learning, refresh-gotsport-rankings]
     if: >-
       ${{
         always() &&
@@ -925,6 +975,7 @@ jobs:
       - weekly-dedup-check
       - verify-integrity
       - verify-adaptive-learning
+      - refresh-gotsport-rankings
       - recalculate-elo
       - score-predictions
       - refresh-views
@@ -991,6 +1042,15 @@ jobs:
           echo "| Status | ${{ needs.process-standings.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Standings Resolved | ${{ needs.process-standings.outputs.standings_resolved || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Standings Skipped | ${{ needs.process-standings.outputs.standings_skipped || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 🏅 Phase 2.7: GotSport Rankings" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ needs.refresh-gotsport-rankings.result || '⏭️ skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Teams Matched | ${{ needs.refresh-gotsport-rankings.outputs.teams_matched || '-' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Teams Not Found | ${{ needs.refresh-gotsport-rankings.outputs.teams_not_found || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "## 🔍 Phase 2.25: Weekly Dedup Check" >> $GITHUB_STEP_SUMMARY
@@ -1069,4 +1129,5 @@ jobs:
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "*V2 Architecture: staging_games → dataQualityEngine → matches_v2 → app_* views*" >> $GITHUB_STEP_SUMMARY
           echo "*Standings: staging_standings → processStandings → league_standings → app_league_standings (hybrid)*" >> $GITHUB_STEP_SUMMARY
+          echo "*Rankings: GotSport API → restoreGotSportRanks (LEAST/GREATEST) → teams_v2*" >> $GITHUB_STEP_SUMMARY
           echo "*Scraper: Universal Framework | Data Quality: Universal Engine | Weekly Dedup: Sundays*" >> $GITHUB_STEP_SUMMARY
