@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 15.2** | Last Updated: February 7, 2026 | Session 92 QC Part 2 Complete
+> **Version 16.0** | Last Updated: February 9, 2026 | Session 94 Part 2 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1094,6 +1094,36 @@ cleanTeamName.cjs  ← THE algorithm (N-word sliding window)
 - ❌ Creating teams without calling `removeDuplicatePrefix` first
 - ❌ Adding a new processor that doesn't import `cleanTeamName.cjs`
 
+### 39. LEAST for Ranks, GREATEST for Points — Rank Preservation (Session 94)
+
+**Problem:** 8 files used `COALESCE(a.rank, b.rank)` to merge rank values during team merges, dedup, or snapshot capture. COALESCE picks the first non-NULL value regardless of magnitude. For ranks where lower = better, this randomly overwrites a better rank (#4) with a worse one (#11).
+
+**Universal Rule:**
+
+| Value Type | Merge Function | Reason |
+|------------|---------------|--------|
+| Ranks (national, state) | `LEAST(a, b)` | Lower number = better rank |
+| Points / ELO | `GREATEST(a, b)` | Higher number = better score |
+| Timestamps | `COALESCE(a, b)` | Keep first non-NULL (order matters) |
+| Text / IDs | `COALESCE(a, b)` | Keep first non-NULL |
+
+**PostgreSQL behavior:** `LEAST(NULL, 4) = 4` and `GREATEST(NULL, 800) = 800` — NULLs are ignored, so these are safe replacements for COALESCE in rank/point contexts.
+
+**Files Fixed (Session 94 Part 1):**
+- `teamDedup.js` — team merge rank preservation
+- `restoreGotSportRanks.cjs` — GotSport rank application
+- `dataQualityEngine.js` — team creation/update ranks
+- `fastProcessStaging.cjs` — bulk processing rank handling
+- `processStandings.cjs` — standings team resolution
+- `recalculate_elo_v2.js` — ELO recalculation rank writes
+- `captureRankSnapshot.js` — daily rank snapshot capture
+- `recalculateHistoricalRanks.cjs` — historical rank recalculation
+
+**Anti-patterns:**
+- ❌ Using `COALESCE` for rank values (picks first non-NULL, not best)
+- ❌ Using `GREATEST` for ranks (picks worst rank)
+- ❌ Using `LEAST` for points/ELO (picks worst score)
+
 ---
 
 ## Quick Reference
@@ -1107,16 +1137,14 @@ cleanTeamName.cjs  ← THE algorithm (N-word sliding window)
 | `clubs` | 124,650 | Club organizations |
 | `leagues` | 279 | League metadata |
 | `tournaments` | 1,750 | Tournament metadata (0 generic names) |
-| `league_standings` | 1,208 | **STANDINGS** Scraped from Heartland (Session 92 QC) |
-| `staging_standings` | 1,211 | **STANDINGS** Raw standings staging (Session 92) |
-| `source_entity_map` | 4,464 | Universal source ID mappings (Session 89+92QC) |
+| `league_standings` | 1,208 | Scraped standings from Heartland (Session 92 QC) |
+| `staging_standings` | 1,211 | Raw standings staging (Session 92) |
+| `source_entity_map` | ~72,000+ | Universal source ID mappings (Session 89+92QC+94: +68K GotSport backfill) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
 | `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
 | `staging_games` | 86,491 | Staging area (0 unprocessed) |
-| `staging_standings` | 1,211 | **NEW** Standings staging (Session 92) |
-| `league_standings` | 1,176 | **NEW** Production standings (Session 92) |
 | `staging_rejected` | 1 | Rejected intake data (Session 79) |
 | `seasons` | 3 | Season definitions |
 
@@ -1422,6 +1450,8 @@ Diagnostics, audits, and utilities.
 | `inferEventLinkage.js` | **NIGHTLY** Infer event from team activity patterns |
 | `fixGenericEventNames.cjs` | **Retroactive generic tournament name fix** (Session 91) |
 | `fixDoublePrefix.cjs` | **Retroactive double-prefix team name fix** (Session 93) |
+| `mergeDuplicateRankedTeams.cjs` | Universal merge of duplicate ranked teams (Session 93) |
+| `restoreGotSportRanks.cjs` | **NIGHTLY (Session 94)** GotSport rankings refresh — LEAST/GREATEST rank preservation |
 | `cleanupGarbageMatches.js` | Delete future-dated matches (2027+) |
 | `mergeHeartlandLeagues.js` | Merge duplicate league entries (Session 59) |
 
@@ -1540,6 +1570,61 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
+### Session 94 Part 2 - GotSport Rankings Matching + Pipeline Integration (February 9, 2026) - COMPLETE ✅
+
+**Goal:** Improve restoreGotSportRanks.cjs matching rate and integrate as Phase 2.7 in nightly pipeline.
+
+**Problem:** 49% match rate left gaps in GotSport rankings display (e.g., KS U11 Boys missing state ranks #4 and #11).
+
+**Matching Fixes:**
+- Added `removeDuplicatePrefix()` normalization (shared with rest of pipeline)
+- Added Tier 2b/2c: team_name-only matching for non-repeating club prefixes
+- Added Tier 3b: canonical team_name-only fallback
+- Added `--cached` flag for fast reruns (2.5 min vs 50 min API fetch)
+- Backfilled 68K+ `source_entity_map` entries for future Tier 1 instant resolution
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Match rate | 49% (52,360) | **64% (68,642)** |
+| source_entity_map entries | 4,464 | **~72,000+** |
+| KS U11 Boys rank gaps | #4, #11, #13 missing | **#4, #11 filled** (only #13 genuine coverage gap) |
+
+**Pipeline Integration (Phase 2.7):**
+- New `refresh-gotsport-rankings` job in `daily-data-sync.yml`
+- Runs after validation (Phase 2), parallel with integrity checks, before ELO (Phase 3)
+- LEAST/GREATEST safe — never overwrites a better rank
+- `continue-on-error: true` — non-blocking for rest of pipeline
+- Summary report with matched/not-found metrics
+
+**Files Modified:** `restoreGotSportRanks.cjs`, `daily-data-sync.yml`
+**Zero UI Changes. Zero match pipeline impact.**
+
+---
+
+### Session 94 Part 1 - LEAST/GREATEST Rank Preservation (February 9, 2026) - COMPLETE ✅
+
+**Goal:** Fix rank preservation across all 8 files that merge or update rank values. Replace COALESCE with LEAST (ranks) or GREATEST (points).
+
+**Problem:** `COALESCE(existing_rank, new_rank)` picks first non-NULL, not best. A team with national_rank=4 could be overwritten with 11 during merge. Session 93's 12,716 team merge exposed this: KS U11 Boys had gaps at #4, #11, #13.
+
+**Universal Fix:** LEAST for ranks (lower = better), GREATEST for points (higher = better).
+
+| File | Function |
+|------|----------|
+| `teamDedup.js` | Team merge rank preservation |
+| `restoreGotSportRanks.cjs` | GotSport rank application |
+| `dataQualityEngine.js` | Team creation/update ranks |
+| `fastProcessStaging.cjs` | Bulk processing rank handling |
+| `processStandings.cjs` | Standings team resolution |
+| `recalculate_elo_v2.js` | ELO recalculation rank writes |
+| `captureRankSnapshot.js` | Daily rank snapshot capture |
+| `recalculateHistoricalRanks.cjs` | Historical rank recalculation |
+
+**Files Modified:** All 8 above
+**Zero UI Changes. Zero data loss. Permanent rank quality improvement.** See Principle 39.
+
+---
+
 ### Session 93 - Double-Prefix Fix + Duplicate Team Merge + Rankings Sort (February 7, 2026) - COMPLETE ✅
 
 **Goal:** Fix three QC issues: (1) Rankings sort order jumbled when state filter applied, (2) Double-prefix team names ("Kansas Rush Kansas Rush Pre-ECNL 14B"), (3) Duplicate team records causing duplicates in rankings (same team as two UUIDs).
@@ -1605,334 +1690,7 @@ Root cause: Same real-world team existed as TWO `teams_v2` UUIDs — one from Go
 
 ---
 
-### Session 92 QC Part 2 - Fix Broken Views + Architecture Verification (February 7, 2026) - COMPLETE ✅
-
-**Goal:** Fix critical app errors (Home: "0 Matches", Teams: timeout) caused by broken `refresh_app_views()` function + resolve Supabase security lint errors + prove entire architecture is sound.
-
-**Root Cause:** Migration 094 (hybrid UNION ALL standings view) had NO UNIQUE INDEX on `app_league_standings`. The `refresh_app_views()` SQL function used `REFRESH MATERIALIZED VIEW CONCURRENTLY` on this view, which requires a unique index. The statement failed, and since `refresh_app_views()` is a PL/pgSQL function (transactional), ALL view refreshes rolled back — keeping all 5 views stale.
-
-**Key Insight:** `refresh_views_manual.js` (line 49) already handled this correctly (`const useConcurrent = view !== 'app_league_standings'`), so the nightly pipeline kept views fresh. But any script calling `refresh_app_views()` directly would fail.
-
-**Completed:**
-
-| Step | Description | Result |
-|------|-------------|--------|
-| 1 | Diagnose view/DB state | Views populated (nightly OK), `refresh_app_views()` FAILS, no unique index on standings view |
-| 2 | Migration 095: Fix refresh function | Non-concurrent for `app_league_standings` only |
-| 3 | Migration 095: Enable RLS | `staging_standings` + `league_standings` RLS ENABLED |
-| 4 | Verify refresh_app_views() | SUCCESS — 145.8s |
-| 5 | Full app verification | ALL PASSED — 52K teams, 366K matches, RLS enabled |
-| 6 | Architecture health check | **50/50 ALL GREEN** — every layer verified |
-| 7 | Update ARCHITECTURE.md | refresh_app_views() section updated with non-concurrent note |
-
-**Architecture Health Report (50/50 GREEN):**
-
-| Category | Checks | Status |
-|----------|--------|--------|
-| Layer 1: Intake | 8 | All GREEN — 3 source platforms, 0 backlog, adapter template ready |
-| Layer 2: Processing | 15 | All GREEN — 158K teams, 403K matches, 4.4K source entity mappings |
-| Layer 3: Presentation | 8 | All GREEN — all 5 views populated, hybrid standings (scraped + computed) |
-| Security | 3 | All GREEN — RLS enabled, 5 write protection triggers on teams_v2 |
-| Dual-System | 3 | All GREEN — both pipelines verified end-to-end |
-| Nightly Pipeline | 7 | All GREEN — all workflow phases configured |
-| Scale Readiness | 6 | All GREEN — 3 adapters, template ready, universal processStandings |
-
-**Files Created:** `diagnose_view_health.cjs`, `verify_architecture_health.cjs`, `095_fix_refresh_views_and_rls.sql`
-**Files Modified:** `1.2-ARCHITECTURE.md` (refresh function section), `CLAUDE.md`
-**Zero Match Pipeline Impact:** Rankings, ELO, Teams, Matches — completely untouched
-
----
-
-### Session 92 QC - Dual-System Architecture: Lightweight Standings Resolver (February 6, 2026) - COMPLETE ✅
-
-**Goal:** Fix standings page showing only 7 of 11 teams for U-11 Boys Division 1. 439 of 1,173 teams (37%) had NULL metadata, making them invisible in filtered views.
-
-**Root Cause:** `processStandings.cjs` used the same heavy 3-tier entity resolution as the match pipeline, including pg_trgm fuzzy matching. Standings data is authoritative — it doesn't need fuzzy matching.
-
-**ARCHITECTURAL PRINCIPLE (Principle 36): Two Pipelines, Two Resolvers, One Shared Team Registry**
-
-| | System 1: Match Pipeline | System 2: Standings Absorption |
-|-|--------------------------|-------------------------------|
-| **Purpose** | Rankings, ELO, Teams, Matches | League Standings page ONLY |
-| **Processor** | DQE / fastProcessStaging | processStandings.cjs |
-| **Resolver** | Heavy 3-tier (fuzzy) | Lightweight (exact + create) |
-| **Shared** | teams_v2 (standings reads/enriches NULL fields, never overwrites) |
-
-**Completed:**
-
-| Step | Description | Result |
-|------|-------------|--------|
-| 1 | Diagnostic (gap analysis) | 439 NULL metadata teams, 0% resolution in filters |
-| 2 | Rewrite processStandings.cjs resolver | 3-step lightweight (source map → exact → create, NO fuzzy) |
-| 3 | Add metadata verification | Step 1 verifies birth_year/gender, redirects if incompatible |
-| 4 | Add metadata enrichment | Safe: only fills NULLs, never overwrites |
-| 5 | Handle unique_team_identity conflicts | Redirect to existing enriched record |
-| 6 | Reprocess all 1,211 standings | 1,211 resolved, 0 skipped (was 35 skipped) |
-| 7 | Verify U-11 Boys Division 1 | 11 teams showing (was 7) |
-| 8 | Update all architecture docs | ARCHITECTURE.md, PLAYBOOK.md, ROADMAP.md, CLAUDE.md |
-
-**Results:**
-
-| Metric | Before | After |
-|--------|--------|-------|
-| NULL metadata teams | 439 (37%) | 17 (1.4%) |
-| U-11 Boys Division 1 | 7 teams | **11 teams** |
-| Sporting City 15 Pre MLSN-East | Missing | **#2, 19pts** |
-| Teams resolved | 1,176 (35 skipped) | **1,211 (0 skipped)** |
-| Source entity map corrections | 0 | **~100 redirected** |
-| Teams enriched | 0 | **~300 NULL fields filled** |
-| New teams created | 0 | **~20 (trust the league)** |
-
-**Files Modified:** `processStandings.cjs` (major rewrite), `1.2-ARCHITECTURE.md`, `3-DATA_SCRAPING_PLAYBOOK.md`, `3-DATA_EXPANSION_ROADMAP.md`, `CLAUDE.md`
-**Files Created:** `diagnose_standings_gaps.cjs`, `verify_standings_completeness.cjs`
-**Zero Match Pipeline Impact:** Rankings, ELO, Teams, Matches — completely untouched
-
----
-
-### Session 92 - League Standings Passthrough Architecture (February 6, 2026) - COMPLETE ✅
-
-**Goal:** Replace over-engineered standings computation with a hybrid passthrough architecture. Scrape authoritative league standings, store as-is, display as-is. Computed fallback for leagues without scraped data.
-
-**CRITICAL ARCHITECTURAL FIX:** The league IS the authority on its own standings. Don't reconstruct what the authority already publishes.
-
-**Completed:**
-
-| Step | Description | Result |
-|------|-------------|--------|
-| 1 | Migration 094 (tables + hybrid view) | staging_standings + league_standings + hybrid UNION ALL view |
-| 2 | Verify zero behavior change | 15,928 rows, SBV Pre-NAL 15 unchanged (Division 1, 8GP, 15pts) |
-| 3 | Universal standings scraper engine | `scrapeStandings.js` — source-agnostic, reads adapter config |
-| 4 | Universal standings processor | `processStandings.cjs` — lightweight entity resolution (Session 92 QC) |
-| 5 | Heartland adapter standings config | Archives (static HTML) + live CGI scraping |
-| 6 | Scrape Heartland Fall 2025 | 1,211 staging rows from 132 divisions (73 Boys + 59 Girls) |
-| 7 | Process standings | **1,211 resolved, 0 skipped** (after Session 92 QC fix) |
-| 8 | Refresh views, verify | 1,208 scraped + computed fallback view rows |
-| 9 | Update daily pipeline | Phase 1.5 (scrape standings) + Phase 2.6 (process standings) |
-
-**Hybrid View Architecture:**
-
-```
-app_league_standings = PART 1 (scraped, authoritative) UNION ALL PART 2 (computed fallback)
-  PART 1: league_standings → teams_v2 → leagues (1,208 rows for Heartland)
-  PART 2: matches_v2 CTE (for non-Heartland leagues)
-  WHERE l.id NOT IN (SELECT DISTINCT league_id FROM league_standings)
-```
-
-**Universal Design (CLAUDE.md Principle 11 + 36 compliance):**
-- `scrapeStandings.js`: Source-agnostic engine, reads any adapter with `standings.enabled`
-- `processStandings.cjs`: **Lightweight resolver** — separate from match pipeline (Principle 36)
-- `staging_standings` → `league_standings` → `app_league_standings`: Same three-layer pattern
-- Adding a new standings source = adapter config only (1-2 hours, zero custom code)
-- Designed for 200-400 league sources with zero per-source custom code
-
-**Files Created:** `094_league_standings_passthrough.sql`, `scrapeStandings.js`, `processStandings.cjs`
-**Files Modified:** `heartland.js` (adapter), `daily-data-sync.yml`, `1.2-ARCHITECTURE.md`
-**No App Changes Required:** View schema identical, all `lib/leagues.ts` queries work unchanged
-
----
-
-### Session 91b - League Standings Phase 9: Filter Polish + Division Data Backfill (February 5, 2026) - COMPLETE ✅
-
-**Goal:** Fix 3 QC issues on League Standings page: filter chip visual lag, label truncation, and teams showing 0 points due to division data gap.
-
-**Issues Fixed:**
-
-| # | Issue | Root Cause | Fix |
-|---|-------|-----------|-----|
-| 1 | Filter chips stay grayed out | Nested ScrollView touch conflict | Gender: `View` replaces `ScrollView`. Age/Div: `nestedScrollEnabled={true}`. All: `activeOpacity={0.7}` |
-| 2 | "Gender" label truncated | `filterLabel.width: 52` too narrow | Width 52→62, `numberOfLines={1}` on all labels |
-| 3 | Teams show 0 points | Matches split between `division='Div 1'` and `NULL` → view GROUP BY creates 2 rows | 3-layer fix: backfill (790) + inference (2,352) + view refresh |
-
-**Division Data Results:**
-
-| Source | Before | After |
-|--------|--------|-------|
-| Heartland with division | 3,643 | **5,963** |
-| HTGSports with division | ~6,000 | **6,292** |
-| View rows with division | 0 | **1,688** |
-| SBV Pre-NAL | Missing | **Division 1 \| 8GP \| 15pts \| #3** |
-
-**CRITICAL ARCHITECTURAL INSIGHT — League Standings Should Be Passthrough:**
-The current approach recomputes standings from match data via `app_league_standings` materialized view. This required complex division inference (7 iterative passes, COALESCE logic) that produced 176 multi-division artifacts and 5 NULL+division splits. **The league already publishes authoritative standings** (Heartland `subdiv_standings.cgi`). Next session should simplify: scrape standings directly, store as-is, display as-is. Don't reconstruct what the authority already publishes.
-
-**Known Residual (Not Blocking):**
-- 176 multi-division teams: inference assigns opponent's division for away matches
-- 5 NULL+named division splits: calendar-only teams with 1-2 incorrectly inferred matches
-- 161 Heartland league matches with NULL division (calendar-only, no CGI data for either team)
-
-**Files Created:** `inferMatchDivision.cjs`
-**Files Modified:** `app/league/[eventId].tsx` (UI fixes only)
-**Data Scripts Run:** `backfillDivisionTier.cjs`, `inferMatchDivision.cjs` (7 passes), Migration 093 view refresh
-
----
-
-### Session 91 - Generic Event Name Prevention + Display Utility Integration (February 5, 2026) - COMPLETE ✅
-
-**Goal:** Eliminate generic tournament/league names from production data AND consolidate duplicate display utility functions into shared modules. Zero UI design changes.
-
-**Root Cause:** 215 tournaments had generic names ("GotSport Event 12093", "Event 39064") because no layer in the pipeline rejected them. Also, 3 local patch functions in `app/match/[id].tsx` duplicated logic available in shared modules.
-
-**5-Layer Defense Architecture (NEW):**
-
-```
-Layer 0: Scraper emits raw data to staging_games
-Layer 1: intakeValidator.js — rejects INVALID data (null dates, rec, etc.)
-Layer 2: eventNormalizer.js — rejects GENERIC names → canonical_name: null    ← NEW
-Layer 3: DQE findOrCreateEvent() — null canonical_name → skip (line 787)     ← EXISTING
-Layer 4: Fast processors — own isGeneric() guards                             ← NEW
-Layer 5: DB CHECK constraint — blocks generic INSERTs (migration 091)         ← NEW
-```
-
-**Completed:**
-
-| Step | Description | Result |
-|------|-------------|--------|
-| 1A | Retroactive data fix | 215 generic tournament names resolved (4-tier: staging, canonical_events, web, NULL) |
-| 1B | DB CHECK constraints | Migration 091 blocks future generic INSERTs on tournaments + leagues |
-| 1C | Pipeline guards | `resolveEventName.cjs` integrated in fastProcessStaging, linkByEventPattern, linkFromV1Archive, coreScraper |
-| 2A | Shared display utils | `lib/matchUtils.ts` — `getMatchStatus()` + `getEventTypeBadge()` |
-| 2B | match/[id].tsx cleanup | 3 local patch functions removed → shared imports |
-| 2C | team/[id].tsx cleanup | Inline gender formatting → `getGenderDisplay()` |
-| 3 | eventNormalizer guard | `isGeneric()` rejection → DQE auto-skips with ZERO DQE changes |
-| 4 | linkUnlinkedMatches guard | `isGeneric()` guard before event creation |
-| 5 | Archive dead code | `fastProcessHTG.cjs` → `scripts/_archive/` (superseded by fastProcessStaging) |
-
-**Key Architecture Insight:** `eventNormalizer.js` is the architecturally correct validation point. DQE `findOrCreateEvent()` already handles `canonical_name: null` at line 787 → returns `{ league_id: null, tournament_id: null }` → match created unlinked. Fixing the normalizer protects ALL DQE code paths with zero DQE changes.
-
-**Files Created:** `resolveEventName.cjs`, `fixGenericEventNames.cjs`, `091_block_generic_event_names.sql`, `lib/matchUtils.ts`
-**Files Modified:** `eventNormalizer.js`, `linkUnlinkedMatches.js`, `fastProcessStaging.cjs`, `linkByEventPattern.js`, `linkFromV1Archive.js`, `coreScraper.js`, `app/match/[id].tsx`, `app/team/[id].tsx`
-**Files Archived:** `fastProcessHTG.cjs` → `scripts/_archive/`
-
----
-
-### Session 90 - Fix Cross-Import Duplicate Matches (February 5, 2026) - COMPLETE ✅
-
-**Goal:** Fix duplicate matches in Team Detail tournament sections caused by V1 migration + scraper cross-import.
-
-**Root Cause:** V1 migration (Session 82) and scrapers both imported the same real-world games, but resolved opponent teams to different `teams_v2` records (different name normalization → different IDs). Semantic uniqueness constraint couldn't catch these.
-
-**Fix:** `scripts/maintenance/fixCrossImportDuplicates.cjs` — 6-layer false-positive protection, soft-delete legacy copies.
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Active matches | 405,595 | 403,068 |
-| Cross-import duplicates soft-deleted | 0 | 2,527 |
-| SBV Pre-NAL 15 tournament matches | 6 | 3 |
-| ELO matches | 192,689 | 187,913 |
-| ELO teams | 60,864 | 59,295 |
-
-**Files Created:** `fixCrossImportDuplicates.cjs`, `SESSION_90_CROSS_IMPORT_DUPLICATES.md`
-
-**Prevention:** Already handled by `source_entity_map` (Session 89). This fix is purely retroactive.
-
----
-
-### Session 89 - Universal Entity Resolution + Source ID Architecture (February 5, 2026) - COMPLETE ✅
-
-**Goal:** Eliminate all duplicate matches caused by V1-legacy duplicate teams. Build permanent prevention via source_entity_map.
-
-**Root Cause:** V1 migration created 7,253 duplicate team records with NULL/incomplete metadata. 100% involved v1-legacy data.
-
-**Completed:**
-
-| Step | Description | Result |
-|------|-------------|--------|
-| 1 | Fix teamDedup.js (4 bugs) | Soft-delete first, AND→OR, deleted_at filter |
-| 2 | Migration 089 | source_entity_map table + state normalization |
-| 3 | Backfill source entity IDs | 3,253 mappings (1,244 teams + 274 leagues + 1,735 tournaments) |
-| 4 | Retroactive team merge | 7,253 v1-legacy duplicates merged via bulk SQL |
-| 5 | Tournament dedup | 17 duplicate groups merged, 0 remaining |
-| 6-7 | DQE pipeline prevention | Tier 1/2/3 resolution in findOrCreateTeam/Event |
-| 8 | fastProcessStaging prevention | Bulk source ID lookup + NULL-tolerant fallback |
-| 9 | Adapter enhancement | coreScraper emits source_home/away_team_id |
-| 10 | Post-fix cleanup | ELO recalc (189,971 matches, 59,401 teams) + view refresh |
-
-**Key Architecture Changes:**
-- `source_entity_map` table: Universal (entity_type, source_platform, source_entity_id) → SV UUID
-- Partial unique index `unique_match_semantic` replaces constraint (allows soft-deleted duplicates)
-- Three-tier resolution in all pipeline paths (DQE, fastProcessStaging)
-- Adapters emit source entity IDs for Tier 1 deterministic resolution
-
-**Database After Session 89:**
-- teams_v2: 158,043 (down from 160,705 — 7,253 merged)
-- matches_v2: 405,595 active (~2,941 soft-deleted)
-- source_entity_map: 3,253 mappings
-- tournaments: 1,711 (17 dupes merged)
-- 0 remaining v1-legacy duplicate pairs
-
-**Files Modified:** `teamDedup.js`, `dataQualityEngine.js`, `fastProcessStaging.cjs`, `coreScraper.js`, `1.2-ARCHITECTURE.md`, `3-DATA_EXPANSION_ROADMAP.md`, `3-DATA_SCRAPING_PLAYBOOK.md`, `CLAUDE.md`
-**Files Created:** `089_universal_source_entity_map.sql`, `backfillSourceEntityMap.cjs`, `mergeV1LegacyDuplicates.cjs`, `SESSION_89_UNIVERSAL_ENTITY_RESOLUTION.md`
-
----
-
-### Session 88 - Universal QC Fix (4 Issues) (February 5, 2026) - COMPLETE ✅
-
-**Goal:** Fix 4 QC issues found during app review. All fixes are data-layer only. ZERO UI design changes.
-
-**QC Issues Fixed:**
-
-| # | Issue | Root Cause | Fix | Scale |
-|---|-------|-----------|-----|-------|
-| 1 | Birth year/age group mismatch | Hardcoded `SEASON_YEAR = 2026` in 4 pipeline files | Dynamic season year from DB `seasons` table | Prevention for 22K+ teams |
-| 2 | Rank badge discrepancy | Rankings SELECT missing `elo_national_rank`, `elo_state_rank` columns | Added 2 columns to Supabase SELECT query | All SoccerView mode users |
-| 3 | Wrong state assignment | GotSport importer used unreliable `STATE_ASSOCIATION_MAP` | `fixTeamStates.cjs` + `inferStateFromName()` in pipeline | 526 teams corrected |
-| 4 | Duplicate matches in Team Details | Reverse matches (swapped home/away) + missing `deleted_at IS NULL` | Soft-delete filters + reverse match detection + pipeline prevention | 749 reverse dupes removed |
-
-**Key Innovations:**
-- `deleted_at IS NULL` added to ALL match queries (app, views, ELO, pipeline)
-- Reverse match detection in `matchDedup.js` (conservative: score-consistent only)
-- State inference from team display names (`inferStateFromName()`)
-- Dynamic `SEASON_YEAR` from DB for zero-code season rollover
-
-**Database After Session 88:**
-- teams_v2: 160,705 | matches_v2: 407,896 active (2,423 soft-deleted)
-- ELO: 192,172 matches, 60,817 teams (range 1157-1782)
-- 0 score-consistent reverse duplicates | 0 semantic duplicate groups
-
-**Files Modified:** `app/team/[id].tsx`, `rankings.tsx`, `recalculate_elo_v2.js`, `fastProcessStaging.cjs`, `dataQualityEngine.js`, `matchDedup.js`, `teamNormalizer.js`
-**Files Created:** `fixReverseMatches.cjs`, `fixTeamStates.cjs`, `088_add_deleted_at_filters.sql`
-**Session Docs:** `SESSION_88_UNIVERSAL_QC_FIX.md`, `SESSION_88_QC3_STATE_FIX.md`, `SESSION_88_QC4_DUPLICATE_MATCHES.md`
-
----
-
-### Session 87.2 - HTGSports Scraping + Pipeline Fixes (February 4, 2026) - COMPLETE ✅
-
-**Goal:** Complete HTGSports scraping, fix staging pipeline constraints, create universal bulk processor.
-
----
-
-### Session 87 - Universal Canonical Resolver & Gender Fix (February 4, 2026) - COMPLETE ✅
-
-**Goal:** Fix cross-gender team merging bug in teamDedup.js.
-
-**Problem:** teamDedup.js was merging teams across genders (Boys merged with Girls). Fixed by adding gender and birth_year as exact-match constraints before fuzzy name matching.
-
-**Key Principle:** Fuzzy matching MUST be constrained by exact-match fields (gender, birth_year) before comparing names.
-
----
-
-### Session 86 - Match Recovery & Soft Delete Architecture (February 4, 2026) - COMPLETE ✅
-
-**Problem:** Session 85's matchDedup.js hard-deleted 9,160 matches. These were NOT duplicates -- they were the same match from different sources.
-
-**Recovery:**
-- Recovered 6,053 matches from audit_log
-- Added soft-delete columns: `deleted_at`, `deletion_reason`
-- Updated matchDedup.js to use `UPDATE SET deleted_at` instead of `DELETE`
-- Ran semantic dedup: 1,660 true duplicates soft-deleted
-- Recalculated ELO + refreshed all views
-
-**Key Architecture Change:** Match deduplication MUST use soft delete, not hard delete. See Principle 30.
-
----
-
-### Session 85 - Universal SoccerView ID Architecture (February 4, 2026) - COMPLETE ✅
-
-Changed match uniqueness from `source_match_key` to semantic `(match_date, home_team_id, away_team_id)`. See Principle 29. Note: Hard-delete approach was corrected in Session 86 with soft-delete pattern.
-
----
-
-### Previous Sessions (84 and Earlier)
+### Previous Sessions (92 QC P2 and Earlier)
 
 **For detailed session history, see [docs/1.3-SESSION_HISTORY.md](docs/1.3-SESSION_HISTORY.md).**
 
@@ -1940,6 +1698,18 @@ Changed match uniqueness from `source_match_key` to semantic `(match_date, home_
 
 | Session | Date | Focus | Key Outcome |
 |---------|------|-------|-------------|
+| 92 QC P2 | Feb 7 | Fix refresh_app_views() + RLS | 50/50 architecture health, Migration 095 |
+| 92 QC | Feb 6 | Lightweight Standings Resolver | Dual-system architecture (Principle 36), NULL metadata 439→17 |
+| 92 | Feb 6 | League Standings Passthrough | Hybrid view, scrapeStandings.js, processStandings.cjs |
+| 91b | Feb 5 | Filter Polish + Division Backfill | Division data backfill, standings passthrough insight |
+| 91 | Feb 5 | Generic Event Name Prevention | 5-layer defense, resolveEventName.cjs, Migration 091 |
+| 90 | Feb 5 | Cross-Import Duplicate Fix | 2,527 cross-import dupes soft-deleted |
+| 89 | Feb 5 | Universal Entity Resolution | source_entity_map table, 7,253 teams merged |
+| 88 | Feb 5 | Universal QC Fix (4 Issues) | deleted_at IS NULL, reverse match detection, state inference |
+| 87.2 | Feb 4 | HTGSports Scraping + Pipeline | Universal bulk processor (fastProcessStaging.cjs) |
+| 87 | Feb 4 | Canonical Resolver & Gender Fix | Gender/birth_year exact-match constraints on fuzzy matching |
+| 86 | Feb 4 | Match Recovery & Soft Delete | Soft-delete architecture (Principle 30), 6,053 matches recovered |
+| 85 | Feb 4 | Universal SoccerView ID Architecture | Semantic match uniqueness (Principle 29) |
 | 84 | Feb 3 | Premier-Only Data Policy | Removed recreational data |
 | 83 | Feb 3 | Foundation First Principle | Complete V1 extraction |
 | 82 | Feb 3 | V1 Archive Migration | +93,984 matches to V2 |

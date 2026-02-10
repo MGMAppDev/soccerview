@@ -383,5 +383,5 @@ const K = team.matches_played < 10 ? 48 : 32;
 ---
 
 *This document is authoritative for SoccerView Power Rating methodology.*
-*For architecture details, see [1-ARCHITECTURE.md](1-ARCHITECTURE.md).*
+*For architecture details, see [1.2-ARCHITECTURE.md](1.2-ARCHITECTURE.md).*
 *For data quality, see [2-UNIVERSAL_DATA_QUALITY_SPEC.md](2-UNIVERSAL_DATA_QUALITY_SPEC.md).*

@@ -1,21 +1,23 @@
-> ✅ **STATUS UPDATE (Feb 5, 2026 - Session 90):** CROSS-IMPORT DUPLICATE FIX COMPLETE
+> ✅ **STATUS UPDATE (Feb 9, 2026 - Session 94 Part 2):** COMPREHENSIVE DOC UPDATE
 >
 > **Current Database State:**
 > - staging_games: 86,491 total (0 unprocessed) - UNIQUE constraint on source_match_key
-> - matches_v2: **403,068 active rows** (~5,468 soft-deleted)
-> - teams_v2: **158,043 rows** (~59,295 with ELO ratings)
+> - matches_v2: **402,948 active rows** (~5,297 soft-deleted)
+> - teams_v2: **145,356 rows** (~51,796 with computed ELO)
 > - clubs: 124,650 rows
 > - leagues: 280 rows
-> - tournaments: 1,711 rows (17 dupes merged in Session 89)
-> - **source_entity_map: 3,253 rows** (NEW Session 89 - universal source ID mappings)
+> - tournaments: 1,750 rows (0 generic names — Session 91 CHECK constraint)
+> - **source_entity_map: ~72,000+ rows** (68K+ GotSport teams backfilled Session 94)
 > - **canonical_events: 1,795 rows** (bulk seeded from leagues/tournaments)
 > - **canonical_teams: 138,252 rows**
 > - **canonical_clubs: 7,301 rows** (bulk seeded from clubs with 3+ teams)
 > - **learned_patterns: 0+ rows** (adaptive learning - grows weekly)
+> - **staging_standings: 1,211 rows** (NEW Session 92 - raw standings staging)
+> - **league_standings: 1,208 rows** (NEW Session 92 - production standings)
 > - **staging_rejected: 84,045 rows** (V1 migration rejects)
 > - seasons: 3 rows
 >
-> **Sessions 85-90 Changes:**
+> **Sessions 85-94 Changes:**
 > - Match uniqueness: semantic key `(match_date, home_team_id, away_team_id)`
 > - Soft-delete pattern: `deleted_at` + `deletion_reason` columns (Session 86)
 > - All queries MUST filter `WHERE deleted_at IS NULL` for active matches
@@ -28,6 +30,13 @@
 > - **`source_entity_map` table: Three-tier deterministic entity resolution (Session 89)**
 > - **7,253 v1-legacy duplicate teams merged, 17 tournament dupes merged (Session 89)**
 > - **Adapters emit source_home/away_team_id for Tier 1 resolution (Session 89)**
+> - **5-layer generic event name defense (Session 91) — DB CHECK constraints block generics**
+> - **Dual-system architecture: match pipeline vs standings absorption (Session 92)**
+> - **Lightweight standings resolver — no fuzzy matching on authoritative data (Session 92 QC)**
+> - **`refresh_app_views()` fixed: non-concurrent for UNION ALL views (Session 92 QC P2)**
+> - **12,716 duplicate teams merged, COALESCE→LEAST/GREATEST rank fix (Session 93-94)**
+> - **Phase 2.7: GotSport Rankings Refresh in nightly pipeline (Session 94)**
+> - **68K+ GotSport team IDs backfilled to source_entity_map (Session 94)**
 > - **Cross-import duplicate fix: 2,527 legacy matches soft-deleted (Session 90)**
 > - **Partial unique index for semantic match uniqueness (Session 89)**
 >
