@@ -829,24 +829,17 @@ export async function getLeaguesList(filters?: {
   const { data: leagues, error } = await query;
   if (error || !leagues) return [];
 
-  // 2. Get per-league stats from season-scoped standings view (single query)
-  // Each row = one team in one league. played = that team's games played.
-  // teamCount = count of rows per league, matchCount = SUM(played) / 2 per league
-  // (each match is counted once for each team → total played = 2 × matches)
-  const { data: standings } = await supabase
-    .from('app_league_standings')
-    .select('league_id, played')
-    .limit(50000);
+  // 2. Get per-league stats via server-side RPC (aggregated — ~98 rows instead of 19,858+)
+  // Session 98b: Replaced client-side row fetching that hit PostgREST row limits.
+  // get_league_stats() groups by league_id server-side, returns team_count + match_count.
+  const { data: statsRows } = await supabase.rpc('get_league_stats');
 
   const leagueStats = new Map<string, { teamCount: number; totalPlayed: number }>();
-  for (const row of standings || []) {
-    const existing = leagueStats.get(row.league_id);
-    if (existing) {
-      existing.teamCount++;
-      existing.totalPlayed += row.played || 0;
-    } else {
-      leagueStats.set(row.league_id, { teamCount: 1, totalPlayed: row.played || 0 });
-    }
+  for (const row of statsRows || []) {
+    leagueStats.set(row.league_id, {
+      teamCount: Number(row.team_count) || 0,
+      totalPlayed: (Number(row.match_count) || 0) * 2, // RPC returns match_count, multiply by 2 for totalPlayed
+    });
   }
 
   // 3. Merge and return — only leagues with current-season data

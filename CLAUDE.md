@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 20.0** | Last Updated: February 15, 2026 | Session 98 Complete
+> **Version 21.0** | Last Updated: February 15, 2026 | Session 98b Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1641,6 +1641,42 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 98b - Fix App Bugs + Nationwide Coverage Master Plan (February 15, 2026) - COMPLETE ✅
+
+**Goal:** Fix 3 app bugs discovered on device + verify ALL 55 state league platforms + create comprehensive nationwide data collection master plan with accountability framework.
+
+**Bug Fixes:**
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Home page "0 Matches" + console error | Migration 088 dropped `updated_at` from `app_team_profile` view. `fetchStats()` cascaded. | Isolated `lastUpdatedResult` from `Promise.all()`, query `teams_v2` directly. Migration 098b restores column. |
+| Leagues tab shows only 2 leagues | `getLeaguesList()` fetches 19,858 rows; PostgREST caps response | Created `get_league_stats()` RPC function (server-side aggregation → 98 rows). Updated `lib/leagues.ts`. |
+
+**Nationwide Research (Deep Research with 6+ agents):**
+
+| Finding | Impact |
+|---------|--------|
+| SDL uses PlayMetrics with public URLs | PlayMetrics adapter unlocks SDL + Colorado (9 tiers!) |
+| Arkansas migrated to Squadi (new platform) | New adapter needed for AR |
+| 16 GotSport event IDs confirmed | 10 states ready for immediate scraping (Wave 2a) |
+| 10 distinct platforms power US soccer | 12 total adapters needed (7 built, 5 to build) |
+| 3 states have no statewide league (MS, SD, WY) | Captured through USYS multi-state conferences |
+| Sports Connect being sunset 2027 → PlayMetrics | Updated platform tracking |
+
+**Accountability Framework Added to STATE_COVERAGE_CHECKLIST.md:**
+- Session Progress Log (append-only)
+- Completion Targets with gap analysis
+- Session Start/End protocols
+- Wave Discipline + "Am I Drifting?" check
+
+**Resume Prompt:** See STATE_COVERAGE_CHECKLIST.md for master tracking. Follow Wave plan.
+
+**Files Modified:** `app/(tabs)/index.tsx`, `lib/leagues.ts`, `docs/3-STATE_COVERAGE_CHECKLIST.md` (v3.0), `CLAUDE.md` (v21.0)
+**Files Created:** `scripts/migrations/098b_fix_app_bugs.sql`
+**Zero data loss. All fixes universal.**
+
+---
 
 ### Session 98 - Comprehensive Expansion Sprint: ECNL + FL + TX + MLS Next Fix (February 15, 2026) - COMPLETE ✅
 

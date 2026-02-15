@@ -214,7 +214,8 @@ async function fetchStats(): Promise<StatsData> {
   // Season-scoped queries:
   // - Teams: has_matches=true in app_rankings (ELO resets to 0 then replays current season only)
   // - Matches: app_matches_feed view with season date range (view filters deleted_at IS NULL)
-  const [teamsResult, matchesResult, lastUpdatedResult] = await Promise.all([
+  // Core stats queries — isolated from lastUpdated to prevent cascade failures
+  const [teamsResult, matchesResult] = await Promise.all([
     supabase
       .from("app_rankings")
       .select("id", { count: "exact", head: true })
@@ -224,13 +225,6 @@ async function fetchStats(): Promise<StatsData> {
       .select("id", { count: "exact", head: true })
       .gte("match_date", startDate)
       .lte("match_date", endDate),
-    supabase
-      .from("app_team_profile")
-      .select("updated_at")
-      .not("updated_at", "is", null)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .single(),
   ]);
 
   if (teamsResult.error) {
@@ -240,13 +234,28 @@ async function fetchStats(): Promise<StatsData> {
     console.error("[Home] fetchStats: Match count error:", matchesResult.error);
   }
 
+  // lastUpdated is non-critical — query teams_v2 directly (bypass view that may lack column)
+  let lastUpdated: string | null = null;
+  try {
+    const { data: luData } = await supabase
+      .from("teams_v2")
+      .select("updated_at")
+      .not("updated_at", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+    lastUpdated = luData?.updated_at ?? null;
+  } catch {
+    // Non-critical — app works fine without lastUpdated
+  }
+
   console.log("[Home] fetchStats: Complete -", teamsResult.count, "teams,", matchesResult.count, "matches");
 
   return {
     totalTeams: teamsResult.count ?? 0,
     totalMatches: matchesResult.count ?? 0,
     totalStates: 50,
-    lastUpdated: lastUpdatedResult.data?.updated_at ?? null,
+    lastUpdated,
   };
 }
 
