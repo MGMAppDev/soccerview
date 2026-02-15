@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 6.0** | Updated: February 15, 2026 | SINC Sports + Division-Seeded ELO (Session 95)
+> **Version 7.0** | Updated: February 14, 2026 | Post-Expansion QC Protocol (Session 96)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -769,6 +769,61 @@ When data flows from staging to production, entities (teams, leagues, tournament
 - [ ] Test in app: matches visible, teams searchable
 ```
 
+### Post-Expansion QC Protocol (Session 96 — MANDATORY)
+
+**After onboarding ANY new state or league, run this QC checklist in the app.** Session 96 discovered 4 fixable issues that would have shipped to users without QC testing.
+
+```markdown
+## Post-Expansion QC Checklist (Run in Expo Go)
+
+### Home Page
+- [ ] Match count displays correctly (not "0 Matches")
+- [ ] No console errors in fetchStats
+- [ ] Date range shows current season matches
+
+### Rankings Tab
+- [ ] New state appears in state filter dropdown
+- [ ] Teams from new source appear when state is filtered
+- [ ] Rank numbers are sequential (no gaps from duplicates)
+- [ ] Sort order is correct (state_rank when state filtered, national_rank otherwise)
+
+### Teams Tab
+- [ ] Teams from new source are searchable by name
+- [ ] Team names display correctly (no double-prefix, no encoding issues)
+- [ ] Birth year and gender metadata populated (not NULL)
+
+### League Standings
+- [ ] New league appears in league dropdown
+- [ ] Division names are consistent and human-readable
+- [ ] No unnecessary suffixes (e.g., "- Group A" when only one group exists)
+- [ ] All teams in each division are displayed (compare to source)
+- [ ] W-L-D and points match source data
+
+### Team Detail (pick 3+ teams from new source)
+- [ ] Matches appear in Recent section
+- [ ] Upcoming/scheduled games appear (if applicable)
+- [ ] Season stats (W-L-D) are accurate
+- [ ] Power Rating is populated (ELO calculated)
+- [ ] State is correct (not 'unknown')
+
+### Data Quality Queries
+- [ ] `SELECT COUNT(*) FROM teams_v2 WHERE state = '{STATE}'` — teams assigned correctly
+- [ ] `SELECT COUNT(*) FROM teams_v2 WHERE state = 'unknown' AND id IN (...)` — no orphan state
+- [ ] `SELECT display_name FROM teams_v2 WHERE display_name LIKE '%{ClubName} {ClubName}%'` — no double-prefix
+- [ ] `SELECT DISTINCT division FROM league_standings WHERE league_id = ...` — divisions clean
+```
+
+**Common QC Issues Found (Session 96, universal lessons):**
+
+| Issue | Root Cause | Fix | Prevention |
+|-------|-----------|-----|------------|
+| Teams have `state='unknown'` | `processStandings.cjs` didn't inherit league state | Propagate `leagueState` to team creation | `resolveTeam()` accepts `leagueState` param |
+| Division names inconsistent | `mapTierToName()` mixed ordinal/cardinal styles | Source-specific naming in adapter config | Each adapter owns its `mapTierToName()` |
+| "- Group A" suffix on all divisions | Unconditional group append | Only append when multiple groups exist | Post-processing group suffix logic |
+| Double-prefix with diacritics | `removeDuplicatePrefix()` used `.toLowerCase()` | Unicode NFD normalization before comparison | `stripDiacritics()` in `cleanTeamName.cjs` |
+| Home page "0 Matches" | PostgREST timeout filtering `home_score` on materialized view | Query `app_matches_feed` with date-only filter | App uses Layer 3 views, not Layer 2 tables |
+| Abbreviated team names | Source data reality (sole source for state) | No fix needed — these ARE the official names | Document source data characteristics |
+
 ---
 
 ## Existing Scrapers
@@ -798,11 +853,15 @@ When data flows from staging to production, entities (teams, leagues, tournament
 | Team ID extraction | `a[href*="teamid="]` or `a[href*="team="]` — URL params, not text |
 | Time validation | Must validate hour (1-12) and minute (0-59) — SINC pages have corrupted times like "53:00" |
 
-**Lessons Learned:**
+**Lessons Learned (Sessions 95-96):**
 1. **Test small batches first** — always `--event SINGLE_ID` before `--active`
 2. **SINC Sports uses responsive layouts** — team rows contain `.std-heading` (smallOnly) elements. Cannot filter by `.std-heading` class; instead identify team rows by `a[href*="team="]` presence.
 3. **Stats filtering** — use `.closest('.std-heading')` to exclude stats inside responsive headers. Only count `.col.bigpad` elements NOT inside `.std-heading`.
-4. **Group info** — standings groups are indicated by `<h3>` elements within `#divStds`. Append group name to division name: `"Premier - Group A"`.
+4. **Group suffix is conditional** — only append "- Group A" when multiple groups exist for the same division within the same event. If only one group → no suffix. Prevents noise in single-group leagues.
+5. **Division naming is source-specific** — NCYSA uses ordinal ("1st Division", "2nd Division"), Heartland uses cardinal ("Division 1", "Division 2"). The adapter's `mapTierToName()` controls this. Never apply one source's naming convention to another's data.
+6. **Abbreviated team names ARE official** — SINC Sports is the sole data source for states like NC. Short names ("CSA Charlotte King", "WFC Silver") are the official NCYSA team names. There are no fuller equivalents to link to. Not a data quality bug — it's source data reality.
+7. **State metadata must propagate** — League records have `state = 'NC'`, but `processStandings.cjs` was hardcoding `'unknown'` for newly created teams. Fix: inherit state from league metadata.
+8. **Unicode diacritics in team names** — International club names (Barça, Atlético, München) require NFD normalization for duplicate prefix detection. Without it, "Barca Academy" ≠ "Barça Academy" and the prefix dedup algorithm fails.
 
 **Supported Data:**
 - Match results (completed + scheduled)

@@ -1,6 +1,6 @@
 # SoccerView Data Expansion Roadmap
 
-> **Version 6.0** | Updated: February 14, 2026 | Session 95 — Local-First Strategy
+> **Version 7.0** | Updated: February 14, 2026 | Session 96 — NC QC Complete + Post-Expansion Protocol
 >
 > Strategic guide for national expansion using the V2 dual-system architecture.
 >
@@ -158,21 +158,107 @@ Both configured in the same adapter file.
 | **GotSport** | Rankings | 50 | - | - | - | Ranking badges only |
 | **HTGSports** | Tournaments | 26+ | PRODUCTION | - | - | Match data |
 | **Heartland CGI** | League | KS, MO | PRODUCTION | PRODUCTION | PRODUCTION | Full pipeline |
+| **SINC Sports** | League | NC | PRODUCTION | PRODUCTION | PRODUCTION | Full pipeline (Session 95-96) |
 
 ---
 
 ## Expansion Waves
 
-### Wave 1: SINC Sports Test (CURRENT — Session 95)
+### Wave 1: SINC Sports Test (NC: COMPLETE ✅ — TN: READY)
 
 **Goal:** Validate architecture with 2 new leagues. One adapter, two states, two division schemes.
 
-| State | League | Divisions | Purpose |
-|-------|--------|-----------|---------|
-| NC | NCYSA Classic League | Premier, 1st, 2nd, 3rd | Test new adapter end-to-end |
-| TN | TN State League | Div 1, 2a, 2b, 3 | Validate same adapter, different naming |
+| State | League | Divisions | Status |
+|-------|--------|-----------|--------|
+| NC | NCYSA Classic League | Premier, 1st–14th Division | ✅ PRODUCTION (Session 95-96 QC complete) |
+| TN | TN State League | Div 1, 2a, 2b, 3 | READY — adapter configured, scraping deferred |
 
-Combined with existing Heartland = 3-league validation for division-seeded ELO.
+**NC Results:** 8,692 matches (4,303 Fall + 4,389 Spring), 805 league standings, 506 teams, 15 divisions. All 3 data flows validated.
+
+Combined with existing Heartland = 2-league validation for division-seeded ELO (TN will make 3).
+
+#### NC Expansion Lessons Learned (Session 96 — UNIVERSAL)
+
+The NC expansion was the first state onboarded through the SINC Sports adapter. QC testing revealed **5 universal issues** that now have permanent fixes in the architecture. These learnings apply to ALL future state expansions, not just SINC Sports.
+
+**Lesson 1: State Metadata Must Propagate from League to Teams**
+
+| Before | After |
+|--------|-------|
+| `processStandings.cjs` hardcoded `state = 'unknown'` for new teams | `resolveTeam()` accepts `leagueState` parameter, inherits from league record |
+
+When `processStandings.cjs` creates a new team, it now inherits the league's state instead of defaulting to `'unknown'`. This is universal — works for any league from any state without source-specific code.
+
+**Lesson 2: Division Naming Is Source-Configurable, Not Universal**
+
+Each source has its own naming convention. The adapter's `mapTierToName()` function controls this:
+
+| Source | Naming Convention | Example |
+|--------|------------------|---------|
+| NCYSA (SINC) | Ordinal: "Premier", "1st Division", "2nd Division" | `mapTierToName(3)` → "2nd Division" |
+| Heartland | Cardinal: "Division 1", "Division 2" | Adapter doesn't use `mapTierToName()` |
+| Future sources | Whatever the source uses | Configure per adapter |
+
+**Anti-pattern:** Never apply one source's division naming scheme as a retroactive update to another source's data. Heartland "Division 1" is NOT the same naming convention as NCYSA "1st Division".
+
+**Lesson 3: Group Suffixes Must Be Conditional**
+
+Only append "- Group A" when a division actually has multiple groups (A, B, C, etc.). If only one group exists, the suffix is noise.
+
+```javascript
+// ✅ CORRECT: Post-processing conditional group suffix
+const groupsPerDiv = {};  // { "Premier": Set(["A"]), "1st Division": Set(["A", "B"]) }
+for (const s of allStandings) {
+  if (s.extra_data?.group) {
+    if (!groupsPerDiv[s.division]) groupsPerDiv[s.division] = new Set();
+    groupsPerDiv[s.division].add(s.extra_data.group);
+  }
+}
+for (const s of allStandings) {
+  const group = s.extra_data?.group;
+  if (group && groupsPerDiv[s.division]?.size > 1) {
+    s.division = `${s.division} - ${group}`;  // Only when multiple groups
+  }
+}
+```
+
+This is universal — if a future source has Group B, the suffix appears automatically.
+
+**Lesson 4: Unicode Diacritics in Team Name Normalization**
+
+International club names contain diacritical marks: Barça, Atlético, São Paulo, München. The `removeDuplicatePrefix()` algorithm must use NFD normalization to strip these before comparison. Without it, "Barca Academy Barça Academy 2013" is NOT detected as a double-prefix.
+
+Fix in `cleanTeamName.cjs` (single source of truth):
+```javascript
+function stripDiacritics(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+```
+
+This is universal — handles ALL future international club names automatically.
+
+**Lesson 5: PostgREST Timeout on Materialized View Column Filters**
+
+Filtering on nullable columns (e.g., `.not('home_score', 'is', null)`) on materialized views can cause PostgREST statement timeout (error code `57014`). The `head: true` option masks this as an empty `{message: ''}` error.
+
+| Pattern | Result |
+|---------|--------|
+| ❌ `matches_v2` with `.not('home_score', 'is', null)` | Works (has indexes) |
+| ❌ `app_matches_feed` with `.not('home_score', 'is', null)` | TIMEOUT (no index on score columns in view) |
+| ✅ `app_matches_feed` with date filters only | Works (view pre-filters completed matches) |
+
+**Rule:** App queries should use Layer 3 views (Principle 16) with lightweight filters. Heavy column filters belong in the view definition, not in the app query.
+
+**Lesson 6: Source Data Reality — Abbreviated Names Are Not Bugs**
+
+SINC Sports is the sole data source for NC. Abbreviated team names ("CSA Charlotte King", "WFC Silver") ARE the official NCYSA team names. GotSport doesn't cover NC at all.
+
+**Before investigating team name "issues", verify:**
+1. Does GotSport cover this state? (Check GotSport rankings for the state)
+2. Is there another source with fuller names? (Check all adapters)
+3. Are these abbreviations the source's official names?
+
+If the source uses short names and there's no alternative — document it and move on. Not every data characteristic is a bug.
 
 ### Wave 2: GotSport Event Discovery (Highest ROI — adapter already built)
 
@@ -249,6 +335,28 @@ node scripts/universal/dataQualityEngine.js --process-staging
 
 See [3-STATE_COVERAGE_CHECKLIST.md](3-STATE_COVERAGE_CHECKLIST.md) — Verification Checklist section.
 
+### Full State Expansion Lifecycle (Session 96)
+
+Every new state expansion follows this lifecycle. Skipping QC (Phase 3) ships broken data to users.
+
+```
+Phase 1: SCRAPE — Configure adapter, run matches + standings
+Phase 2: PROCESS — Pipeline processing, ELO calculation, view refresh
+Phase 3: QC — Run Post-Expansion QC Checklist (see Playbook)
+Phase 4: FIX — Address QC findings with UNIVERSAL fixes
+Phase 5: PRODUCTION — Commit, push, verify in nightly pipeline
+```
+
+**Phase 3 is MANDATORY.** NC expansion (Session 96) found 4 fixable issues:
+- 506 teams with `state='unknown'` (invisible in state filter)
+- Division names inconsistent (mixed ordinal/cardinal)
+- Noise suffixes ("- Group A" when only one group exists)
+- 66 teams with diacritic double-prefix
+
+All 4 were fixed universally and now prevent the same issues for future states.
+
+**Time budget:** Plan ~2 hours for Phase 3+4 per new state. The issues compound if deferred.
+
 ---
 
 ## Nightly Pipeline
@@ -278,23 +386,25 @@ Phase 6:   ensureViewIndexes.js → Self-healing index maintenance
 
 ## Success Metrics
 
-### Current State
+### Current State (Session 96)
 
 | Metric | Value |
 |--------|-------|
-| Total Matches | ~403K active |
-| Total Teams | ~145K |
-| States at PRODUCTION | 1 (KS) |
+| Total Matches | ~412K active |
+| Total Teams | ~146K |
+| States at PRODUCTION | 2 (KS, NC) |
 | States at PARTIAL | 1 (MO) |
-| Data Sources | 3 (GotSport, HTGSports, Heartland) |
-| Adapters Built | 3 |
+| States at READY | 1 (TN — adapter configured, scraping deferred) |
+| Data Sources | 4 (GotSport, HTGSports, Heartland, SINC Sports) |
+| Adapters Built | 4 |
+| Post-expansion QC protocol | Established (Session 96) |
 
-### Wave 1 Target (After SINC Sports Test)
+### Wave 1 Target (After TN Scraping)
 
 | Metric | Target |
 |--------|--------|
 | States at PRODUCTION | 3 (KS, NC, TN) |
-| Adapters Built | 4 (+SINC Sports) |
+| Adapters Built | 4 (SINC Sports adapter covers both NC + TN) |
 | Division-seeded ELO | Validated across 3 leagues |
 
 ### National Target
