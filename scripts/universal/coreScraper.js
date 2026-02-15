@@ -122,12 +122,25 @@ class CoreScraperEngine {
 
   async initializeTechnology() {
     if (this.adapter.technology === "puppeteer" || this.adapter.technology === "mixed") {
-      console.log("🌐 Launching Puppeteer browser...");
-      const puppeteer = await import("puppeteer");
-      this.browser = await puppeteer.default.launch({
-        headless: "new",
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      });
+      if (this.adapter.puppeteerStealth) {
+        // Stealth mode: Use puppeteer-extra with stealth plugin
+        // Required for Cloudflare-protected sites (e.g., TotalGlobalSports)
+        console.log("🌐 Launching Puppeteer with stealth plugin...");
+        const puppeteerExtra = await import("puppeteer-extra");
+        const StealthPlugin = await import("puppeteer-extra-plugin-stealth");
+        puppeteerExtra.default.use(StealthPlugin.default());
+        this.browser = await puppeteerExtra.default.launch({
+          headless: "new",
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        });
+      } else {
+        console.log("🌐 Launching Puppeteer browser...");
+        const puppeteer = await import("puppeteer");
+        this.browser = await puppeteer.default.launch({
+          headless: "new",
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        });
+      }
       console.log("   Browser launched\n");
     }
     // Cheerio and API don't need initialization
