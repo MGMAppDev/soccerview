@@ -213,17 +213,15 @@ async function fetchStats(): Promise<StatsData> {
 
   // Season-scoped queries:
   // - Teams: has_matches=true in app_rankings (ELO resets to 0 then replays current season only)
-  // - Matches: matches_v2 directly with season date range + deleted_at IS NULL + scored only
+  // - Matches: app_matches_feed view with season date range (view filters deleted_at IS NULL)
   const [teamsResult, matchesResult, lastUpdatedResult] = await Promise.all([
     supabase
       .from("app_rankings")
       .select("id", { count: "exact", head: true })
       .eq("has_matches", true),
     supabase
-      .from("matches_v2")
+      .from("app_matches_feed")
       .select("id", { count: "exact", head: true })
-      .is("deleted_at", null)
-      .not("home_score", "is", null)
       .gte("match_date", startDate)
       .lte("match_date", endDate),
     supabase
