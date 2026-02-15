@@ -356,7 +356,7 @@ function getAwardBadges(team: TeamRankRow): string {
 // ============================================================
 
 export default function RankingsTab() {
-  const [mode, setMode] = useState<ViewMode>("leaderboard");
+  const [mode, setMode] = useState<ViewMode>("national");
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
   const [selectedAges, setSelectedAges] = useState<string[]>([]);
@@ -864,26 +864,6 @@ export default function RankingsTab() {
             <TouchableOpacity
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setMode("leaderboard");
-              }}
-              style={[
-                styles.segmentButton,
-                mode === "leaderboard" && styles.segmentButtonActiveOfficial,
-              ]}
-            >
-              <Text style={styles.segmentIcon}>🏆</Text>
-              <Text
-                style={[
-                  styles.segmentText,
-                  mode === "leaderboard" && styles.segmentTextActiveOfficial,
-                ]}
-              >
-                GotSport
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setMode("national");
               }}
               style={[
@@ -902,6 +882,26 @@ export default function RankingsTab() {
                 ]}
               >
                 SoccerView
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setMode("leaderboard");
+              }}
+              style={[
+                styles.segmentButton,
+                mode === "leaderboard" && styles.segmentButtonActiveOfficial,
+              ]}
+            >
+              <Text style={styles.segmentIcon}>🏆</Text>
+              <Text
+                style={[
+                  styles.segmentText,
+                  mode === "leaderboard" && styles.segmentTextActiveOfficial,
+                ]}
+              >
+                GotSport
               </Text>
             </TouchableOpacity>
           </View>

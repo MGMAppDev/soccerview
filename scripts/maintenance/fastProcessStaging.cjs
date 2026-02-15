@@ -296,11 +296,31 @@ async function main() {
 
     if (uniqueEvents.size > 0) {
       const evIds = [...uniqueEvents.keys()];
-      // Check both tournaments and leagues
+
+      // Tier 0: source_entity_map lookup (deterministic, fastest)
+      const { rows: semRows } = await client.query(
+        `SELECT source_entity_id, sv_id, entity_type FROM source_entity_map
+         WHERE source_platform = $1 AND source_entity_id = ANY($2)
+         AND entity_type IN ('league', 'tournament')`,
+        [staging[0]?.source_platform || 'unknown', evIds]
+      );
+      for (const sem of semRows) {
+        if (sem.entity_type === 'league') {
+          eventMap.set(sem.source_entity_id, { tournament_id: null, league_id: sem.sv_id });
+        } else {
+          eventMap.set(sem.source_entity_id, { tournament_id: sem.sv_id, league_id: null });
+        }
+      }
+
+      // Tier 1: Check both tournaments and leagues tables
       const { rows: existTournaments } = await client.query(
         `SELECT id, source_event_id FROM tournaments WHERE source_event_id = ANY($1)`, [evIds]
       );
-      for (const e of existTournaments) eventMap.set(e.source_event_id, { tournament_id: e.id, league_id: null });
+      for (const e of existTournaments) {
+        if (!eventMap.has(e.source_event_id)) {
+          eventMap.set(e.source_event_id, { tournament_id: e.id, league_id: null });
+        }
+      }
 
       const { rows: existLeagues } = await client.query(
         `SELECT id, source_event_id FROM leagues WHERE source_event_id = ANY($1)`, [evIds]
@@ -311,25 +331,41 @@ async function main() {
         }
       }
 
-      console.log(`  ${eventMap.size} existing events found (${existTournaments.length} tournaments, ${existLeagues.length} leagues)`);
+      console.log(`  ${eventMap.size} existing events found (${semRows.length} from source_entity_map, ${existTournaments.length} tournaments, ${existLeagues.length} leagues)`);
 
-      // Create missing as tournaments
+      // Create missing — classify by name keywords (league vs tournament)
+      const LEAGUE_KEYWORDS = ['league', 'season', 'conference', 'division', 'premier'];
       if (!dryRun) {
-        let createdEvents = 0;
+        let createdLeagues = 0, createdTournaments = 0;
         for (const [evId, ev] of uniqueEvents) {
           if (eventMap.has(evId)) continue;
+          const lowerName = (ev.name || '').toLowerCase();
+          const isLeague = LEAGUE_KEYWORDS.some(kw => lowerName.includes(kw));
+
           const { rows: dateRange } = await client.query(
             `SELECT MIN(match_date) as sd, MAX(match_date) as ed FROM staging_games WHERE event_id = $1`, [evId]
           );
-          const { rows } = await client.query(`
-            INSERT INTO tournaments (name, source_event_id, source_platform, start_date, end_date)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id
-          `, [ev.name, evId, ev.platform, dateRange[0]?.sd || '2025-01-01', dateRange[0]?.ed || '2025-12-31']);
-          eventMap.set(evId, { tournament_id: rows[0].id, league_id: null });
-          createdEvents++;
+
+          if (isLeague) {
+            const { rows } = await client.query(`
+              INSERT INTO leagues (name, source_event_id, source_platform)
+              VALUES ($1, $2, $3)
+              RETURNING id
+            `, [ev.name, evId, ev.platform]);
+            eventMap.set(evId, { tournament_id: null, league_id: rows[0].id });
+            createdLeagues++;
+          } else {
+            const { rows } = await client.query(`
+              INSERT INTO tournaments (name, source_event_id, source_platform, start_date, end_date)
+              VALUES ($1, $2, $3, $4, $5)
+              RETURNING id
+            `, [ev.name, evId, ev.platform, dateRange[0]?.sd || '2025-01-01', dateRange[0]?.ed || '2025-12-31']);
+            eventMap.set(evId, { tournament_id: rows[0].id, league_id: null });
+            createdTournaments++;
+          }
         }
-        if (createdEvents > 0) console.log(`  Created ${createdEvents} new tournaments`);
+        if (createdLeagues > 0) console.log(`  Created ${createdLeagues} new leagues`);
+        if (createdTournaments > 0) console.log(`  Created ${createdTournaments} new tournaments`);
       }
     }
 
@@ -441,7 +477,7 @@ async function main() {
             INSERT INTO matches_v2 (match_date, match_time, home_team_id, away_team_id,
               home_score, away_score, league_id, tournament_id, source_platform, source_match_key, division)
             VALUES ${phs.join(', ')}
-            ON CONFLICT (match_date, home_team_id, away_team_id) DO UPDATE SET
+            ON CONFLICT (match_date, home_team_id, away_team_id) WHERE deleted_at IS NULL DO UPDATE SET
               home_score = CASE
                 WHEN EXCLUDED.home_score IS NOT NULL THEN EXCLUDED.home_score
                 WHEN matches_v2.home_score IS DISTINCT FROM 0 OR matches_v2.away_score IS DISTINCT FROM 0

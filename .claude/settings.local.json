@@ -99,7 +99,11 @@
       "WebFetch(domain:adapty.io)",
       "WebFetch(domain:www.luciq.ai)",
       "WebFetch(domain:medium.com)",
-      "WebFetch(domain:www.kodeco.com)"
+      "WebFetch(domain:www.kodeco.com)",
+      "WebFetch(domain:www.sincsports.com)",
+      "WebFetch(domain:sincsports.com)",
+      "WebFetch(domain:staticsoccer.sincsports.com)",
+      "Bash(tee:*)"
     ]
   }
 }

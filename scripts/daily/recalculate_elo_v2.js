@@ -16,7 +16,11 @@
 
 import "dotenv/config";
 import pg from "pg";
+import { createRequire } from "module";
 import { authorizePipelineWrite } from "../universal/pipelineAuth.js";
+
+const require = createRequire(import.meta.url);
+const { buildDivisionSeedMap, applyDivisionSeeds } = require("./divisionSeedElo.cjs");
 
 // ============================================================
 // SEASON CONFIGURATION - NOW DYNAMIC FROM DATABASE
@@ -123,6 +127,20 @@ async function main() {
     console.log("   ✅ All teams reset to 1500 ELO\n");
 
     // ============================================================
+    // STEP 1.5: Apply division-seeded starting ELO
+    // Session 95: Teams in lower divisions start below 1500,
+    // higher divisions start above. Solves closed-pool problem.
+    // ============================================================
+    console.log("🎯 Step 1.5: Applying division-seeded starting ELO...");
+    const divisionSeedMap = await buildDivisionSeedMap(client, CURRENT_SEASON_START);
+    if (divisionSeedMap.size > 0) {
+      const seeded = await applyDivisionSeeds(client, divisionSeedMap);
+      console.log(`   ✅ Division-seeded ${seeded} teams (DIVISION_STEP=15)\n`);
+    } else {
+      console.log("   ⚠️ No division data found — all teams start at 1500\n");
+    }
+
+    // ============================================================
     // STEP 2: Get all match IDs in chronological order (CURRENT SEASON ONLY)
     // ============================================================
     console.log("🔢 Step 2: Fetching current season matches...");
@@ -172,10 +190,11 @@ async function main() {
     const eloCache = new Map();
     const statsCache = new Map(); // {wins, losses, draws, matches_played, last_match_date}
 
-    // Initialize cache from database
+    // Initialize cache from database — reads division-seeded values from Step 1.5
     const teams = await client.query(`SELECT id, elo_rating FROM teams_v2`);
     for (const team of teams.rows) {
-      eloCache.set(team.id, 1500); // Reset to 1500
+      // Use seeded ELO from Step 1.5 (division-aware), fallback to 1500
+      eloCache.set(team.id, parseFloat(team.elo_rating) || 1500);
       statsCache.set(team.id, { wins: 0, losses: 0, draws: 0, matches_played: 0, last_match_date: null });
     }
 

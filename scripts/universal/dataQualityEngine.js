@@ -1179,7 +1179,7 @@ async function promoteRecords(records, client, dryRun) {
             home_score, away_score, league_id, tournament_id, source_match_key, division
           )
           VALUES ${values}
-          ON CONFLICT (match_date, home_team_id, away_team_id) DO UPDATE SET
+          ON CONFLICT (match_date, home_team_id, away_team_id) WHERE deleted_at IS NULL DO UPDATE SET
             home_score = CASE
               WHEN EXCLUDED.home_score IS NOT NULL THEN EXCLUDED.home_score
               WHEN matches_v2.home_score IS DISTINCT FROM 0 OR matches_v2.away_score IS DISTINCT FROM 0

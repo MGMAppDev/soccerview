@@ -1,288 +1,222 @@
 # SoccerView Data Expansion Roadmap
 
-> **Version 5.0** | Updated: February 6, 2026 | Dual-System Architecture (Session 92 QC)
+> **Version 6.0** | Updated: February 14, 2026 | Session 95 — Local-First Strategy
 >
-> Strategic guide for adding new data sources using the V2 dual-system architecture.
-> **Session 57:** Adding a new match source takes ~1-2 hours (adapter config only).
-> **Session 92 QC:** Adding a new standings source takes ~1-2 hours (adapter config only).
+> Strategic guide for national expansion using the V2 dual-system architecture.
 >
-> **⚠️ CRITICAL (Session 84): All new data sources MUST be PREMIER/COMPETITIVE level only.**
-> Recreational, community, and development leagues are EXCLUDED from SoccerView.
->
-> **⚠️ DUAL-SYSTEM (Session 92 QC):** Each new league source provides TWO data types:
-> - **Match data** → Heavy pipeline → Rankings/ELO (staging_games → DQE → matches_v2)
-> - **Standings data** → Lightweight absorption → League Standings page (staging_standings → processStandings → league_standings)
-> Both are configured in the same adapter file. See [DATA_SCRAPING_PLAYBOOK.md](3-DATA_SCRAPING_PLAYBOOK.md).
+> **State-by-state tracking:** See [3-STATE_COVERAGE_CHECKLIST.md](3-STATE_COVERAGE_CHECKLIST.md) for the full 50-state + DC checklist.
 
 ---
 
-> **Scope:** This document answers **WHAT** to scrape next and **WHY**. For **HOW** to scrape, see [DATA_SCRAPING_PLAYBOOK.md](3-DATA_SCRAPING_PLAYBOOK.md).
+## Strategic Principle: Local League Data IS The Product
 
-## Data Integrity Status (Session 56 - COMPLETE)
-
-### Match-Event Linkage - Final State
-
-| Category | Before | After | Method |
-|----------|--------|-------|--------|
-| Total unlinked | 17,347 | **~5,789** | 67% fixed |
-| HTGSports | 2,228 | **0** | ✅ Pattern matching |
-| Heartland | 48 | **0** | ✅ Pattern matching |
-| GotSport legacy | 15,071 | **~5,789** | V1 archive + inference |
-| Garbage (2027+) | 51 | **0** | ✅ Deleted |
-
-### Self-Healing Pipeline (NEW)
-
-Orphaned matches now shrink automatically each night:
+### The Data Quality Hierarchy
 
 ```
-Nightly Pipeline:
-  Phase 1:   Scrape new data → staging_games
-  Phase 2:   Validate → matches_v2 (with linkage)
-  Phase 2.5: inferEventLinkage.js → Links orphans by team patterns  ← NEW
-  Phase 3:   Recalculate ELO
-  Phase 4:   Refresh views
+TIER 1 (FOUNDATION): Local League Data — Division structure, standings, match results, schedules
+TIER 2 (ELO FUEL):   Tournament Match Data — Cross-league matches for ELO calibration
+TIER 3 (COMPLEMENT):  National Rankings — GotSport ranking badges as overlay
 ```
 
-**How it works:** If Team A and Team B both play in "Kansas Premier League", and they have an orphaned match within that date range, the script infers that match belongs to Kansas Premier League.
+### Why Local-First?
 
-**Initial run:** 1,155 matches linked. **Ongoing:** Improves each night.
+GotSport provides ZERO individual match results, ZERO division structure, ZERO standings, ZERO scheduled games. It provides only pre-computed aggregate ranking badges (national_rank, state_rank, points).
 
-### Maintenance Scripts
+**Local league data provides ALL FOUR pillars of the SoccerView experience:**
 
-| Script | Purpose | Schedule |
-|--------|---------|----------|
-| `ensureViewIndexes.js` | **NIGHTLY** Self-healing index maintenance (Session 69) | Automatic |
-| `inferEventLinkage.js` | **NIGHTLY** Self-healing linkage | Automatic |
-| `linkUnlinkedMatches.js` | Link via source_match_key | On-demand |
-| `linkByEventPattern.js` | Link by event ID pattern | On-demand |
-| `linkFromV1Archive.js` | Link via V1 archived data | One-time |
-| `cleanupGarbageMatches.js` | Delete invalid matches | On-demand |
-| `completeBirthYearCleanup.js` | Fix team birth_year mismatches | On-demand |
+| Pillar | What It Powers | Source |
+|--------|---------------|--------|
+| **Division Context** | Division-seeded ELO (prevents Div 7 team ranking #1) | Local league only |
+| **Official Standings** | League Standings page (AS-IS, not recalculated) | Local league only |
+| **Match Results** | SoccerView Power Rating (ELO calculation) | Local league + tournaments |
+| **Upcoming Games** | Team schedule display for parents | Local league only |
 
-### Universal Framework Scripts (Session 57)
+**Without local league data, a state has:** GotSport badge + tournament ELO only.
+**With local league data, a state has:** Complete competitive picture — standings, divisions, schedules, accurate ELO.
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/universal/coreScraper.js` | Core scraping engine (841 lines) |
-| `scripts/adapters/gotsport.js` | GotSport adapter |
-| `scripts/adapters/htgsports.js` | HTGSports adapter (Puppeteer) |
-| `scripts/adapters/heartland.js` | Heartland adapter |
-| `scripts/adapters/_template.js` | Template for new sources |
+### The Expansion Math
+
+- **4 new adapters** (SINC Sports, Demosphere, SportsAffinity, Sports Connect) + **GotSport event discovery** = complete national coverage
+- Each adapter covers 2-6 states
+- Total: ~55 state/sub-region entries in the [checklist](3-STATE_COVERAGE_CHECKLIST.md)
+
+---
+
+## Three Data Flows (All Universal, All Required)
+
+Every new league source provides data through THREE independent pipelines. All three must work for a state to reach PRODUCTION status.
+
+### Flow 1: Match Results → SV Power Rating (ELO)
+
+```
+New Adapter → coreScraper.js → staging_games → DQE/fastProcessStaging → matches_v2
+                                                  ↓
+                                        Three-tier universal resolution:
+                                        1. source_entity_map lookup (O(1))
+                                        2. Canonical name + metadata match
+                                        3. Create new + register for future
+                                                  ↓
+                                        recalculate_elo_v2.js → Power Rating
+```
+
+- All adapters produce the same staging format
+- Entity resolution is source-agnostic
+- ELO reads matches_v2 regardless of source_platform
+
+### Flow 2: League Standings → AS-IS Display
+
+```
+New Adapter (standings) → scrapeStandings.js → staging_standings
+                                                  ↓
+                                      processStandings.cjs (lightweight resolver)
+                                                  ↓
+                                      league_standings (production)
+                                                  ↓
+                                      app_league_standings view (passthrough)
+```
+
+- **AS-IS principle**: W-L-D, points, position come directly from the official league
+- SoccerView displays what the league published — NO recalculation
+- Lightweight resolver: source_entity_map → exact match → create new (NO fuzzy matching)
+
+### Flow 3: Scheduled/Upcoming Games
+
+```
+New Adapter (future matches, NULL scores) → same pipeline as Flow 1
+                                                  ↓
+                                      matches_v2 (NULL home_score/away_score)
+                                                  ↓
+                                      app_upcoming_schedule view
+                                      (requires league_id OR tournament_id linkage)
+```
+
+- Same pipeline as completed matches, NULL scores preserved (Session 72 fix)
+- Matches MUST be linked to a league or tournament to appear in "Upcoming"
+- Parents plan weekends around this data — accuracy is critical
+
+### Architecture Verification (Session 95)
+
+Code audit confirmed:
+- **ZERO instances** of `if (source_platform === ...)` in core pipeline
+- All source-specific logic confined to adapter config files only
+- All 3 data flows use identical code paths regardless of source
+- **Core code changes needed for new sources: ZERO**
 
 ---
 
 ## Critical Rules
 
-### Rule 1: PREMIER-ONLY - NO Recreational or Indoor
+### Rule 1: PREMIER-ONLY — No Recreational or Indoor
 
 | Type | Include? | Reason |
 |------|----------|--------|
-| **Premier/Competitive 11v11** | ✅ YES | Core competitive soccer |
-| **Premier/Competitive 9v9** | ✅ YES | Youth competitive |
-| **Premier/Competitive 7v7** | ✅ YES | Youth competitive |
-| **Recreational leagues** | ❌ NO | Dilutes rankings (Session 84) |
-| **Community programs** | ❌ NO | Not competitive level |
-| **Development/Rec** | ❌ NO | Not premier level |
-| **Indoor Soccer** | ❌ NO | Different sport |
-| **Futsal** | ❌ NO | Different sport |
-
-**Session 84:** Recreational teams were appearing in top 10 SoccerView rankings despite not competing at premier level. This dilutes the value proposition for users seeking competitive team rankings.
+| **Premier/Competitive 11v11** | YES | Core competitive soccer |
+| **Premier/Competitive 9v9** | YES | Youth competitive |
+| **Premier/Competitive 7v7** | YES | Youth competitive |
+| **Recreational leagues** | NO | Dilutes rankings (Session 84) |
+| **Community programs** | NO | Not competitive level |
+| **Indoor / Futsal** | NO | Different sport |
 
 ### Rule 2: Last 3 Seasons Only
 
 | Season | Date Range | Include? |
 |--------|------------|----------|
-| 2025-26 (Current) | Aug 2025 - Jul 2026 | ✅ YES |
-| 2024-25 | Aug 2024 - Jul 2025 | ✅ YES |
-| 2023-24 | Aug 2023 - Jul 2024 | ✅ YES |
-| Older | Before Aug 2023 | ❌ NO |
+| 2025-26 (Current) | Aug 2025 - Jul 2026 | YES |
+| 2024-25 | Aug 2024 - Jul 2025 | YES |
+| 2023-24 | Aug 2023 - Jul 2024 | YES |
+| Older | Before Aug 2023 | NO |
 
-### Rule 3: Nomenclature
+### Rule 3: Source Entity IDs Required (Session 89)
 
-| Term | Definition | Duration |
-|------|------------|----------|
-| **LEAGUE** | Regular season play with standings | Weeks/months |
-| **TOURNAMENT** | Short-term competition brackets | Weekend (1-3 days) |
+Every new adapter MUST emit source entity IDs for Tier 1 deterministic resolution:
+- `source_home_team_id` / `source_away_team_id` — Source's team IDs
+- `event_id` — Source's league/tournament ID
+- `source_platform` — Platform identifier
 
-**"Events" is BANNED** - Always use specific terminology.
+### Rule 4: Dual-System Architecture (Session 92 QC)
 
-### Rule 4: Dual-System V2 Architecture (Session 92 QC)
+Match data and standings data flow through SEPARATE resolvers:
+- **Match pipeline**: Heavy 3-tier resolver (source map → canonical → fuzzy)
+- **Standings pipeline**: Lightweight resolver (source map → exact → create, NO fuzzy)
 
-All new sources provide TWO data types through TWO independent pipelines:
+Both configured in the same adapter file.
 
-```
-MATCH DATA (Rankings/ELO):
-  Scraper → staging_games → DQE/fastProcess → matches_v2 → app_views
-  Heavy 3-tier resolver (source map → canonical → fuzzy)
+### Rule 5: Data Safety Guarantee
 
-STANDINGS DATA (League Standings page):
-  Scraper → staging_standings → processStandings → league_standings → app_league_standings
-  Lightweight resolver (source map → exact → create, NO fuzzy matching)
-```
-
-Both are configured in the same adapter file (e.g., `scripts/adapters/heartland.js`).
-
-**See:** [docs/DATA_SCRAPING_PLAYBOOK.md](3-DATA_SCRAPING_PLAYBOOK.md)
-
-### Rule 5: Source Entity IDs Required (Session 89)
-
-**Every new adapter MUST emit source entity IDs** for deterministic Tier 1 resolution.
-
-| Field | Required | Purpose |
-|-------|----------|---------|
-| `source_home_team_id` | Yes | Source's ID for home team |
-| `source_away_team_id` | Yes | Source's ID for away team |
-| `event_id` | Yes | Source's ID for the league/tournament |
-| `source_platform` | Yes | Platform identifier |
-
-**Why:** Source IDs enable O(1) deterministic entity resolution via `source_entity_map`. Without them, the pipeline falls back to name-based fuzzy matching which creates duplicates.
-
-**Implementation:** Emit IDs in `raw_data` JSONB and/or as top-level staging fields:
-```javascript
-raw_data: {
-  source_home_team_id: m.homeId,   // Source's team ID
-  source_away_team_id: m.awayId,   // Source's team ID
-  // ... other fields
-}
-```
-
-The pipeline (`dataQualityEngine.js` and `fastProcessStaging.cjs`) automatically:
-1. Looks up `source_entity_map` for existing mappings (Tier 1)
-2. Falls back to canonical name matching (Tier 2)
-3. Registers new source IDs after entity creation (prevents future duplicates)
+- New sources ADD data only. Existing data untouched.
+- Soft delete only (Principle 30). Never hard delete.
+- Source isolation via `source_platform` value. No cross-contamination.
+- `staging_games` preserves raw data. `audit_log` captures all changes.
+- Rollback always possible.
 
 ---
 
 ## Currently Integrated Sources
 
-| Platform | Type | States | Matches | Standings | Status |
-|----------|------|--------|---------|-----------|--------|
-| **GotSport** | Primary | 50 | ✅ Production | - | Rankings data |
-| **HTGSports** | Secondary | KS, MO | ✅ Production | Planned | Match data |
-| **Heartland** | Secondary | KS, MO | ✅ Production | ✅ Production (1,211 teams) | Dual-system pioneer |
+| Platform | Type | States | Matches | Standings | Schedules | Status |
+|----------|------|--------|---------|-----------|-----------|--------|
+| **GotSport** | Rankings | 50 | - | - | - | Ranking badges only |
+| **HTGSports** | Tournaments | 26+ | PRODUCTION | - | - | Match data |
+| **Heartland CGI** | League | KS, MO | PRODUCTION | PRODUCTION | PRODUCTION | Full pipeline |
 
 ---
 
-## Priority Queue
+## Expansion Waves
 
-### Tier 1: Critical Gap States (< 30% coverage)
+### Wave 1: SINC Sports Test (CURRENT — Session 95)
 
-| Priority | Source | States | Coverage | Est. Matches |
-|----------|--------|--------|----------|--------------|
-| 1 | **HTGSports Expansion** | 26+ states | Various | 50,000+ |
-| 2 | **SINC Sports** | NC | 20.4% | 25,000+ |
-| 3 | **SportsConnect** | SC | 17.3% | 8,000+ |
-| 4 | **Nebraska YSL** | NE | 26.3% | 5,000+ |
+**Goal:** Validate architecture with 2 new leagues. One adapter, two states, two division schemes.
 
-### Tier 2: Regional Expansion
+| State | League | Divisions | Purpose |
+|-------|--------|-----------|---------|
+| NC | NCYSA Classic League | Premier, 1st, 2nd, 3rd | Test new adapter end-to-end |
+| TN | TN State League | Div 1, 2a, 2b, 3 | Validate same adapter, different naming |
 
-| Priority | Source | States | Est. Matches |
-|----------|--------|--------|--------------|
-| 5 | **EDP Soccer** | NJ,PA,DE,MD,VA,NY,CT,FL,OH | 30,000+ |
-| 6 | **Demosphere** | WI,MI,IA,WA | 20,000+ |
-| 7 | **GotSport expansion** | GA,AL,TN | 20,000+ |
+Combined with existing Heartland = 3-league validation for division-seeded ELO.
 
-### Tier 3: Elite Leagues
+### Wave 2: GotSport Event Discovery (Highest ROI — adapter already built)
 
-| Priority | Source | Coverage | Est. Matches |
-|----------|--------|----------|--------------|
-| 8 | **ECNL** | Nationwide | 15,000+ |
-| 9 | **MLS Next** | Nationwide | 20,000+ |
-| 10 | **Girls Academy** | Nationwide | 10,000+ |
+30+ states use GotSport for league scheduling. Adapter exists. Just need event IDs.
 
----
+**High-priority states:** FL, TX-N, TX-S, CA (3 sub-regions), GA, OH, MI, NJ, NY, PA-E, MD, IN, SC, AZ, AL
 
-## HTGSports Nationwide Opportunity
+**Estimated:** ~30 min per state to discover and configure event IDs.
 
-### Discovery (Session 44)
+### Wave 3: Demosphere Adapter
 
-HTGSports covers **26+ states**, not just Heartland!
+| State | League | Impact |
+|-------|--------|--------|
+| VA + DC | NCSL | Large market, promo/relegation |
+| IL | State Premiership | Major market |
+| WI | WYSA | Midwest coverage |
+| KY | Premier League | Regional fill |
 
-| Region | States |
-|--------|--------|
-| **Midwest** | KS, MO, IA, NE, SD, WI, MN, IL, MI, IN |
-| **East** | NC, SC, VA, PA, NY, NJ, CT, MA, MD, OH, KY, FL |
-| **West** | CA, CO, AZ, TX, ID |
+### Wave 4: SportsAffinity Adapter
 
-### Known Outdoor Soccer Events (Not Yet Scraped)
+| State | League | Impact |
+|-------|--------|--------|
+| MN | MYSA (6 tiers) | Major market |
+| UT | UYSA (320+ teams) | Western coverage |
+| OR | OYSA | Pacific NW |
+| NE | NYSL | Midwest fill |
+| PA-W | PA West | Eastern fill |
+| HI | Island leagues | Small market |
 
-**Leagues:**
-- Northland 7v7 Soccer League (MO)
-- Sporting Iowa Premier Games (IA)
-- Collier Soccer League (FL)
+### Wave 5: Sports Connect Adapter
 
-**Tournaments:**
-- Iowa Rush Fall/Spring Cup (IA)
-- GEA Kickstart (NE)
-- April Fool's Festival (IA)
-- Tonka Splash (MN)
-- Indiana Elite FC Kickoff (IN)
-- Emerald Cup (PA)
-
-### Implementation (Using Universal Framework)
-
-```bash
-# 1. Discover all outdoor soccer events
-node scripts/discoverHTGSportsOutdoor.js  # TODO: Create
-
-# 2. Add event IDs to adapter config
-# Edit scripts/adapters/htgsports.js activeEvents array
-
-# 3. Run Universal Framework scraper
-node scripts/universal/coreScraper.js --adapter htgsports --active
-
-# 4. Validate and refresh
-node scripts/universal/dataQualityEngine.js --process-staging
-```
+| State | League | Impact |
+|-------|--------|--------|
+| CO | CO Advanced (9 tiers!) | Major market |
+| IA | Iowa Soccer | Midwest fill |
+| CT | CJSA | Northeast fill |
+| MA | NEP | Northeast fill |
+| SD | Champions League | Small market |
 
 ---
 
-## Platform Technical Notes
+## Adding a New Source (Quick Reference)
 
-| Platform | Technology | Auth | Universal Adapter | Status |
-|----------|------------|------|-------------------|--------|
-| **GotSport** | HTML/JSON | No | ✅ `gotsport.js` | Production |
-| **HTGSports** | Angular SPA | No | ✅ `htgsports.js` | Production |
-| **Heartland** | CGI | No | ✅ `heartland.js` | Production |
-| **SINC Sports** | ASP.NET | No | ❌ Not built | ~2 hours to add |
-| **SportsConnect** | Stack Sports | No | ❌ Not built | ~2 hours to add |
-| **EDP Soccer** | Uses GotSport | No | Use GotSport adapter | — |
-| **Demosphere** | HTML | No | ❌ Not built | ~2 hours to add |
-
-**Session 57 Impact:** New sources now take ~1-2 hours to add (adapter config only) instead of ~1-2 days (custom script).
-
----
-
-## State Coverage Gaps
-
-### Critical (< 30%)
-
-| State | Coverage | Teams | Solution |
-|-------|----------|-------|----------|
-| **SC** | 17.3% | 1,205 | SportsConnect |
-| **NC** | 20.4% | 3,172 | SINC Sports |
-| **GA** | 26.0% | 3,030 | More GotSport |
-| **NE** | 26.3% | 911 | HTGSports |
-| **MS** | 27.5% | 655 | PlayMetrics |
-
-### High Priority (30-50%)
-
-| State | Coverage | Teams | Solution |
-|-------|----------|-------|----------|
-| **AL** | 33.9% | 992 | More GotSport |
-| **TN** | 40.9% | 1,762 | Piedmont Conf |
-| **LA** | 43.2% | 711 | More GotSport |
-| **WA** | 43.7% | 2,815 | Demosphere |
-| **CO** | 44.4% | 2,119 | More GotSport |
-| **WI** | 45.1% | 1,728 | HTGSports |
-
----
-
-## New Source Development (Session 57)
-
-### PREFERRED: Universal Framework Adapter
-
-**Adding a new source is now a ~50 line config file.**
+### Using Universal Framework Adapter (Preferred)
 
 ```bash
 # 1. Copy template
@@ -293,99 +227,98 @@ cp scripts/adapters/_template.js scripts/adapters/newsource.js
 #    - technology: "cheerio" | "puppeteer" | "api"
 #    - baseUrl: source URL
 #    - selectors: CSS selectors for match data
+#    - standings: { discoverLeagues(), scrapeLeague() }
 #    - rateLimit: delay between requests
 #    - generateMatchKey: unique key function
 
 # 3. Test
 node scripts/universal/coreScraper.js --adapter newsource --event 12345 --dry-run
 
-# 4. Run
+# 4. Run matches + standings
 node scripts/universal/coreScraper.js --adapter newsource --active
+node scripts/universal/scrapeStandings.js --adapter newsource
+node scripts/maintenance/processStandings.cjs --verbose
+
+# 5. Process through pipeline
+node scripts/universal/dataQualityEngine.js --process-staging
 ```
 
-### Legacy: Custom Scraper (Only if Universal Framework doesn't fit)
+**Session 57 impact:** New sources take ~1-2 hours (adapter config only) instead of days.
 
-Every custom scraper MUST:
+### Per-State Onboarding Checklist
 
-1. **Write to staging tables** (NOT production)
-2. **Set source_platform** on every record
-3. **Generate source_match_key** for deduplication
-4. **Preserve raw_data** in JSONB column (including source team IDs)
-5. **Register events** in staging_events
-6. **Handle outdoor filter** (NO futsal)
-7. **Respect date limits** (Aug 2023+)
-8. **Emit source entity IDs** in raw_data (Session 89)
+See [3-STATE_COVERAGE_CHECKLIST.md](3-STATE_COVERAGE_CHECKLIST.md) — Verification Checklist section.
 
-### Template
+---
 
-See [docs/DATA_SCRAPING_PLAYBOOK.md](DATA_SCRAPING_PLAYBOOK.md) for adapter template and legacy scraper template.
+## Nightly Pipeline
 
-### Checklist
-
-```markdown
-## New Scraper Checklist
-
-### Pre-Development
-- [ ] Source identified: _____________
-- [ ] Data type: [ ] League  [ ] Tournament  [ ] Both
-- [ ] Access method: [ ] HTML  [ ] API  [ ] ICS
-- [ ] OUTDOOR only confirmed (no futsal)
-- [ ] Date range: Aug 2023+
-
-### Development
-- [ ] Scraper writes to staging_games
-- [ ] source_platform set correctly
-- [ ] source_match_key generated
-- [ ] raw_data preserved
-- [ ] Events registered in staging_events
-- [ ] Rate limiting implemented
-- [ ] Checkpoint/resume capability
-
-### Testing
-- [ ] Single event test successful
-- [ ] Expected vs actual match count matches
-- [ ] All fields populated
-- [ ] No futsal/indoor data
-
-### Integration
-- [ ] dataQualityEngine.js processes data
-- [ ] Data appears in matches_v2
-- [ ] Views refreshed
-- [ ] App displays new data
 ```
+Phase 1:   Scrape new data → staging_games
+Phase 2:   Validate → matches_v2 (with linkage)
+Phase 2.5: inferEventLinkage.js → Links orphans by team patterns
+Phase 2.7: restoreGotSportRanks.cjs → Refresh GotSport ranking badges
+Phase 3:   Recalculate ELO (with division seeding)
+Phase 4:   Capture rank snapshot → rank_history_v2
+Phase 5:   Refresh materialized views
+Phase 6:   ensureViewIndexes.js → Self-healing index maintenance
+```
+
+### Maintenance Scripts
+
+| Script | Purpose | Schedule |
+|--------|---------|----------|
+| `ensureViewIndexes.js` | Self-healing index maintenance | Nightly |
+| `inferEventLinkage.js` | Self-healing match-event linkage | Nightly |
+| `restoreGotSportRanks.cjs` | GotSport ranking refresh | Nightly |
+| `processStandings.cjs` | Universal standings processor | After standings scrape |
+| `fastProcessStaging.cjs` | Bulk staging processor (240x faster) | After bulk scrape |
 
 ---
 
 ## Success Metrics
 
-### V1.1 Goals
+### Current State
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| Total Matches | 470,000 | 550,000+ |
-| States > 50% | ~35 | 45+ |
-| Data Sources | 3 | 5+ |
-| HTGSports States | 2 | 10+ |
+| Metric | Value |
+|--------|-------|
+| Total Matches | ~403K active |
+| Total Teams | ~145K |
+| States at PRODUCTION | 1 (KS) |
+| States at PARTIAL | 1 (MO) |
+| Data Sources | 3 (GotSport, HTGSports, Heartland) |
+| Adapters Built | 3 |
 
-### Impact by Priority
+### Wave 1 Target (After SINC Sports Test)
 
-| Action | Est. New Matches | Impact |
-|--------|------------------|--------|
-| HTGSports expansion | 50,000+ | Midwest coverage |
-| SINC Sports (NC) | 25,000+ | Critical gap |
-| EDP Soccer | 20,000+ | Northeast |
-| Demosphere | 20,000+ | WI/MI/IA/WA |
+| Metric | Target |
+|--------|--------|
+| States at PRODUCTION | 3 (KS, NC, TN) |
+| Adapters Built | 4 (+SINC Sports) |
+| Division-seeded ELO | Validated across 3 leagues |
+
+### National Target
+
+| Metric | Target |
+|--------|--------|
+| Total Matches | 750K+ |
+| States > 50% coverage | 45+ |
+| States at PRODUCTION | 40+ |
+| Adapters Built | 7 |
+| Data Sources | 7+ |
 
 ---
 
 ## References
 
-- [V2 Architecture](ARCHITECTURE.md)
-- [Data Scraping Playbook](DATA_SCRAPING_PLAYBOOK.md)
-- [UI Patterns](UI_PATTERNS.md)
-- [Session History](SESSION_HISTORY.md)
+- [State Coverage Checklist](3-STATE_COVERAGE_CHECKLIST.md) — Master 50-state tracking
+- [V2 Architecture](1.2-ARCHITECTURE.md) — Database schema
+- [Data Scraping Playbook](3-DATA_SCRAPING_PLAYBOOK.md) — Adapter development guide
+- [Ranking Methodology](2-RANKING_METHODOLOGY.md) — ELO calculation details
+- [UI Patterns](3-UI_PATTERNS.md) — Display standards
+- [Session History](1.3-SESSION_HISTORY.md) — Past work log
 
 ---
 
-*Updated for V2 three-layer architecture with Universal Scraper Framework (Session 57).*
-*New sources: Use adapter config (~50 lines, ~1-2 hours) instead of custom script.*
+*Local league data is the foundation. Tournaments add ELO fuel. National rankings are the cherry on top.*
+*Expand state by state, verify all 3 data flows, never lose existing data.*

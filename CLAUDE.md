@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 16.0** | Last Updated: February 9, 2026 | Session 94 Part 2 Complete
+> **Version 17.0** | Last Updated: February 14, 2026 | Session 95 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1124,6 +1124,39 @@ cleanTeamName.cjs  ← THE algorithm (N-word sliding window)
 - ❌ Using `GREATEST` for ranks (picks worst rank)
 - ❌ Using `LEAST` for points/ELO (picks worst score)
 
+### 40. Event Classification — Leagues vs Tournaments (Session 95)
+
+**Problem:** `fastProcessStaging.cjs` created ALL new events as tournaments, ignoring event names containing "League". NC leagues were misclassified as tournaments, blocking standings processing.
+
+**Root Cause:** Fast processor bypassed `eventNormalizer.js` and had no classification logic for new events.
+
+**Fix: 3-Layer Event Resolution in fastProcessStaging.cjs**
+
+| Priority | Method | Example |
+|----------|--------|---------|
+| Tier 0 | `source_entity_map` lookup | Previously-seen events resolved instantly |
+| Tier 1 | `tournaments` / `leagues` table lookup | Existing records matched |
+| Tier 2 | **LEAGUE_KEYWORDS classification** | Name contains "league" → create as league |
+
+**LEAGUE_KEYWORDS:** `['league', 'season', 'conference', 'division', 'premier']`
+
+```javascript
+const isLeague = LEAGUE_KEYWORDS.some(kw => lowerName.includes(kw));
+if (isLeague) {
+  // INSERT INTO leagues
+} else {
+  // INSERT INTO tournaments (default for tournaments/cups/classics)
+}
+```
+
+**Dual source_entity_map Registration:**
+When a source uses different IDs for matches vs standings (e.g., SINC Sports uses `'NCFL'` for matches but `'sincsports-ncfl-2025'` for standings), BOTH formats must be registered in `source_entity_map` pointing to the same league UUID.
+
+**Anti-patterns:**
+- ❌ Creating all new events as tournaments without checking the name
+- ❌ Having only one source_entity_map entry when scrapers use different ID formats
+- ❌ Bypassing eventNormalizer classification logic in bulk processors
+
 ---
 
 ## Quick Reference
@@ -1132,14 +1165,14 @@ cleanTeamName.cjs  ← THE algorithm (N-word sliding window)
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 145,356 | Team records (Session 93: -12,716 duplicates merged) |
-| `matches_v2` | 402,948 active | Match results (~5,297 soft-deleted) |
+| `teams_v2` | 146,505 | Team records (Session 95: +1,149 NC teams from SINC Sports) |
+| `matches_v2` | 411,641 active | Match results (~5,417 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 279 | League metadata |
+| `leagues` | 281 | League metadata (Session 95: +2 SINC Sports NC leagues) |
 | `tournaments` | 1,750 | Tournament metadata (0 generic names) |
-| `league_standings` | 1,208 | Scraped standings from Heartland (Session 92 QC) |
-| `staging_standings` | 1,211 | Raw standings staging (Session 92) |
-| `source_entity_map` | ~72,000+ | Universal source ID mappings (Session 89+92QC+94: +68K GotSport backfill) |
+| `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
+| `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
+| `source_entity_map` | ~72,000+ | Universal source ID mappings (Session 89+92QC+94+95) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
@@ -1165,6 +1198,7 @@ cleanTeamName.cjs  ← THE algorithm (N-word sliding window)
 | GotSport | ✅ Production | staging_games |
 | HTGSports | ✅ Production | staging_games |
 | Heartland CGI | ✅ Production | staging_games |
+| SINC Sports | ✅ Production (Session 95) | staging_games + staging_standings |
 
 ### source_match_key (CRITICAL - Session 57)
 
@@ -1327,7 +1361,8 @@ eas build --platform android
 |--------|---------|
 | `syncActiveEvents.js` | GotSport data collection |
 | `verifyDataIntegrity.js` | **NEW (Session 79)** Post-processing checks |
-| `recalculate_elo_v2.js` | ELO calculation |
+| `recalculate_elo_v2.js` | ELO calculation (Session 95: division-seeded starting ELO) |
+| `divisionSeedElo.cjs` | **NEW (Session 95)** Division seed mapping for ELO |
 | `scorePredictions.js` | Score user predictions |
 | `captureRankSnapshot.js` | Daily rank history |
 
@@ -1353,6 +1388,7 @@ eas build --platform android
 | `scripts/adapters/gotsport.js` | GotSport adapter config |
 | `scripts/adapters/htgsports.js` | HTGSports adapter (Puppeteer for SPA) |
 | `scripts/adapters/heartland.js` | Heartland adapter (Cheerio for CGI + standings) |
+| `scripts/adapters/sincsports.js` | **NEW (Session 95)** SINC Sports adapter (Puppeteer + standings) |
 | `scripts/adapters/_template.js` | Template for creating new adapters |
 
 **Usage:**
@@ -1569,6 +1605,71 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 95 - SINC Sports Adapter + Division-Seeded ELO + NC Data (February 14, 2026) - COMPLETE ✅
+
+**Goal:** Fix the Sporting City 15B Indigo-North ranking bug (Div 7 team ranked #1 in KS), expand to NC via SINC Sports, implement division-seeded ELO.
+
+**The Problem:** Sporting City 15B Indigo-North plays in Heartland Division 7 and is 8-0-0. ELO starts ALL teams at 1500, so closed division pools can't self-calibrate. Result: Div 7 team ranked #1 in state above Division 1 teams.
+
+**Solution: Division-Seeded Starting ELO**
+```
+seed_elo = 1500 + (median_division - team_division) * DIVISION_STEP
+```
+DIVISION_STEP = 15, median-centered. Auto-calculated per league from `league_standings.division`.
+
+**Phase A: 50-State Tracking + Roadmap**
+- Created `docs/3-STATE_COVERAGE_CHECKLIST.md` — complete 50-state + DC checklist
+- Updated `docs/3-DATA_EXPANSION_ROADMAP.md` — local-first expansion strategy
+- Identified 4 new adapters needed for national coverage (SINC, Demosphere, SportsAffinity, Sports Connect)
+
+**Phase B: SINC Sports Adapter + NC Data**
+- Created `scripts/adapters/sincsports.js` — Puppeteer-based adapter for matches + standings
+- Scraped NC Fall Classic League (NCFL): 4,303 matches
+- Scraped NC Spring Classic League (NCCSL): 4,389 matches
+- Scraped NC Fall standings: 984 entries across 15 divisions
+- Fixed `fastProcessStaging.cjs`: source_entity_map Tier 0 lookup + LEAGUE_KEYWORDS classification
+- Fixed `fix_nc_leagues.cjs`: converted misclassified tournaments to leagues, dual source_entity_map registration
+
+**Phase C: Division-Seeded ELO**
+- Created `scripts/daily/divisionSeedElo.cjs` — universal division tier extraction
+- Modified `scripts/daily/recalculate_elo_v2.js` — Step 1.5 division seeding + cache init
+- Updated `docs/2-RANKING_METHODOLOGY.md` — section 5.5 on closed-pool problem
+
+**Key Result: Sporting City 15B Indigo-North**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| KS State Rank | #1 | **#3** |
+| ELO | ~1756 | **1625** |
+| Division 1 teams above | 0 | **2** |
+
+**Division Seeding Stats:**
+- Heartland: 14 tiers, seeds 1410-1605, 1,207 teams
+- NCYSA Fall: 15 tiers, seeds 1395-1605, 805 teams
+- Total: 2,012 teams seeded, 1,684 unique
+- Overall avg ELO: 1500.4 (correctly centered)
+
+**All 3 Data Flows Verified for NC:**
+- Flow 1 (Matches → ELO): 8,692 NC matches, 318 NC teams with matches
+- Flow 2 (Standings → League Page): 805 NC standings across 15 divisions
+- Flow 3 (Scheduled → Upcoming): 3,800 future matches, all with league_id
+
+**Regression: Zero Impact on Existing Data**
+- teams_v2: 145,356 → 146,505 (only additions)
+- matches_v2: 402,948 → 411,641 (only additions)
+- GotSport ranks: unchanged
+- Heartland data: unchanged
+
+**Pipeline Integration:**
+- Added `sync-sincsports` job to `daily-data-sync.yml`
+- Added SINC Sports to `scrape-standings` job
+- Updated validation-pipeline + summary to include SINC Sports
+
+**Files Created:** `sincsports.js` (adapter), `divisionSeedElo.cjs`, `fix_nc_leagues.cjs`, `verify_nc_complete.cjs`, `3-STATE_COVERAGE_CHECKLIST.md`
+**Files Modified:** `fastProcessStaging.cjs`, `recalculate_elo_v2.js`, `daily-data-sync.yml`, `3-DATA_SCRAPING_PLAYBOOK.md`, `3-DATA_EXPANSION_ROADMAP.md`, `2-RANKING_METHODOLOGY.md`
+
+---
 
 ### Session 94 Part 2 - GotSport Rankings Matching + Pipeline Integration (February 9, 2026) - COMPLETE ✅
 

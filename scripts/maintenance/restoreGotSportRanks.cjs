@@ -1,9 +1,15 @@
 /**
- * restoreGotSportRanks.cjs — Re-import GotSport rankings using LEAST/GREATEST
+ * restoreGotSportRanks.cjs — Authoritative GotSport rankings refresh
  *
- * Fetches current GotSport rankings from their public API and updates
- * teams_v2 using LEAST for ranks (lower = better) and GREATEST for points
- * (higher = better). This ONLY ENHANCES data — never overwrites better values.
+ * Fetches current GotSport rankings from their public API and REPLACES
+ * stale rank data with fresh authoritative values. Uses clear-then-set:
+ *   1. CLEAR all GotSport rank columns for age/gender groups being updated
+ *   2. SET fresh values directly from API (no LEAST — this is authoritative data)
+ *
+ * WHY NOT LEAST? LEAST is correct for team MERGES (two records combining),
+ * but wrong for daily authoritative refresh. GotSport is the source of truth
+ * for these columns — stale ranks must be cleared, not merely improved.
+ * LEAST is preserved in all 7 other files that handle merge operations.
  *
  * OPTIMIZED: Parallel page fetching + bulk SQL matching (not row-by-row)
  *
@@ -352,8 +358,36 @@ async function main() {
       return;
     }
 
-    // EXECUTE: Bulk update using LEAST/GREATEST — process in batches
-    console.log('\nApplying updates...');
+    // EXECUTE: Clear stale ranks, then SET fresh authoritative values
+
+    // Step 1: Collect distinct (birth_year, gender) groups from fetched data
+    const groupSet = new Set();
+    for (const t of allTeams) {
+      if (t.birthYear && t.gender) groupSet.add(`${t.birthYear}|${t.gender}`);
+    }
+    const groups = [...groupSet].map(g => {
+      const [by, gen] = g.split('|');
+      return { birthYear: parseInt(by), gender: gen };
+    });
+
+    // Step 2: Clear ALL GotSport rank columns for groups being refreshed
+    // This removes stale ranks from unmatched/merged teams (the root cause of duplicate ranks)
+    console.log(`\nClearing stale GotSport ranks for ${groups.length} age/gender groups...`);
+    let cleared = 0;
+    for (const g of groups) {
+      const res = await client.query(`
+        UPDATE teams_v2
+        SET national_rank = NULL, state_rank = NULL, regional_rank = NULL, gotsport_points = NULL
+        WHERE birth_year = $1 AND gender = $2
+          AND (national_rank IS NOT NULL OR state_rank IS NOT NULL
+               OR regional_rank IS NOT NULL OR gotsport_points IS NOT NULL)
+      `, [g.birthYear, g.gender]);
+      cleared += res.rowCount;
+    }
+    console.log(`  Cleared ${cleared} teams with stale GotSport rank data`);
+
+    // Step 3: SET fresh authoritative values (no LEAST — GotSport is source of truth)
+    console.log('\nApplying fresh ranks...');
     let updated = 0;
     const BATCH = 500;
     for (let i = 0; i < updates.length; i += BATCH) {
@@ -370,10 +404,10 @@ async function main() {
 
       const result = await client.query(`
         UPDATE teams_v2 t
-        SET national_rank  = LEAST(t.national_rank, v.national_rank),
-            state_rank     = LEAST(t.state_rank, v.state_rank),
-            regional_rank  = LEAST(t.regional_rank, v.regional_rank),
-            gotsport_points = GREATEST(t.gotsport_points, v.gotsport_points),
+        SET national_rank  = v.national_rank,
+            state_rank     = v.state_rank,
+            regional_rank  = v.regional_rank,
+            gotsport_points = v.gotsport_points,
             updated_at = NOW()
         FROM (VALUES ${vals}) AS v(id, national_rank, state_rank, regional_rank, gotsport_points)
         WHERE t.id = v.id
@@ -385,7 +419,7 @@ async function main() {
     console.log('');
 
     await client.query('COMMIT');
-    console.log(`\nUpdated ${updated} teams with LEAST/GREATEST rank preservation`);
+    console.log(`\nCleared ${cleared} stale → Applied ${updated} fresh GotSport ranks`);
 
     // Backfill source_entity_map for future Tier 1 matching
     if (newSemMappings.length > 0) {

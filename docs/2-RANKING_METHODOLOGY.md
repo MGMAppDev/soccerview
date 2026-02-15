@@ -255,6 +255,73 @@ SELECT (
 
 ---
 
+## 5.5 Division-Seeded Starting ELO (Session 95) {#division-seeded-starting-elo}
+
+### The Closed-Pool Problem
+
+ELO is zero-sum within a closed division pool. All teams start at 1500, and after a full season of intra-division play, the pool average remains 1500. **No amount of post-processing or SOS adjustment can distinguish pool quality** — external information is required.
+
+**Real-world example:** Sporting City 15B Indigo-North (U11 Boys, KS) plays in Heartland Division 7 and went 8-0-0. The ELO system ranked them #1 in the state — ahead of Division 1 teams. This is incorrect: an 8-0 record against Division 7 opponents does not make a team stronger than competitive Division 1 teams.
+
+**Root cause:** All teams start at 1500 regardless of competitive tier. An undefeated Division 7 team can reach ~1756 ELO by beating weak opponents, while a 6-2 Division 1 team might only reach ~1596 against much stronger competition.
+
+### The Solution: Division-Seeded Starting ELO
+
+Inject division tier as a prior into the ELO calculation:
+
+```
+seed_elo = 1500 + (median_division - team_division) * DIVISION_STEP
+```
+
+**Parameters:**
+- `DIVISION_STEP = 15` — Conservative, tunable. 90-point spread for a 14-division league.
+- `median_division` — Auto-calculated per league (center tier). Keeps overall average at ~1500.
+- `team_division` — Numeric tier extracted from `league_standings.division`.
+
+**Division extraction is universal** — handles all formats:
+
+| Format | Example | Extraction |
+|--------|---------|------------|
+| Numeric | "Division 7", "Subdivision 3" | Regex: `/division\s*(\d+)/` |
+| Named | "Premier", "Gold", "Silver" | NAMED_TIER_ORDINALS lookup |
+| Ordinal | "1st Division", "3rd" | NAMED_TIER_ORDINALS lookup |
+| Sub-tier | "Div 2a", "Div 2b" | Numeric part only (share tier) |
+
+### Math Example (Heartland, 14 divisions)
+
+| Division | Tier | Seed ELO | Description |
+|----------|------|----------|-------------|
+| Division 1 | 1 | **1598** | Top tier — 98 pts above baseline |
+| Division 7 | 7 | **1508** | Middle tier — near baseline |
+| Division 14 | 14 | **1403** | Bottom tier — 97 pts below |
+
+After an 8-0 season, a Division 7 team gains ~256 ELO → final ~1764. A Division 1 team going 6-2 gains ~128 → final ~1726. **The gap narrowed but Division 1 maintains a meaningful advantage**, reflecting the harder competition.
+
+### Implementation
+
+**Step 1.5 in recalculate_elo_v2.js** (after reset, before match processing):
+
+1. `buildDivisionSeedMap()` reads `league_standings.division` + `leagues`
+2. Groups teams by league, extracts numeric tiers, calculates median
+3. Applies formula: `1500 + (median - tier) * 15`
+4. Batch-UPDATEs `teams_v2.elo_rating` with seeded values
+5. ELO cache reads seeded values: `parseFloat(team.elo_rating) || 1500`
+
+**Files:**
+- `scripts/daily/divisionSeedElo.cjs` — Algorithm + seed map builder
+- `scripts/daily/recalculate_elo_v2.js` — Step 1.5 integration
+
+### Properties
+
+- **Universal**: Zero source-specific code. Works for any league's division format.
+- **Conservative**: DIVISION_STEP=15 produces subtle but meaningful differentiation.
+- **Median-centered**: Overall ELO average stays at ~1500 per league.
+- **No schema changes**: Uses existing `league_standings.division` column.
+- **No UI changes**: Rankings display unchanged.
+- **Tunable**: DIVISION_STEP can be adjusted based on empirical results.
+
+---
+
 ## 6. Industry Comparison {#industry-comparison}
 
 ### GotSport Official Rankings

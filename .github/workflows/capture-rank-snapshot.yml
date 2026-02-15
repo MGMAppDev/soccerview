@@ -2,8 +2,10 @@ name: Daily Rank Snapshot
 
 on:
   schedule:
-    # Run daily at 6 AM UTC (midnight CST)
-    - cron: "0 6 * * *"
+    # Run daily at noon UTC (6 AM CST) — AFTER daily-data-sync completes
+    # daily-data-sync starts at 6 AM UTC and takes ~1-2 hours
+    # Snapshot must capture POST-update ranks, not stale pre-update data
+    - cron: "0 12 * * *"
   workflow_dispatch: # Allow manual trigger
 
 env:

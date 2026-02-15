@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 5.0** | Updated: February 6, 2026 | Dual-System Architecture (Session 92 QC)
+> **Version 6.0** | Updated: February 15, 2026 | SINC Sports + Division-Seeded ELO (Session 95)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -92,6 +92,7 @@ See [ARCHITECTURE.md](1.2-ARCHITECTURE.md) for full dual-system diagram.
 │  /scripts/adapters/gotsport.js    (Cheerio - static HTML)       │
 │  /scripts/adapters/htgsports.js   (Puppeteer - JavaScript SPA)  │
 │  /scripts/adapters/heartland.js   (Puppeteer - CGI via AJAX)     │
+│  /scripts/adapters/sincsports.js  (Puppeteer - Bootstrap grid)  │
 │  /scripts/adapters/_template.js   (Template for new sources)    │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -143,7 +144,7 @@ node scripts/refresh_views_manual.js
 | Technology | Use Case | Adapter Example |
 |------------|----------|-----------------|
 | Cheerio | Static HTML pages | gotsport.js, heartland.js |
-| Puppeteer | JavaScript SPAs | htgsports.js |
+| Puppeteer | JavaScript SPAs | htgsports.js, sincsports.js |
 | API | REST endpoints | (future) |
 
 ### CRITICAL: Alphanumeric Team ID Extraction (Session 61)
@@ -472,6 +473,7 @@ Scrapers → staging_games → dataQualityEngine.js → matches_v2 → app_views
 | GotSport | `gotsport-{eventId}-{matchNum}` | `gotsport-39064-91` |
 | HTGSports | `htg-{eventId}-{matchId}` | `htg-12345-678` |
 | Heartland | `heartland-{level}-{homeId}-{awayId}-{date}-{gameNum}` | `heartland-premier-abc123-def456-2025-03-15-1` |
+| SINC Sports | `sincsports-{eventId}-{matchNumber}` | `sincsports-NCFL-38209` |
 | Legacy | `legacy-{eventId8}-{homeId8}-{awayId8}-{date}` | `legacy-b2c9a5aa-0bc3985a-3406f39e-2025-06-29` |
 
 ```javascript
@@ -778,7 +780,40 @@ When data flows from staging to production, entities (teams, leagues, tournament
 | `scripts/adapters/gotsport.js` | GotSport | Cheerio | ✅ Production |
 | `scripts/adapters/htgsports.js` | HTGSports | Puppeteer | ✅ Production |
 | `scripts/adapters/heartland.js` | Heartland CGI + Calendar | Puppeteer/AJAX | ✅ Production (Premier-only, v5.0) |
+| `scripts/adapters/sincsports.js` | SINC Sports | Puppeteer | ✅ Production (Session 95) |
 | `scripts/adapters/_template.js` | Template | — | Template |
+
+### SINC Sports Adapter (Session 95)
+
+**Platform:** SINC Sports (`soccer.sincsports.com`) — used by NC, TN, and other state associations.
+
+**Key Technical Details:**
+
+| Aspect | Details |
+|--------|---------|
+| DOM Structure | **Bootstrap grid (div-based)**, NOT HTML tables |
+| Match selectors | `.game-row` → `.hometeam`/`.awayteam` divs → `<a>` tags for names/IDs |
+| Score selectors | `.col-3 div[style*='color']` for completed, `.col-md-3` for scheduled |
+| Standings selectors | `#divStds` container → `.std-heading` for group headers → `a[href*="team="]` for team rows → `.col.bigpad` for stats |
+| Team ID extraction | `a[href*="teamid="]` or `a[href*="team="]` — URL params, not text |
+| Time validation | Must validate hour (1-12) and minute (0-59) — SINC pages have corrupted times like "53:00" |
+
+**Lessons Learned:**
+1. **Test small batches first** — always `--event SINGLE_ID` before `--active`
+2. **SINC Sports uses responsive layouts** — team rows contain `.std-heading` (smallOnly) elements. Cannot filter by `.std-heading` class; instead identify team rows by `a[href*="team="]` presence.
+3. **Stats filtering** — use `.closest('.std-heading')` to exclude stats inside responsive headers. Only count `.col.bigpad` elements NOT inside `.std-heading`.
+4. **Group info** — standings groups are indicated by `<h3>` elements within `#divStds`. Append group name to division name: `"Premier - Group A"`.
+
+**Supported Data:**
+- Match results (completed + scheduled)
+- League standings (with division/group structure)
+- All 3 flows validated: Matches → ELO, Standings → League Page, Scheduled → Upcoming
+
+**Current Events:**
+| Event ID | Name | State | Matches | Standings |
+|----------|------|-------|---------|-----------|
+| NCFL | NCYSA Fall Classic League | NC | 4,303 | 805 |
+| NCCSL | NC Classic Spring League | NC | 4,389 | — |
 
 ### Legacy Scrapers (Fallback)
 
@@ -820,25 +855,27 @@ Heartland Soccer Association has **4 distinct data access mechanisms**. As of Fe
 
 **Current Data:** 9,932 Heartland matches in production (9,729 with scores)
 
-### Session 90 Database Snapshot (Feb 5, 2026)
+### Session 95 Database Snapshot (Feb 15, 2026)
 
 | Metric | Value |
 |--------|-------|
-| **matches_v2 (active)** | 403,068 |
+| **matches_v2 (active)** | 411,641 |
 | **matches_v2 (soft-deleted)** | ~5,468 |
-| **teams_v2** | 158,043 |
-| **Teams with ELO** | 59,295 |
-| **ELO range** | 1,157 - 1,781 |
-| **source_entity_map** | 3,253 |
+| **teams_v2** | 146,505 |
+| **Teams with ELO** | 52,853 |
+| **ELO range** | 1,148 - 1,816 |
+| **source_entity_map** | ~72,000+ |
+| **league_standings** | 2,012 |
 | **Unprocessed staging** | 0 |
-| **Semantic duplicates** | 0 |
 
-**Key changes (Sessions 87.2-90):**
-- staging_games UNIQUE constraint on `source_match_key` (87.2)
-- HTGSports: 7,200 new matches via `fastProcessStaging.cjs` (87.2)
-- Dynamic SEASON_YEAR from DB, reverse match detection (88)
-- `source_entity_map` + three-tier entity resolution, 7,253 teams merged (89)
-- Cross-import duplicate fix: 2,527 legacy matches soft-deleted (90)
+**Key changes (Sessions 93-95):**
+- 12,716 duplicate teams merged (Session 93)
+- LEAST/GREATEST rank preservation across 8 files (Session 94)
+- GotSport rankings pipeline integration with 68K+ source_entity_map entries (Session 94)
+- SINC Sports adapter: NC Fall (4,303 matches) + NC Spring (4,389 matches) (Session 95)
+- NC league standings: 805 entries across 15 divisions (Session 95)
+- Division-seeded starting ELO: 2,012 teams seeded from standings (Session 95)
+- fastProcessStaging.cjs: source_entity_map Tier 0 lookup + league/tournament classification by name (Session 95)
 
 ### staging_games Constraint (Session 87.2)
 
@@ -992,9 +1029,10 @@ Staging tables are NOT auto-cleared. This allows:
 # ═══════════ SYSTEM 1: MATCH PIPELINE (Rankings/ELO) ═══════════
 
 # Phase 1: Scrape matches (parallel) — Universal Framework + Fallback
-sync-gotsport:   coreScraper.js --adapter gotsport (fallback: syncActiveEvents.js)
-sync-htgsports:  coreScraper.js --adapter htgsports (fallback: scrapeHTGSports.js)
-sync-heartland:  coreScraper.js --adapter heartland (fallback: legacy scripts)
+sync-gotsport:    coreScraper.js --adapter gotsport (fallback: syncActiveEvents.js)
+sync-htgsports:   coreScraper.js --adapter htgsports (fallback: scrapeHTGSports.js)
+sync-heartland:   coreScraper.js --adapter heartland (fallback: legacy scripts)
+sync-sincsports:  coreScraper.js --adapter sincsports --active
 
 # Phase 2: Validate matches (sequential) — Heavy 3-tier resolver
 validation-pipeline → matches_v2, teams_v2, leagues, tournaments
@@ -1002,13 +1040,17 @@ validation-pipeline → matches_v2, teams_v2, leagues, tournaments
 # Phase 2.5: Self-healing inference linkage
 infer-event-linkage → Links orphaned matches by team patterns
 
-# Phase 3: ELO Calculation
-recalculate-elo → Updates power ratings
+# Phase 2.7: GotSport rankings refresh (Session 94)
+refresh-gotsport-rankings → restoreGotSportRanks.cjs --cached
+
+# Phase 3: ELO Calculation (with division seeding — Session 95)
+recalculate-elo → Division seed → Process matches → Power ratings
 
 # ═══════════ SYSTEM 2: STANDINGS ABSORPTION (League Page) ═══════════
 
 # Phase 1.5: Scrape standings (parallel with Phase 1)
-scrape-standings: scrapeStandings.js --adapter heartland
+scrape-standings-heartland:   scrapeStandings.js --adapter heartland
+scrape-standings-sincsports:  scrapeStandings.js --adapter sincsports
 
 # Phase 2.6: Process standings — Lightweight resolver (NO fuzzy matching)
 process-standings: processStandings.cjs → league_standings
