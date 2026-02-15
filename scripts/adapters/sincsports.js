@@ -780,11 +780,8 @@ async function scrapeEventStandings(engine, source) {
       for (const raw of rawStandings) {
         const teamName = engine.adapter.transform.normalizeTeamName(raw.teamName);
 
-        // Build division name: tier + group if present
+        // Build division name: tier only (group suffix handled after dedup check below)
         let divisionName = tierName || div.text || `Division ${div.code}`;
-        if (raw.group) {
-          divisionName = `${divisionName} - ${raw.group}`;
-        }
 
         allStandings.push({
           league_source_id: source.league_source_id,
@@ -820,6 +817,22 @@ async function scrapeEventStandings(engine, source) {
     await engine.sleep(engine.adapter.rateLimiting.iterationDelay);
   }
 
+  // Post-process: only append group suffix when multiple groups exist per division
+  const groupsPerDiv = {};
+  for (const s of allStandings) {
+    const group = s.extra_data?.group;
+    if (group) {
+      if (!groupsPerDiv[s.division]) groupsPerDiv[s.division] = new Set();
+      groupsPerDiv[s.division].add(group);
+    }
+  }
+  for (const s of allStandings) {
+    const group = s.extra_data?.group;
+    if (group && groupsPerDiv[s.division] && groupsPerDiv[s.division].size > 1) {
+      s.division = `${s.division} - ${group}`;
+    }
+  }
+
   console.log(`\n  📊 ${allStandings.length} standings entries from ${divisionsScraped} divisions`);
   return allStandings;
 }
@@ -830,16 +843,9 @@ async function scrapeEventStandings(engine, source) {
 
 /**
  * Map SINC Sports tier number to human-readable division name.
- * Used for the division-seeded ELO algorithm.
+ * Consistent ordinal naming: Premier > 1st Division > 2nd Division > ... > 14th Division
  *
- * SINC Sports tiers:
- *   01 = Premier (or 1st Division for NC)
- *   02 = 1st (or 2nd)
- *   03 = 2nd (or 3rd)
- *   04 = 3rd (or 4th)
- *
- * NC Classic League: Premier, 1st, 2nd, 3rd
- * TN State League: Div 1, 2a, 2b, 3
+ * SINC Sports tiers: 01 = Premier, 02+ = ordinal divisions
  */
 function mapTierToName(tier) {
   if (tier === null || tier === undefined) return null;
@@ -848,21 +854,27 @@ function mapTierToName(tier) {
   if (typeof tier === "string") {
     const upper = tier.toUpperCase();
     if (upper === "PREMIER" || upper === "PREM") return "Premier";
-    if (upper === "1ST" || upper === "FIRST") return "1st Division";
-    if (upper === "2ND" || upper === "SECOND") return "2nd Division";
-    if (upper === "3RD" || upper === "THIRD") return "3rd Division";
-    if (upper === "4TH" || upper === "FOURTH") return "4th Division";
+    // Parse ordinal strings to numbers: "1ST" → 1, "2ND" → 2, etc.
+    const numMatch = upper.match(/^(\d+)/);
+    if (numMatch) {
+      const n = parseInt(numMatch[1], 10);
+      return `${toOrdinal(n)} Division`;
+    }
     return tier;
   }
 
-  // Numeric tier
+  // Numeric tier: 1 = Premier, 2+ = ordinal divisions
   const tierNum = parseInt(tier, 10);
-  const names = {
-    1: "Premier",
-    2: "1st Division",
-    3: "2nd Division",
-    4: "3rd Division",
-    5: "4th Division",
-  };
-  return names[tierNum] || `Division ${tierNum}`;
+  if (isNaN(tierNum)) return null;
+  if (tierNum === 1) return "Premier";
+  return `${toOrdinal(tierNum - 1)} Division`;
+}
+
+/**
+ * Convert number to ordinal string: 1→"1st", 2→"2nd", 3→"3rd", 4→"4th", etc.
+ */
+function toOrdinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }

@@ -122,7 +122,10 @@ async function resolveLeague(client, sourcePlatform, leagueSourceId) {
      WHERE entity_type = 'league' AND source_platform = $1 AND source_entity_id = $2`,
     [sourcePlatform, leagueSourceId]
   );
-  if (tier1.rows.length > 0) return tier1.rows[0].sv_id;
+  if (tier1.rows.length > 0) {
+    const league = await getLeagueState(client, tier1.rows[0].sv_id);
+    return { id: tier1.rows[0].sv_id, state: league };
+  }
 
   // Tier 2: leagues table by source_event_id
   const tier2 = await client.query(
@@ -132,7 +135,8 @@ async function resolveLeague(client, sourcePlatform, leagueSourceId) {
   );
   if (tier2.rows.length > 0) {
     await registerSourceEntity(client, 'league', sourcePlatform, leagueSourceId, tier2.rows[0].id);
-    return tier2.rows[0].id;
+    const league = await getLeagueState(client, tier2.rows[0].id);
+    return { id: tier2.rows[0].id, state: league };
   }
 
   // Tier 2b: leagues table by name pattern match
@@ -142,10 +146,17 @@ async function resolveLeague(client, sourcePlatform, leagueSourceId) {
   );
   if (tier2b.rows.length > 0) {
     await registerSourceEntity(client, 'league', sourcePlatform, leagueSourceId, tier2b.rows[0].id);
-    return tier2b.rows[0].id;
+    const league = await getLeagueState(client, tier2b.rows[0].id);
+    return { id: tier2b.rows[0].id, state: league };
   }
 
   return null;
+}
+
+/** Get the state from a league record. */
+async function getLeagueState(client, leagueId) {
+  const { rows } = await client.query('SELECT state FROM leagues WHERE id = $1', [leagueId]);
+  return rows.length > 0 ? rows[0].state : null;
 }
 
 // =========================================================================
@@ -171,7 +182,7 @@ async function resolveLeague(client, sourcePlatform, leagueSourceId) {
  *   Step 2: Exact name + birth_year + gender match
  *   Step 3: Create new team (trust the source — no fuzzy matching)
  */
-async function resolveTeam(client, sourcePlatform, teamSourceId, teamName, birthYear, gender) {
+async function resolveTeam(client, sourcePlatform, teamSourceId, teamName, birthYear, gender, leagueState) {
   // Clean duplicate prefix BEFORE any lookup or creation (single source of truth: cleanTeamName.cjs)
   teamName = removeDuplicatePrefix(teamName);
   const normalizedName = teamName.trim().toLowerCase();
@@ -268,7 +279,7 @@ async function resolveTeam(client, sourcePlatform, teamSourceId, teamName, birth
       INSERT INTO teams_v2 (display_name, canonical_name, birth_year, gender, state, data_quality_score)
       VALUES ($1, $2, $3, $4, $5, 50)
       RETURNING id
-    `, [teamName.trim(), teamName.trim().toLowerCase(), birthYear, gender, 'unknown']);
+    `, [teamName.trim(), teamName.trim().toLowerCase(), birthYear, gender, leagueState || 'unknown']);
 
     if (newTeam.rows.length > 0) {
       const newId = newTeam.rows[0].id;
@@ -494,18 +505,20 @@ async function main() {
       const division = normalizeDivision(row.division);
 
       // B. Resolve league
-      const leagueId = await resolveLeague(client, row.source_platform, row.league_source_id);
-      if (!leagueId) {
+      const leagueResult = await resolveLeague(client, row.source_platform, row.league_source_id);
+      if (!leagueResult) {
         if (isVerbose) console.log(`  Skip: league not found for "${row.league_source_id}" (${row.source_platform})`);
         skippedLeague++;
         processedIds.push(row.id); // Mark processed so we don't retry — league doesn't exist
         continue;
       }
+      const leagueId = leagueResult.id;
+      const leagueState = leagueResult.state;
 
-      // C. Resolve team
+      // C. Resolve team (pass league state for new team creation)
       const teamId = await resolveTeam(
         client, row.source_platform, row.team_source_id,
-        row.team_name, birthYear, gender
+        row.team_name, birthYear, gender, leagueState
       );
       if (!teamId) {
         if (isVerbose) console.log(`  Skip: team not found for "${row.team_name}" (by=${birthYear}, g=${gender})`);
