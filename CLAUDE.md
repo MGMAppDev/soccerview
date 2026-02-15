@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 19.0** | Last Updated: February 15, 2026 | Session 97 Complete
+> **Version 20.0** | Last Updated: February 15, 2026 | Session 98 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1192,11 +1192,11 @@ After onboarding ANY new state or league, verify in Expo Go:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 148,469 | Team records (Session 97: +1,964 from MLS Next + GA SportsAffinity) |
-| `matches_v2` | 425,050 active | Match results (~5,297 soft-deleted) |
+| `teams_v2` | 150,111 | Team records (Session 98: +1,642 from ECNL + FL + TX leagues) |
+| `matches_v2` | 426,513 active | Match results (~5,297 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 281 | League metadata |
-| `tournaments` | 1,754 | Tournament metadata (Session 97: +4 GA SportsAffinity) |
+| `leagues` | 304 | League metadata (Session 98: +23 FL + TX leagues) |
+| `tournaments` | 1,754 | Tournament metadata |
 | `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
 | `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
 | `source_entity_map` | ~74,800+ | Universal source ID mappings (Session 89+92QC+94+95+97) |
@@ -1204,7 +1204,7 @@ After onboarding ANY new state or league, verify in Expo Go:
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
 | `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
-| `staging_games` | 86,491 | Staging area (0 unprocessed) |
+| `staging_games` | 156,726 | Staging area (271 unprocessed — missing metadata) |
 | `staging_rejected` | 1 | Rejected intake data (Session 79) |
 | `seasons` | 3 | Season definitions |
 
@@ -1228,6 +1228,7 @@ After onboarding ANY new state or league, verify in Expo Go:
 | SINC Sports | ✅ Production (Session 95) | staging_games + staging_standings |
 | MLS Next | ✅ Production (Session 97) | staging_games (Puppeteer, Modular11) |
 | SportsAffinity | ✅ Production (Session 97) | staging_games (Cheerio, GA Boys) |
+| TotalGlobalSports | ✅ Production (Session 98) | staging_games (ECNL, Puppeteer+stealth) |
 
 ### source_match_key (CRITICAL - Session 57)
 
@@ -1641,56 +1642,71 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
-### Session 97 - National Expansion: MLS Next + SportsAffinity GA (February 15, 2026) - COMPLETE ✅
+### Session 98 - Comprehensive Expansion Sprint: ECNL + FL + TX + MLS Next Fix (February 15, 2026) - COMPLETE ✅
 
-**Goal:** Build and deploy two new adapters (MLS Next, SportsAffinity) for national expansion. Research all state league platforms.
+**Goal:** QC fixes (MLS Next reclassification, double-prefix cleanup) + first ECNL scrape + Florida/Texas league expansion.
 
-**Platform Research Completed:**
+**QC Fixes:**
 
-| Platform | States | Adapter Status |
-|----------|--------|---------------|
-| **GotSport** | CA, TX, FL, OH, NJ, NY, PA, WA, MO, AZ, etc. (32 states) | **EXISTS** |
-| **SportsAffinity** | GA, MN (partial), UT, OR, NE, PA-W, HI | **NEW — Session 97** |
-| **Modular11** | MLS Next (national, 277 clubs) | **NEW — Session 97** |
-| **SINC Sports** | NC, TN | **EXISTS (Session 95)** |
-| **Heartland CGI** | KS, MO | **EXISTS** |
-| **Demosphere** | VA/DC, IL, WI, KY | Needs new adapter |
-| **Sports Connect** | CO, IA, CT, MA, SD | Needs new adapter |
+| Fix | Impact |
+|-----|--------|
+| MLS Next reclassified from tournament → league | 9,795 matches now display correctly under "Leagues" |
+| 98 double-prefix teams cleaned | Retroactive fix for remaining prefix duplicates |
+| MI + AL GotSport events scraped | 173 new matches from state discovery |
 
-**Adapter A: MLS Next (Modular11)**
-- Technology: Puppeteer (JavaScript SPA, AJAX calls)
-- Endpoint: `modular11.com/public_schedule/league/get_matches`
-- 6 age groups: U13(21), U14(22), U15(33), U16(14), U17(15), U19(26)
-- **9,795 matches scraped** (Boys only, national program)
-- ~17 min scrape time, all processed through V2 pipeline
+**ECNL Adapter Deployed (TotalGlobalSports):**
+- Fixed 4 bugs in existing adapter: selectors, duplicate prefix in team names, division metadata, pagination
+- Event 3933 (Girls Southwest): **816 matches** scraped and processed
+- 102 ECNL teams resolved (99 new, 3 existing)
+- Added `totalglobalsports` to KNOWN_PLATFORMS in intakeValidator.js
+- **First ECNL data in SoccerView** — 7th data source
 
-**Adapter B: SportsAffinity (Georgia Soccer)**
-- Technology: Cheerio (server-rendered ASP.NET WebForms, no Puppeteer needed)
-- Recursive DOM walk for date-table association (key innovation)
-- 4 seasons: Fall 2025 (763), Spring 2025 (482), Fall 2024 (1,164), Spring 2026 (TBD)
-- **2,409 matches scraped** (Boys only — no Girls flights found yet)
+**Florida League Expansion (3 events):**
+
+| League | Event ID | Matches |
+|--------|----------|---------|
+| FSPL 2025-26 | 80693 | 29 |
+| EDP Florida League 2025-26 | 76361 | 180 |
+| FCL NPL Florida 2025-26 | 79779 | 91 |
+| **Total FL** | | **300** |
+
+**Texas League Expansion (4 events):**
+
+| League | Event ID | Matches |
+|--------|----------|---------|
+| State Classic League (SCL) 2025-26 | 78565 | 16 |
+| EDPL Fall 2025 | 79367 | 223 |
+| CCSAI Classic Boys Fall 2025 | 77871 | 127 |
+| Girls Classic League 2024-25 | 75263 | 63 |
+| **Total TX** | | **429** |
 
 **Pipeline Processing:**
-- `fastProcessStaging.cjs`: 2,407 SA + 9,795 MLS = 12,202 matches inserted
-- ELO recalculated: 182,797 matches, 54,709 teams (6.5 min)
+- fastProcessStaging: 481 GotSport + 816 TGS = 1,297 matches inserted
+- ELO recalculated with all new data
 - All 5 materialized views refreshed
-
-**Other Session 97 Work:**
-- Fixed 193 league state codes (35 states mapped) via `fixLeagueStates.cjs`
-- Added `mlsnext` + `sportsaffinity` to KNOWN_PLATFORMS in intakeValidator.js
-- ECNL/TGS adapter created (`totalglobalsports.js`) but not yet deployed (complex auth)
 
 **Results:**
 
 | Metric | Before | After |
 |--------|--------|-------|
-| teams_v2 | 146,505 | **148,469** (+1,964) |
-| matches_v2 (active) | 411,641 | **425,050** (+13,409) |
-| Data sources | 4 | **6** |
-| source_entity_map | ~72,000 | **~74,800** |
+| teams_v2 | 148,469 | **150,111** (+1,642) |
+| matches_v2 (active) | 425,050 | **426,513** (+1,463) |
+| leagues | 281 | **304** (+23) |
+| Data sources | 6 | **7** (added TotalGlobalSports/ECNL) |
 
-**Files Created:** `sportsaffinity.js`, `mlsnext.js`, `totalglobalsports.js` (adapters), `fixLeagueStates.cjs`, `fixGenericEventNames2.cjs`, 6 diagnostic scripts
-**Files Modified:** `intakeValidator.js`, `coreScraper.js`, `daily-data-sync.yml`, `CLAUDE.md`
+**Files Modified:** `totalglobalsports.js` (4 bug fixes), `intakeValidator.js` (add platform), `3-STATE_COVERAGE_CHECKLIST.md`, `3-DATA_EXPANSION_ROADMAP.md`
+**Files Created:** `reclassifyMlsNextAsLeague.cjs`, 3 MLS Next debug scripts
+**Zero UI Changes.** All data flows through universal V2 pipeline.
+
+---
+
+### Session 97 - National Expansion: MLS Next + SportsAffinity GA (February 15, 2026) - COMPLETE ✅
+
+**Goal:** Build and deploy two new adapters (MLS Next, SportsAffinity) for national expansion. Research all state league platforms.
+
+**Results:** +13,409 matches (9,795 MLS Next + 2,409 SportsAffinity GA + misc), 2 new adapters, 6→7 data sources.
+
+**Files Created:** `sportsaffinity.js`, `mlsnext.js`, `totalglobalsports.js` (adapters), `fixLeagueStates.cjs`
 **Zero UI Changes.** All data flows through universal V2 pipeline.
 
 ---

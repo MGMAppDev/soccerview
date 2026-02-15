@@ -1,6 +1,6 @@
 # SoccerView Data Expansion Roadmap
 
-> **Version 7.0** | Updated: February 14, 2026 | Session 96 — NC QC Complete + Post-Expansion Protocol
+> **Version 8.0** | Updated: February 15, 2026 | Session 98 — National Expansion Sprint
 >
 > Strategic guide for national expansion using the V2 dual-system architecture.
 >
@@ -36,7 +36,8 @@ GotSport provides ZERO individual match results, ZERO division structure, ZERO s
 
 ### The Expansion Math
 
-- **4 new adapters** (SINC Sports, Demosphere, SportsAffinity, Sports Connect) + **GotSport event discovery** = complete national coverage
+- **2 new adapters needed** (Demosphere, Sports Connect) + **SportsAffinity expansion** + **GotSport event discovery** = complete national coverage
+- 7 adapters built (GotSport, HTGSports, Heartland, SINC Sports, MLS Next, SportsAffinity, TGS/ECNL)
 - Each adapter covers 2-6 states
 - Total: ~55 state/sub-region entries in the [checklist](3-STATE_COVERAGE_CHECKLIST.md)
 
@@ -156,26 +157,31 @@ Both configured in the same adapter file.
 | Platform | Type | States | Matches | Standings | Schedules | Status |
 |----------|------|--------|---------|-----------|-----------|--------|
 | **GotSport** | Rankings | 50 | - | - | - | Ranking badges only |
+| **GotSport** | Leagues | AL, MI, 30+ | PRODUCTION | - | - | Event discovery expanding |
 | **HTGSports** | Tournaments | 26+ | PRODUCTION | - | - | Match data |
 | **Heartland CGI** | League | KS, MO | PRODUCTION | PRODUCTION | PRODUCTION | Full pipeline |
 | **SINC Sports** | League | NC | PRODUCTION | PRODUCTION | PRODUCTION | Full pipeline (Session 95-96) |
+| **MLS Next** | National | All (U13-U19) | PRODUCTION | - | - | 9,795 matches (Session 97) |
+| **SportsAffinity** | League | GA (Boys) | PRODUCTION | - | - | 2,409 matches (Session 97) |
+| **TGS/ECNL** | National | All | IN PROGRESS | - | - | Adapter needs fix (Session 98) |
 
 ---
 
 ## Expansion Waves
 
-### Wave 1: SINC Sports Test (NC: COMPLETE ✅ — TN: READY)
+### Wave 1: Foundation Adapters (COMPLETE ✅)
 
-**Goal:** Validate architecture with 2 new leagues. One adapter, two states, two division schemes.
+**Goal:** Build all core adapters and validate architecture across multiple sources.
 
-| State | League | Divisions | Status |
-|-------|--------|-----------|--------|
-| NC | NCYSA Classic League | Premier, 1st–14th Division | ✅ PRODUCTION (Session 95-96 QC complete) |
-| TN | TN State League | Div 1, 2a, 2b, 3 | READY — adapter configured, scraping deferred |
+| Source | States | Status | Key Metrics |
+|--------|--------|--------|-------------|
+| Heartland CGI | KS, MO | ✅ PRODUCTION | 14 divisions, full 3-flow pipeline |
+| SINC Sports | NC | ✅ PRODUCTION | 8,692 matches, 805 standings, 15 divisions |
+| MLS Next | National (U13-U19) | ✅ PRODUCTION | 9,795 matches (Session 97) |
+| SportsAffinity | GA (Boys) | ✅ PRODUCTION | 2,409 matches (Session 97) |
+| GotSport Rankings | National | ✅ PRODUCTION | 64% match rate, 72K source mappings |
 
-**NC Results:** 8,692 matches (4,303 Fall + 4,389 Spring), 805 league standings, 506 teams, 15 divisions. All 3 data flows validated.
-
-Combined with existing Heartland = 2-league validation for division-seeded ELO (TN will make 3).
+**7 adapters built. Architecture validated across 5 independent platforms. Zero source-specific code in core pipeline.**
 
 #### NC Expansion Lessons Learned (Session 96 — UNIVERSAL)
 
@@ -260,15 +266,41 @@ SINC Sports is the sole data source for NC. Abbreviated team names ("CSA Charlot
 
 If the source uses short names and there's no alternative — document it and move on. Not every data characteristic is a bug.
 
-### Wave 2: GotSport Event Discovery (Highest ROI — adapter already built)
+### Wave 2: GotSport Event Discovery (IN PROGRESS — Highest ROI)
 
 30+ states use GotSport for league scheduling. Adapter exists. Just need event IDs.
 
-**High-priority states:** FL, TX-N, TX-S, CA (3 sub-regions), GA, OH, MI, NJ, NY, PA-E, MD, IN, SC, AZ, AL
+| State | Event IDs | Status |
+|-------|-----------|--------|
+| AL | 45401 (Fall), 51021 (Spring) | ✅ Scraping (Session 98) |
+| MI | 46034 (MYSL), 50611 (MSPSP Spring) | ✅ Scraping (Session 98) |
+| FL | FSPL | Discovering event IDs |
+| TX-N | NTSSA | Discovering event IDs |
+| TX-S | SCL | Discovering event IDs |
+| CA-NC | NorCal Premier (3,000+ teams) | Next priority |
+| CA-S | SOCAL Soccer League | Next priority |
+| OH | OSSL + Buckeye Premier | Queued |
+| NJ/NY/PA-E/MD/DE | EDP multi-state | Queued |
+| IN | ISL | Queued |
+| SC | SC Challenge + PMSL | Queued |
+| AZ | APL/ASL1/ASL2 | Queued |
+| LA | LCSL + PSL | Queued |
 
 **Estimated:** ~30 min per state to discover and configure event IDs.
 
-### Wave 3: Demosphere Adapter
+### Wave 3: SportsAffinity Expansion (adapter BUILT)
+
+| State | League | Impact | Status |
+|-------|--------|--------|--------|
+| GA Girls | GPL Girls | Complete GA coverage | Next priority |
+| MN | MYSA (6 tiers) | Major market | Discover events |
+| UT | UYSA (320+ teams) | Western coverage | Discover events |
+| OR | OYSA | Pacific NW | Discover events |
+| NE | NYSL | Midwest fill | Discover events |
+| PA-W | PA West | Eastern fill | Discover events |
+| HI | Island leagues | Small market | Low priority |
+
+### Wave 4: Demosphere Adapter (NOT BUILT)
 
 | State | League | Impact |
 |-------|--------|--------|
@@ -277,18 +309,7 @@ If the source uses short names and there's no alternative — document it and mo
 | WI | WYSA | Midwest coverage |
 | KY | Premier League | Regional fill |
 
-### Wave 4: SportsAffinity Adapter
-
-| State | League | Impact |
-|-------|--------|--------|
-| MN | MYSA (6 tiers) | Major market |
-| UT | UYSA (320+ teams) | Western coverage |
-| OR | OYSA | Pacific NW |
-| NE | NYSL | Midwest fill |
-| PA-W | PA West | Eastern fill |
-| HI | Island leagues | Small market |
-
-### Wave 5: Sports Connect Adapter
+### Wave 5: Sports Connect Adapter (NOT BUILT)
 
 | State | League | Impact |
 |-------|--------|--------|
@@ -297,6 +318,13 @@ If the source uses short names and there's no alternative — document it and mo
 | CT | CJSA | Northeast fill |
 | MA | NEP | Northeast fill |
 | SD | Champions League | Small market |
+
+### Wave 6: ECNL + TN Expansion
+
+| Source | Status | Notes |
+|--------|--------|-------|
+| ECNL/ECRL via TGS | Adapter needs fix (Session 98) | 13 event IDs configured |
+| TN State League via SINC | Deferred to March 2026 | Between seasons |
 
 ---
 
@@ -386,26 +414,27 @@ Phase 6:   ensureViewIndexes.js → Self-healing index maintenance
 
 ## Success Metrics
 
-### Current State (Session 96)
+### Current State (Session 98)
 
 | Metric | Value |
 |--------|-------|
-| Total Matches | ~412K active |
-| Total Teams | ~146K |
-| States at PRODUCTION | 2 (KS, NC) |
-| States at PARTIAL | 1 (MO) |
-| States at READY | 1 (TN — adapter configured, scraping deferred) |
-| Data Sources | 4 (GotSport, HTGSports, Heartland, SINC Sports) |
-| Adapters Built | 4 |
+| Total Matches | ~425K active |
+| Total Teams | ~148K |
+| States at PRODUCTION | 4 (KS, MO via Heartland; NC via SINC; national via MLS Next) |
+| States at PARTIAL | 3 (GA, MI, AL — active scraping) |
+| States at GS RANKS | 48 |
+| Data Sources | 7 (GotSport, HTGSports, Heartland, SINC Sports, MLS Next, SportsAffinity, GotSport Rankings) |
+| Adapters Built | 7 (+1 TGS/ECNL in progress) |
+| National Programs | MLS Next (9,795 matches), ECNL (adapter in progress) |
 | Post-expansion QC protocol | Established (Session 96) |
 
-### Wave 1 Target (After TN Scraping)
+### Next Target (Wave 2: GotSport Discovery)
 
 | Metric | Target |
 |--------|--------|
-| States at PRODUCTION | 3 (KS, NC, TN) |
-| Adapters Built | 4 (SINC Sports adapter covers both NC + TN) |
-| Division-seeded ELO | Validated across 3 leagues |
+| States at PRODUCTION/PARTIAL | 10+ (add FL, TX, CA, OH) |
+| New matches | +50K from state leagues |
+| GotSport events discovered | 30+ |
 
 ### National Target
 

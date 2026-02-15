@@ -6,8 +6,8 @@
  * ECNL (Elite Clubs National League) is the premier girls + boys club league.
  * ECRL (ECNL Regional League) is the second tier.
  *
- * TECHNOLOGY: Puppeteer (React SPA behind Cloudflare protection)
- * PLATFORM: TotalGlobalSports — React frontend + .NET-like backend
+ * TECHNOLOGY: Puppeteer (Angular SPA behind Cloudflare protection)
+ * PLATFORM: TotalGlobalSports — Angular 8 frontend + .NET-like backend
  *
  * Key TGS concepts:
  * - Each conference + season = unique event ID (e.g., 3933 = ECNL Southwest Girls 25-26)
@@ -95,7 +95,7 @@ export default {
     puppeteer: {
       waitForSelector: "body",
       pageLoadWait: 6000,
-      ajaxWait: 12000, // React SPA + Cloudflare = slow
+      ajaxWait: 12000, // Angular SPA + Cloudflare = slow
     },
   },
 
@@ -120,13 +120,9 @@ export default {
      */
     staticEvents: [
       // ========================
-      // ECNL BOYS — 2025-26
-      // ========================
-      { id: 3933, name: "ECNL Boys Southwest 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Southwest" },
-
-      // ========================
       // ECNL GIRLS — 2025-26
       // ========================
+      { id: 3933, name: "ECNL Girls Southwest 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Southwest" },
       { id: 3928, name: "ECNL Girls North Atlantic 2025-26", type: "league", year: 2026, gender: "Girls", conference: "North Atlantic" },
 
       // ========================
@@ -343,8 +339,52 @@ export default {
       const ageGroups = await page.evaluate(() => {
         const groups = [];
 
-        // Look for age group links, tabs, or dropdown options
+        // ===========================================================
+        // Strategy A: TGS table layout — age groups in table headers,
+        // Schedules/Standings links in table body cells.
+        // Table structure (Angular 8 SPA):
+        //   TH: G2008/2007, Flights, Teams
+        //   TD: [Schedules text/link] | [Standings link] | ECNL | 17
+        //
+        // NOTE: TGS is Angular (not React). Links use routerLink directives.
+        // The "Schedules" text may not have a standard href. The "Standings"
+        // link DOES have href like /public/event/3933/standings/32928.
+        // We extract the division ID from the standings link and construct
+        // the schedule URL ourselves.
+        // ===========================================================
+        document.querySelectorAll("table").forEach((table) => {
+          const headers = Array.from(table.querySelectorAll("th")).map((th) => th.textContent.trim());
+          // Check if any header contains an age group pattern (G2009, U14, etc.)
+          const ageHeader = headers.find((h) => /U-?\d{1,2}\b/i.test(h) || /[BG]?20[01]\d/i.test(h));
+          if (!ageHeader) return;
+
+          // Found an age-group table — look for ANY link with a division ID
+          const links = Array.from(table.querySelectorAll("a"));
+          for (const link of links) {
+            const href = link.getAttribute("href") || "";
+
+            // Extract division ID from standings, schedules, or event-division-teams links
+            const divMatch = href.match(/\/(?:standings|schedules|event-division-teams)\/(\d+)/);
+            if (divMatch) {
+              const divisionId = divMatch[1];
+              // Always construct the schedules URL (not standings)
+              groups.push({
+                text: ageHeader,
+                href: `/public/event/${href.match(/\/event\/(\d+)\//)?.[1] || ""}/schedules/${divisionId}`,
+                value: null,
+              });
+              break; // One link per table
+            }
+          }
+        });
+
+        // ===========================================================
+        // Strategy B: Direct link selectors (original approach)
+        // Works for sites that put age groups directly in link text
+        // ===========================================================
         const selectors = [
+          'a[href*="/standings/"]',
+          'a[href*="/schedules/"]',
           'a[href*="conference-standings"]',
           'a[href*="schedules"]',
           ".age-group-tab",
@@ -374,7 +414,9 @@ export default {
           });
         }
 
-        // Also look for any links/buttons with age-related text in the body
+        // ===========================================================
+        // Strategy C: Any links/buttons with age-related text
+        // ===========================================================
         document.querySelectorAll("a, button").forEach((el) => {
           const text = el.textContent.trim();
           if (
@@ -386,7 +428,7 @@ export default {
           }
         });
 
-        // Deduplicate
+        // Deduplicate by age group text + href
         const seen = new Set();
         return groups.filter((g) => {
           const key = g.text + g.href;
@@ -410,9 +452,22 @@ export default {
             let targetUrl;
 
             if (ag.href && ag.href.startsWith("/")) {
-              targetUrl = `${engine.adapter.baseUrl}${ag.href}`;
+              // Bug 1 fix: If the href points to /standings/, convert to /schedules/
+              // TGS standings pages show league tables, not match data.
+              // Schedule URL pattern: /public/event/{eventId}/schedules/{divisionId}
+              let fixedHref = ag.href;
+              if (fixedHref.includes("/standings/")) {
+                fixedHref = fixedHref.replace("/standings/", "/schedules/");
+                console.log(`     Converting standings→schedules: ${ag.href} → ${fixedHref}`);
+              }
+              targetUrl = `${engine.adapter.baseUrl}${fixedHref}`;
             } else if (ag.href && ag.href.startsWith("http")) {
+              // Also fix full URLs that point to standings
               targetUrl = ag.href;
+              if (targetUrl.includes("/standings/")) {
+                targetUrl = targetUrl.replace("/standings/", "/schedules/");
+                console.log(`     Converting standings→schedules: ${ag.href} → ${targetUrl}`);
+              }
             } else {
               // Click the element instead of navigating
               continue;
@@ -471,9 +526,19 @@ export default {
  * Navigate to an age group page and scrape match data.
  */
 async function scrapeAgeGroupPage(engine, page, url, ageText, event, eventGender) {
+  console.log(`     Navigating to: ${url}`);
   await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
   await engine.sleep(engine.adapter.parsing.puppeteer.pageLoadWait);
-  return scrapeTgsPage(page, event, eventGender, engine, ageText);
+
+  const matches = await scrapeTgsPage(page, event, eventGender, engine, ageText);
+
+  // Debug: if no matches found on this page, log the page structure for diagnosis
+  if (matches.length === 0) {
+    console.log(`     No matches found on ${ageText} page — logging structure for diagnosis`);
+    await logTgsPageStructure(page, event);
+  }
+
+  return matches;
 }
 
 /**
@@ -486,14 +551,96 @@ async function scrapeTgsPage(page, event, eventGender, engine, ageHint) {
       const results = [];
 
       // =============================================
-      // Pattern 1: Table rows (common in standings/schedules)
+      // Pattern 0: TGS-specific schedule table
+      // Headers: [GM#, GAME INFO, TEAM & VENUE, DETAILS, ]
+      // Team names are in <a href="/public/event/.../individual-team/..."> tags
+      // Scores are in the DETAILS cell (e.g., "2  2   Box Score")
+      // Date+division is in the GAME INFO cell (e.g., "Sep 6, 2025 08:00 AMG2008/2007 - ECNL")
       // =============================================
       document.querySelectorAll("table").forEach((table) => {
         const headers = Array.from(table.querySelectorAll("th")).map((th) =>
           th.textContent.trim().toLowerCase()
         );
 
-        // Check if this looks like a schedule table
+        // Detect TGS schedule table: has "gm#" or "game info" or "team & venue" headers
+        const isTgsSchedule =
+          headers.some((h) => h.includes("gm") || h.includes("game info")) &&
+          headers.some((h) => h.includes("team") || h.includes("venue") || h.includes("details"));
+
+        if (isTgsSchedule) {
+          const rows = table.querySelectorAll("tbody tr, tr:not(:first-child)");
+          rows.forEach((row) => {
+            const cells = Array.from(row.querySelectorAll("td"));
+            if (cells.length < 3) return;
+
+            // Extract game ID from first cell (GM#)
+            const gameId = cells[0] ? cells[0].textContent.trim() : null;
+
+            // Extract date from GAME INFO cell (column 1)
+            const gameInfoText = cells[1] ? cells[1].textContent.trim() : "";
+
+            // Extract team names from links in TEAM & VENUE cell (column 2)
+            // Teams are in <a href="...individual-team..."> tags
+            const teamCell = cells[2];
+            const teamLinks = teamCell
+              ? Array.from(teamCell.querySelectorAll('a[href*="individual-team"]'))
+              : [];
+            const homeTeamName = teamLinks[0] ? teamLinks[0].textContent.trim() : null;
+            const awayTeamName = teamLinks[1] ? teamLinks[1].textContent.trim() : null;
+
+            // Extract source team IDs from individual-team URLs
+            // URL pattern: /individual-team/{orgId}/{teamId}/{divisionId}
+            let homeTeamSourceId = null;
+            let awayTeamSourceId = null;
+            if (teamLinks[0]) {
+              const hrefMatch = (teamLinks[0].getAttribute("href") || "").match(/\/individual-team\/(\d+)\/(\d+)\//);
+              if (hrefMatch) homeTeamSourceId = `${hrefMatch[1]}-${hrefMatch[2]}`;
+            }
+            if (teamLinks[1]) {
+              const hrefMatch = (teamLinks[1].getAttribute("href") || "").match(/\/individual-team\/(\d+)\/(\d+)\//);
+              if (hrefMatch) awayTeamSourceId = `${hrefMatch[1]}-${hrefMatch[2]}`;
+            }
+
+            // Extract venue from venue/complex links
+            const venueLink = teamCell
+              ? teamCell.querySelector('a[href*="game-complex"]')
+              : null;
+            const venue = venueLink ? venueLink.textContent.trim() : null;
+
+            // Extract scores from DETAILS cell (column 3)
+            // Format: "2  2   Box Score" or just "Box Score" for scheduled
+            const detailsText = cells[3] ? cells[3].textContent.trim() : "";
+            let homeScore = null;
+            let awayScore = null;
+            // Look for two numbers before "Box Score"
+            const scoreMatch = detailsText.match(/^(\d+)\s+(\d+)/);
+            if (scoreMatch) {
+              homeScore = parseInt(scoreMatch[1], 10);
+              awayScore = parseInt(scoreMatch[2], 10);
+            }
+
+            if (homeTeamName && awayTeamName) {
+              results.push({
+                source: "tgs-schedule",
+                matchId: gameId,
+                gameInfoText: gameInfoText,
+                homeTeamName: homeTeamName,
+                awayTeamName: awayTeamName,
+                homeTeamSourceId: homeTeamSourceId,
+                awayTeamSourceId: awayTeamSourceId,
+                homeScore: homeScore,
+                awayScore: awayScore,
+                venue: venue,
+              });
+            }
+          });
+
+          return; // Handled this table, skip generic parser
+        }
+
+        // =============================================
+        // Pattern 1: Generic table rows (fallback)
+        // =============================================
         const isSchedule =
           headers.some((h) => h.includes("home") || h.includes("away")) ||
           headers.some((h) => h.includes("date") || h.includes("time")) ||
@@ -612,6 +759,59 @@ async function scrapeTgsPage(page, event, eventGender, engine, ageHint) {
  * Parse a raw DOM extraction result into a match object.
  */
 function parseTgsRawMatch(raw, event, eventGender, ageHint) {
+  // =============================================
+  // TGS-specific schedule table row
+  // =============================================
+  if (raw.source === "tgs-schedule") {
+    // Parse date from GAME INFO text
+    // Format: "Sep 6, 2025 08:00 AMG2008/2007 - ECNL" or "Sep 6, 2025 08:00 AM\nG2008/2007 - ECNL"
+    const gameInfoText = raw.gameInfoText || "";
+
+    let matchDate = null;
+    let matchTime = null;
+
+    // Try to extract date: "Sep 6, 2025" or "Oct 18, 2025"
+    const dateMatch = gameInfoText.match(/([A-Z][a-z]{2})\s+(\d{1,2}),\s*(\d{4})/);
+    if (dateMatch) {
+      const months = { Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+                       Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12" };
+      const month = months[dateMatch[1]] || "01";
+      const day = dateMatch[2].padStart(2, "0");
+      const year = dateMatch[3];
+      matchDate = `${year}-${month}-${day}`;
+    }
+
+    // Extract time: "08:00 AM" or "10:00 PM"
+    const timeMatch = gameInfoText.match(/(\d{1,2}:\d{2}\s*[AP]M)/i);
+    if (timeMatch) {
+      matchTime = timeMatch[1].trim();
+    }
+
+    // Extract division/age group from GAME INFO
+    // Pattern: "G2008/2007 - ECNL" or "G2009 - ECNL"
+    const divisionMatch = gameInfoText.match(/([BG]?\d{4}(?:\/\d{4})?)\s*-?\s*(?:ECNL|ECRL)?/i);
+    const division = divisionMatch ? divisionMatch[0].trim() : ageHint;
+
+    return {
+      eventId: event.id.toString(),
+      eventName: event.name,
+      matchId: raw.matchId,
+      matchDate: matchDate,
+      matchTime: matchTime,
+      homeTeamName: raw.homeTeamName,
+      awayTeamName: raw.awayTeamName,
+      homeScore: raw.homeScore,
+      awayScore: raw.awayScore,
+      homeId: raw.homeTeamSourceId,
+      awayId: raw.awayTeamSourceId,
+      venue: raw.venue,
+      status: raw.homeScore !== null && raw.awayScore !== null ? "completed" : "scheduled",
+      division: division || ageHint || null,
+      gender: eventGender || null,
+      ageGroup: extractAgeGroup(ageHint || division || gameInfoText),
+    };
+  }
+
   if (raw.source === "table" && raw.cells) {
     return parseTgsTableRow(raw.cells, raw.links, event, eventGender, ageHint);
   }
@@ -890,18 +1090,42 @@ function extractAgeGroup(text) {
  */
 async function logTgsPageStructure(page, event) {
   const structure = await page.evaluate(() => {
+    // Capture table details for diagnosis
+    const tableDetails = Array.from(document.querySelectorAll("table")).map((table, idx) => {
+      const headers = Array.from(table.querySelectorAll("th")).map((th) => th.textContent.trim());
+      const rowCount = table.querySelectorAll("tbody tr, tr").length;
+      const firstRowCells = Array.from(
+        (table.querySelector("tbody tr") || table.querySelector("tr:nth-child(2)") || { querySelectorAll: () => [] })
+          .querySelectorAll("td")
+      ).map((td) => td.textContent.trim().substring(0, 40));
+      return { index: idx, headers, rowCount, firstRowCells: firstRowCells.slice(0, 8) };
+    });
+
     return {
       title: document.title,
       url: window.location.href,
-      bodyText: document.body.innerText.substring(0, 1500),
+      bodyText: document.body.innerText.substring(0, 2000),
+      bodyHtml: document.body.innerHTML.substring(0, 3000),
       links: Array.from(document.querySelectorAll("a"))
         .filter((a) => a.href && a.textContent.trim().length > 0)
-        .slice(0, 30)
+        .slice(0, 40)
         .map((a) => ({
           href: a.getAttribute("href"),
-          text: a.textContent.trim().substring(0, 50),
+          text: a.textContent.trim().substring(0, 60),
         })),
       tables: document.querySelectorAll("table").length,
+      tableDetails: tableDetails,
+      divs: Array.from(document.querySelectorAll("[class]"))
+        .filter((el) => {
+          const cls = el.className.toLowerCase();
+          return cls.includes("schedule") || cls.includes("game") || cls.includes("match") || cls.includes("fixture");
+        })
+        .slice(0, 10)
+        .map((el) => ({
+          tag: el.tagName,
+          className: el.className,
+          text: el.innerText.substring(0, 100),
+        })),
       scripts: Array.from(document.querySelectorAll("script"))
         .filter((s) => s.textContent.includes("api") || s.textContent.includes("schedule"))
         .map((s) => s.textContent.substring(0, 300)),
@@ -912,13 +1136,28 @@ async function logTgsPageStructure(page, event) {
   console.log(`   Title: ${structure.title}`);
   console.log(`   URL: ${structure.url}`);
   console.log(`   Tables: ${structure.tables}`);
+  if (structure.tableDetails.length > 0) {
+    structure.tableDetails.forEach((t) => {
+      console.log(`     Table ${t.index}: ${t.rowCount} rows, headers=[${t.headers.join(", ")}]`);
+      if (t.firstRowCells.length > 0) {
+        console.log(`       First row: [${t.firstRowCells.join(" | ")}]`);
+      }
+    });
+  }
   console.log(`   Links: ${structure.links.length}`);
   if (structure.links.length > 0) {
-    structure.links.slice(0, 10).forEach((l) => {
+    structure.links.slice(0, 15).forEach((l) => {
       console.log(`     ${l.href} — ${l.text}`);
     });
   }
-  console.log(`   Content: ${structure.bodyText.substring(0, 300)}`);
+  if (structure.divs.length > 0) {
+    console.log(`   Schedule/game-related elements: ${structure.divs.length}`);
+    structure.divs.forEach((d) => {
+      console.log(`     <${d.tag} class="${d.className}"> ${d.text.substring(0, 60)}`);
+    });
+  }
+  console.log(`   Content (first 500 chars): ${structure.bodyText.substring(0, 500)}`);
+  console.log(`   HTML snippet (first 1000 chars): ${structure.bodyHtml.substring(0, 1000)}`);
   if (structure.scripts.length > 0) {
     console.log(`   Relevant scripts: ${structure.scripts.length}`);
   }
