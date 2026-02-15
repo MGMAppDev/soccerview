@@ -103,7 +103,95 @@
       "WebFetch(domain:www.sincsports.com)",
       "WebFetch(domain:sincsports.com)",
       "WebFetch(domain:staticsoccer.sincsports.com)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "WebFetch(domain:www.mlssoccer.com)",
+      "WebFetch(domain:theecnl.com)",
+      "WebFetch(domain:mlsnext.gotsport.com)",
+      "WebFetch(domain:system.gotsport.com)",
+      "WebFetch(domain:sportapi.mlssoccer.com)",
+      "WebFetch(domain:stats-api.mlssoccer.com)",
+      "WebFetch(domain:dapi.mlssoccer.com)",
+      "WebFetch(domain:www.theecnl.com)",
+      "WebFetch(domain:www.coloradosoccer.org)",
+      "WebFetch(domain:home.gotsoccer.com)",
+      "WebFetch(domain:www.tcslsoccer.com)",
+      "WebFetch(domain:www.georgiasoccer.org)",
+      "WebFetch(domain:wpl-soccer.com)",
+      "WebFetch(domain:mspsp.org)",
+      "WebFetch(domain:www.scysa.org)",
+      "WebFetch(domain:www.playlouisianasoccer.org)",
+      "WebFetch(domain:www.tnsoccer.org)",
+      "WebFetch(domain:web.archive.org)",
+      "WebFetch(domain:www.modular11.com)",
+      "WebFetch(domain:api.athleteone.com)",
+      "WebFetch(domain:totalglobalsports.zendesk.com)",
+      "WebFetch(domain:public.totalglobalsports.com)",
+      "WebFetch(domain:socalsoccer.com)",
+      "WebFetch(domain:playbook.sidearmsports.com)",
+      "WebFetch(domain:rankingsoccer.com)",
+      "WebFetch(domain:home.gotsport.com)",
+      "WebFetch(domain:ecnl.totalglobalsports.com)",
+      "WebFetch(domain:www.totalglobalsports.com)",
+      "WebFetch(domain:6gghcuizn3.execute-api.us-east-1.amazonaws.com)",
+      "WebFetch(domain:tgs.totalglobalsports.com)",
+      "WebFetch(domain:admin.totalglobalsports.com)",
+      "WebFetch(domain:rankings.gotsport.com)",
+      "Bash(bash --version)",
+      "WebFetch(domain:sctour.sportsaffinity.com)",
+      "WebFetch(domain:gs.sportsaffinity.com)",
+      "WebFetch(domain:home.sportsaffinity.com)",
+      "WebFetch(domain:sportsconnect.com)",
+      "WebFetch(domain:secure.sportsaffinity.com)",
+      "WebFetch(domain:fladult.sportsaffinity.com)",
+      "WebFetch(domain:sportsaffinity.com.usitestat.com)",
+      "WebFetch(domain:webrate.org)",
+      "WebFetch(domain:userguide.stacksports.com)",
+      "Bash(chmod:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-compact.sh\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-edit.sh\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto|manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-compact.sh\"",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

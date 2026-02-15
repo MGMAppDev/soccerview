@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 17.0** | Last Updated: February 14, 2026 | Session 95 Complete
+> **Version 19.0** | Last Updated: February 15, 2026 | Session 97 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1157,6 +1157,33 @@ When a source uses different IDs for matches vs standings (e.g., SINC Sports use
 - ❌ Having only one source_entity_map entry when scrapers use different ID formats
 - ❌ Bypassing eventNormalizer classification logic in bulk processors
 
+### 41. Post-Expansion QC Protocol — Mandatory for Every New State (Session 96)
+
+**Problem:** NC expansion (Session 95) shipped 4 fixable issues that would have affected users: 506 teams with `state='unknown'`, inconsistent division names, noise "- Group A" suffixes, 66 teams with diacritic double-prefix.
+
+**Root Cause:** No formal QC checklist existed after onboarding a new state.
+
+**Fix: Mandatory Post-Expansion QC Checklist** (see [3-DATA_SCRAPING_PLAYBOOK.md](docs/3-DATA_SCRAPING_PLAYBOOK.md))
+
+After onboarding ANY new state or league, verify in Expo Go:
+1. Home page match count displays correctly
+2. New state appears in Rankings state filter, teams visible
+3. Team names display correctly (no double-prefix, no encoding issues)
+4. League standings show consistent division names, no noise suffixes
+5. Team detail shows matches, correct state, ELO populated
+
+**Universal Fixes Applied (Session 96):**
+
+| Issue | Fix | Scope |
+|-------|-----|-------|
+| Teams get `state='unknown'` | `processStandings.cjs` inherits league state | All future leagues |
+| Division naming inconsistent | Source-specific `mapTierToName()` in adapter | Per-adapter config |
+| "- Group A" when only 1 group | Conditional group suffix (post-processing) | All standings scrapers |
+| Diacritics break prefix dedup | `stripDiacritics()` via Unicode NFD in `cleanTeamName.cjs` | All team name paths |
+| PostgREST timeout on view filters | App uses Layer 3 views with date-only filters | All app queries |
+
+**Time budget:** Plan ~2 hours for QC + fixes per new state.
+
 ---
 
 ## Quick Reference
@@ -1165,14 +1192,14 @@ When a source uses different IDs for matches vs standings (e.g., SINC Sports use
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 146,505 | Team records (Session 95: +1,149 NC teams from SINC Sports) |
-| `matches_v2` | 411,641 active | Match results (~5,417 soft-deleted) |
+| `teams_v2` | 148,469 | Team records (Session 97: +1,964 from MLS Next + GA SportsAffinity) |
+| `matches_v2` | 425,050 active | Match results (~5,297 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 281 | League metadata (Session 95: +2 SINC Sports NC leagues) |
-| `tournaments` | 1,750 | Tournament metadata (0 generic names) |
+| `leagues` | 281 | League metadata |
+| `tournaments` | 1,754 | Tournament metadata (Session 97: +4 GA SportsAffinity) |
 | `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
 | `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
-| `source_entity_map` | ~72,000+ | Universal source ID mappings (Session 89+92QC+94+95) |
+| `source_entity_map` | ~74,800+ | Universal source ID mappings (Session 89+92QC+94+95+97) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
@@ -1199,6 +1226,8 @@ When a source uses different IDs for matches vs standings (e.g., SINC Sports use
 | HTGSports | ✅ Production | staging_games |
 | Heartland CGI | ✅ Production | staging_games |
 | SINC Sports | ✅ Production (Session 95) | staging_games + staging_standings |
+| MLS Next | ✅ Production (Session 97) | staging_games (Puppeteer, Modular11) |
+| SportsAffinity | ✅ Production (Session 97) | staging_games (Cheerio, GA Boys) |
 
 ### source_match_key (CRITICAL - Session 57)
 
@@ -1216,6 +1245,9 @@ The authoritative unique identifier for matches in `matches_v2`.
 | GotSport | `gotsport-{eventId}-{matchNum}` | `gotsport-39064-91` |
 | HTGSports | `htg-{eventId}-{matchId}` | `htg-12345-678` |
 | Heartland | `heartland-{level}-{homeId}-{awayId}-{date}-{gameNum}` | `heartland-premier-abc123-def456-2025-03-15-1` |
+| SINC Sports | `sincsports-{eventId}-{matchId}` | `sincsports-ncfl-12345` |
+| MLS Next | `mlsnext-{matchId}` | `mlsnext-U13-2025-09-01-123` |
+| SportsAffinity | `sportsaffinity-{matchId}` | `sportsaffinity-240621` |
 | Legacy | `legacy-{eventId8}-{homeId8}-{awayId8}-{date}` | `legacy-b2c9a5aa-0bc3985a-3406f39e-2025-06-29` |
 
 **Dropped Constraints:**
@@ -1317,6 +1349,7 @@ eas build --platform android
 | Home | `app/(tabs)/index.tsx` | Stats, Latest Matches, Top Teams |
 | Rankings | `app/(tabs)/rankings.tsx` | Official/SoccerView rankings |
 | Teams | `app/(tabs)/teams.tsx` | Search & browse teams |
+| Leagues | `app/(tabs)/leagues.tsx` | Search leagues, standings by age/division/gender |
 | Matches | `app/(tabs)/matches.tsx` | Recent matches |
 
 ### Key Components
@@ -1388,7 +1421,9 @@ eas build --platform android
 | `scripts/adapters/gotsport.js` | GotSport adapter config |
 | `scripts/adapters/htgsports.js` | HTGSports adapter (Puppeteer for SPA) |
 | `scripts/adapters/heartland.js` | Heartland adapter (Cheerio for CGI + standings) |
-| `scripts/adapters/sincsports.js` | **NEW (Session 95)** SINC Sports adapter (Puppeteer + standings) |
+| `scripts/adapters/sincsports.js` | SINC Sports adapter (Puppeteer + standings, Session 95) |
+| `scripts/adapters/mlsnext.js` | **NEW (Session 97)** MLS Next adapter (Puppeteer, Modular11) |
+| `scripts/adapters/sportsaffinity.js` | **NEW (Session 97)** SportsAffinity adapter (Cheerio, GA Soccer) |
 | `scripts/adapters/_template.js` | Template for creating new adapters |
 
 **Usage:**
@@ -1605,6 +1640,85 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 97 - National Expansion: MLS Next + SportsAffinity GA (February 15, 2026) - COMPLETE ✅
+
+**Goal:** Build and deploy two new adapters (MLS Next, SportsAffinity) for national expansion. Research all state league platforms.
+
+**Platform Research Completed:**
+
+| Platform | States | Adapter Status |
+|----------|--------|---------------|
+| **GotSport** | CA, TX, FL, OH, NJ, NY, PA, WA, MO, AZ, etc. (32 states) | **EXISTS** |
+| **SportsAffinity** | GA, MN (partial), UT, OR, NE, PA-W, HI | **NEW — Session 97** |
+| **Modular11** | MLS Next (national, 277 clubs) | **NEW — Session 97** |
+| **SINC Sports** | NC, TN | **EXISTS (Session 95)** |
+| **Heartland CGI** | KS, MO | **EXISTS** |
+| **Demosphere** | VA/DC, IL, WI, KY | Needs new adapter |
+| **Sports Connect** | CO, IA, CT, MA, SD | Needs new adapter |
+
+**Adapter A: MLS Next (Modular11)**
+- Technology: Puppeteer (JavaScript SPA, AJAX calls)
+- Endpoint: `modular11.com/public_schedule/league/get_matches`
+- 6 age groups: U13(21), U14(22), U15(33), U16(14), U17(15), U19(26)
+- **9,795 matches scraped** (Boys only, national program)
+- ~17 min scrape time, all processed through V2 pipeline
+
+**Adapter B: SportsAffinity (Georgia Soccer)**
+- Technology: Cheerio (server-rendered ASP.NET WebForms, no Puppeteer needed)
+- Recursive DOM walk for date-table association (key innovation)
+- 4 seasons: Fall 2025 (763), Spring 2025 (482), Fall 2024 (1,164), Spring 2026 (TBD)
+- **2,409 matches scraped** (Boys only — no Girls flights found yet)
+
+**Pipeline Processing:**
+- `fastProcessStaging.cjs`: 2,407 SA + 9,795 MLS = 12,202 matches inserted
+- ELO recalculated: 182,797 matches, 54,709 teams (6.5 min)
+- All 5 materialized views refreshed
+
+**Other Session 97 Work:**
+- Fixed 193 league state codes (35 states mapped) via `fixLeagueStates.cjs`
+- Added `mlsnext` + `sportsaffinity` to KNOWN_PLATFORMS in intakeValidator.js
+- ECNL/TGS adapter created (`totalglobalsports.js`) but not yet deployed (complex auth)
+
+**Results:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| teams_v2 | 146,505 | **148,469** (+1,964) |
+| matches_v2 (active) | 411,641 | **425,050** (+13,409) |
+| Data sources | 4 | **6** |
+| source_entity_map | ~72,000 | **~74,800** |
+
+**Files Created:** `sportsaffinity.js`, `mlsnext.js`, `totalglobalsports.js` (adapters), `fixLeagueStates.cjs`, `fixGenericEventNames2.cjs`, 6 diagnostic scripts
+**Files Modified:** `intakeValidator.js`, `coreScraper.js`, `daily-data-sync.yml`, `CLAUDE.md`
+**Zero UI Changes.** All data flows through universal V2 pipeline.
+
+---
+
+### Session 96 - NC Post-Expansion QC Fixes + Lessons Learned (February 15, 2026) - COMPLETE ✅
+
+**Goal:** Fix QC issues discovered during NC expansion testing. Establish universal Post-Expansion QC Protocol.
+
+**Fixes Applied (all universal):**
+
+| Fix | Impact | Files |
+|-----|--------|-------|
+| Home page "0 Matches" | PostgREST timeout on materialized view filter → use `app_matches_feed` with date-only filter | `app/(tabs)/index.tsx` |
+| Division naming consistency | `mapTierToName()` rewritten with `toOrdinal()` helper, consistent ordinal naming | `scripts/adapters/sincsports.js` |
+| Conditional group suffix | Only append "- Group A" when multiple groups exist per division | `scripts/adapters/sincsports.js` |
+| State metadata propagation | `processStandings.cjs` inherits league state instead of hardcoding 'unknown' | `scripts/maintenance/processStandings.cjs` |
+| Unicode diacritics in prefix dedup | `stripDiacritics()` using NFD normalization before comparison | `scripts/universal/normalizers/cleanTeamName.cjs` |
+| Retroactive data cleanup | 506 teams → state='NC', 805+984 standings → fixed division names, 66 teams → diacritics fixed | SQL + scripts |
+
+**New Principle:** #41 — Post-Expansion QC Protocol (mandatory for every new state)
+
+**Docs Updated:** `3-DATA_SCRAPING_PLAYBOOK.md` (v7.0) and `3-DATA_EXPANSION_ROADMAP.md` (v7.0) with NC lessons learned, QC checklist, expansion lifecycle.
+
+**Architecture Readiness Audit:** Comprehensive 3-agent audit confirmed ALL systems READY for national expansion. Zero `if (source === ...)` hardcoding in universal pipeline. All layers scale to 500K+ matches, 200K+ teams.
+
+**Zero UI Design Changes.** Zero data loss. All fixes universal.
+
+---
 
 ### Session 95 - SINC Sports Adapter + Division-Seeded ELO + NC Data (February 14, 2026) - COMPLETE ✅
 

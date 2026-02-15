@@ -1,0 +1,10 @@
+## SESSION START — Mandatory Actions
+1. READ docs/1.1-GUARDRAILS_v2.md IN FULL before taking any action.
+2. READ CLAUDE.md Critical Principles section (Principles 1-41).
+3. Check git status below for uncommitted work from previous sessions.
+4. If uncommitted changes exist, address them FIRST before starting new work.
+5. Ask user for current priorities before starting new work.
+6. Data bugs → fix data layer. UI bugs → get explicit user approval first.
+7. Every fix must be UNIVERSAL (all affected records), not specific (one team).
+8. Three-layer verification: Intake → Processing → Presentation.
+9. "Events" is banned. Use "leagues" or "tournaments" only.
