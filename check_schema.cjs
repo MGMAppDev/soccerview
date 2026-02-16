@@ -1,25 +1,43 @@
 require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-async function checkSchema() {
-  // Get one row to see columns
-  const { data: sample, error } = await supabase
-    .from('teams_v2')
-    .select('*')
-    .limit(1);
+async function main() {
+  try {
+    console.log('=== Checking app_team_profile columns ===\n');
     
-  if (error) {
-    console.error('Error:', error);
-    return;
+    const res = await pool.query(`
+      SELECT column_name, data_type
+      FROM information_schema.columns
+      WHERE table_name = 'app_team_profile'
+      ORDER BY ordinal_position;
+    `);
+    
+    console.log('Columns in app_team_profile:');
+    res.rows.forEach(row => {
+      console.log(`  - ${row.column_name} (${row.data_type})`);
+    });
+    
+    console.log(`\nTotal: ${res.rows.length} columns`);
+    
+    // Check if updated_at exists in teams_v2
+    console.log('\n=== Checking teams_v2 for updated_at ===\n');
+    const teamsRes = await pool.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'teams_v2' AND column_name = 'updated_at';
+    `);
+    
+    if (teamsRes.rows.length > 0) {
+      console.log('✓ teams_v2 HAS updated_at column');
+    } else {
+      console.log('✗ teams_v2 DOES NOT HAVE updated_at column');
+    }
+    
+  } catch (err) {
+    console.error('Error:', err.message);
+  } finally {
+    await pool.end();
   }
-  
-  console.log('teams_v2 columns:', Object.keys(sample[0] || {}));
-  console.log('\nSample row:', JSON.stringify(sample[0], null, 2));
 }
 
-checkSchema().catch(console.error);
+main();

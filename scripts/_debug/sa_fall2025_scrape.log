@@ -1,0 +1,65 @@
+🔄 Universal Core Scraper Engine v1.0
+==================================================
+Adapter: SportsAffinity
+Active only: false
+Dry run: false
+Resume: false
+Event ID: mn-fall2025
+Started: 2026-02-16T04:45:27.234Z
+
+🚀 Universal Scraper Engine v1.0
+   Adapter: SportsAffinity (sportsaffinity)
+   Technology: cheerio
+   Base URL: https://gs.sportsaffinity.com
+
+🔍 Testing database write capability (using pg Pool)...
+   Current staging_games count: 161418
+   ✅ Database write test PASSED (pg Pool)
+
+📋 Events to process: 1
+
+
+📋 [1/1] MYSA Fall 2025 Competitive League
+   Subdomain: mnyouth
+   Tournament GUID: 49165B3E-8218-4FDF-9F4F-7E726C932B5A
+   Discovering flights...
+   Found 4 flights
+     B10: B10 (1D982CF3...)
+     B12: B12 (C39630FD...)
+     B15: B15 (B1168BEE...)
+     G12: G12 (7D2ADBBD...)
+
+   [1/4] B10 (B10)
+   B10: 30 matches
+
+   [2/4] B12 (B12)
+   B12: 34 matches
+
+   [3/4] B15 (B15)
+   B15: 17 matches
+
+   [4/4] G12 (G12)
+   G12: 32 matches
+
+   Total: 113 unique matches (113 raw)
+   ✅ Staged 113 matches
+🗑️ Checkpoint cleared
+
+============================================================
+✅ SCRAPE COMPLETE
+============================================================
+   Adapter: SportsAffinity
+   Events found: 1
+   Events processed: 1
+   Events successful: 1
+   Events skipped: 0
+   Events failed: 0
+   Groups scraped: 0
+   Matches found: 113
+   Matches staged: 226
+   Runtime: 22s
+   Completed: 2026-02-16T04:45:48.749Z
+
+📋 Next: Run Data Quality Engine to process staged data
+   node scripts/universal/intakeValidator.js --clean-staging
+   node scripts/universal/dataQualityEngine.js --process-staging

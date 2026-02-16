@@ -334,7 +334,7 @@ async function main() {
       console.log(`  ${eventMap.size} existing events found (${semRows.length} from source_entity_map, ${existTournaments.length} tournaments, ${existLeagues.length} leagues)`);
 
       // Create missing — classify by name keywords (league vs tournament)
-      const LEAGUE_KEYWORDS = ['league', 'season', 'conference', 'division', 'premier'];
+      const LEAGUE_KEYWORDS = ['league', 'season', 'conference', 'division', 'premier', 'ecnl', 'ecrl', 'pre-ecnl'];
       if (!dryRun) {
         let createdLeagues = 0, createdTournaments = 0;
         for (const [evId, ev] of uniqueEvents) {

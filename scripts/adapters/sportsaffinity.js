@@ -700,6 +700,27 @@ export default {
         subdomain: "pawest",
         tournamentGuid: "22EB0AD6-57AD-405A-8FA2-F1BE387D0934",
       },
+      // ========================
+      // IOWA (2025isl-fall.sportsaffinity.com)
+      // ========================
+      {
+        id: "ia-fall2025",
+        name: "ISL State League Fall 2025",
+        type: "league",
+        year: 2026,
+        state: "IA",
+        subdomain: "2025isl-fall",
+        tournamentGuid: "7762C9F4-A026-4A96-A540-2A260EAFA669",
+      },
+      {
+        id: "ia-spring2025",
+        name: "ISL State League Spring 2025",
+        type: "league",
+        year: 2025,
+        state: "IA",
+        subdomain: "2025isl-spring",
+        tournamentGuid: "627614EC-DC51-43A5-B273-A972616BD454",
+      },
     ],
 
     discoverEvents: null,

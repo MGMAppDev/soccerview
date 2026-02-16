@@ -180,6 +180,10 @@ export default {
       { id: 13272, name: "Spring 2025 KC Youth Development League", year: 2025, type: "league" },
       { id: 12295, name: "Spring 2024 KC Youth Development League", year: 2024, type: "league" },
       { id: 11708, name: "Fall 2023 KC Youth Development League", year: 2023, type: "league" },
+
+      // Eastern Iowa Youth Soccer League (EIYSL)
+      { id: 13486, name: "EIYSL Fall 2025", year: 2025, type: "league" },
+      { id: 13113, name: "EIYSL Spring 2025", year: 2025, type: "league" },
     ],
 
     /**

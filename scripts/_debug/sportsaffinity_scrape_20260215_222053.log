@@ -1,0 +1,1202 @@
+🔄 Universal Core Scraper Engine v1.0
+==================================================
+Adapter: SportsAffinity
+Active only: false
+Dry run: false
+Resume: false
+Started: 2026-02-16T04:20:53.159Z
+
+🚀 Universal Scraper Engine v1.0
+   Adapter: SportsAffinity (sportsaffinity)
+   Technology: cheerio
+   Base URL: https://gs.sportsaffinity.com
+
+🔍 Testing database write capability (using pg Pool)...
+   Current staging_games count: 161040
+   ✅ Database write test PASSED (pg Pool)
+
+📋 Events to process: 35
+
+
+📋 [1/35] Georgia Soccer Fall 2025 GPL
+   Subdomain: gs-fall25gplacadathclrias
+   Tournament GUID: E7A6731D-D5FF-41B4-9C3C-300ECEE69150
+   Discovering flights...
+   Found 24 flights
+     B12: B12 (866544B6...)
+     B12: 12UB Pre GPL (942EC597...)
+     B13: 13UB GPL (B3070F0C...)
+     B13: 13UB Championship (65AFCDCE...)
+     B13: 13UB Conference (E536F27A...)
+     B14: B14 (FA8F6588...)
+     B14: 14UB GPL (3D872DBD...)
+     B14: 14UB Champ/Conf. North (EF81C67B...)
+     B15: B15 (6463F1F6...)
+     B15: 15UB GPL (BB0449B0...)
+     B15: 15UB Conference North (EE8C4BD4...)
+     B16: 16UB GPL (4945FC91...)
+     B16: 16UB Conference North (7649C47C...)
+     B17: 17UB GPL (F37A9780...)
+     B17: B17 (D7CE09E0...)
+     B17: B17 (CC926CD3...)
+     B19: B19 (D4832919...)
+     B19: B19 (492D5BBD...)
+     B19: B19 (3DA64BFA...)
+     B12: B12 (0B79BF11...)
+     B14: B14 (79F5DAE5...)
+     B16: B16 (04414232...)
+     B16: B16 (B9D534E0...)
+     B19: B19 (303A5440...)
+
+   [1/24] B12 (B12)
+   B12: 0 matches
+
+   [2/24] 12UB Pre GPL (B12)
+   12UB Pre GPL: 30 matches
+
+   [3/24] 13UB GPL (B13)
+   13UB GPL: 20 matches
+
+   [4/24] 13UB Championship (B13)
+   13UB Championship: 30 matches
+
+   [5/24] 13UB Conference (B13)
+   13UB Conference: 45 matches
+
+   [6/24] B14 (B14)
+   B14: 30 matches
+
+   [7/24] 14UB GPL (B14)
+   14UB GPL: 30 matches
+
+   [8/24] 14UB Champ/Conf. North (B14)
+   14UB Champ/Conf. North: 36 matches
+
+   [9/24] B15 (B15)
+   B15: 30 matches
+
+   [10/24] 15UB GPL (B15)
+   15UB GPL: 30 matches
+
+   [11/24] 15UB Conference North (B15)
+   15UB Conference North: 55 matches
+
+   [12/24] 16UB GPL (B16)
+   16UB GPL: 20 matches
+
+   [13/24] 16UB Conference North (B16)
+   16UB Conference North: 41 matches
+
+   [14/24] 17UB GPL (B17)
+   17UB GPL: 30 matches
+
+   [15/24] B17 (B17)
+   B17: 35 matches
+
+   [16/24] B17 (B17)
+   B17: 45 matches
+
+   [17/24] B19 (B19)
+   B19: 30 matches
+
+   [18/24] B19 (B19)
+   B19: 35 matches
+
+   [19/24] B19 (B19)
+   B19: 35 matches
+
+   [20/24] B12 (B12)
+   B12: 18 matches
+
+   [21/24] B14 (B14)
+   B14: 30 matches
+
+   [22/24] B16 (B16)
+   B16: 41 matches
+
+   [23/24] B16 (B16)
+   B16: 35 matches
+
+   [24/24] B19 (B19)
+   B19: 32 matches
+
+   Total: 763 unique matches (763 raw)
+   ✅ Staged 763 matches
+
+📋 [2/35] Georgia Soccer Spring 2026 GPL
+   Subdomain: gs
+   Tournament GUID: CE35DE7A-39D2-40C0-BA3B-2A46C862535C
+   Discovering flights...
+   Found 7 flights
+     B12: B12 (9575216A...)
+     B13: B13 (B6AC3D5F...)
+     B13: B13 (F7AA28CF...)
+     B14: B14 (C86A8942...)
+     B14: B14 (0B3384A6...)
+     B14: B14 (201DAB36...)
+     B14: B14 (790EBFB7...)
+
+   [1/7] B12 (B12)
+   B12: 0 matches
+
+   [2/7] B13 (B13)
+   B13: 0 matches
+
+   [3/7] B13 (B13)
+   B13: 0 matches
+
+   [4/7] B14 (B14)
+   B14: 0 matches
+
+   [5/7] B14 (B14)
+   B14: 0 matches
+
+   [6/7] B14 (B14)
+   B14: 0 matches
+
+   [7/7] B14 (B14)
+   B14: 0 matches
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [3/35] Georgia Soccer Spring 2025 GPL
+   Subdomain: gs-spr25acadathclrias
+   Tournament GUID: 6F94BCCC-EAAD-4369-8598-ECDF00068393
+   Discovering flights...
+   Found 16 flights
+     B12: B12 (1A52045A...)
+     B12: B12 (D68797D5...)
+     B13: B13 (EAB530D1...)
+     B13: B13 (5FB8990E...)
+     B13: B13 (858C2FFE...)
+     B13: B13 (C428FA39...)
+     B14: B14 (28FA1097...)
+     B14: B14 (3F83FA7F...)
+     B14: B14 (CA0B6865...)
+     B15: B15 (4DD92F1C...)
+     B12: B12 (916F378E...)
+     B14: B14 (86B2523D...)
+     B14: B14 (3C04A1F2...)
+     B16: B16 (52BFC229...)
+     B16: B16 (8F4B21BD...)
+     B19: B19 (733D4D22...)
+
+   [1/16] B12 (B12)
+   B12: 28 matches
+
+   [2/16] B12 (B12)
+   B12: 28 matches
+
+   [3/16] B13 (B13)
+   B13: 36 matches
+
+   [4/16] B13 (B13)
+   B13: 36 matches
+
+   [5/16] B13 (B13)
+   B13: 32 matches
+
+   [6/16] B13 (B13)
+   B13: 36 matches
+
+   [7/16] B14 (B14)
+   B14: 36 matches
+
+   [8/16] B14 (B14)
+   B14: 45 matches
+
+   [9/16] B14 (B14)
+   B14: 20 matches
+
+   [10/16] B15 (B15)
+   B15: 22 matches
+
+   [11/16] B12 (B12)
+   B12: 18 matches
+
+   [12/16] B14 (B14)
+   B14: 30 matches
+
+   [13/16] B14 (B14)
+   B14: 30 matches
+
+   [14/16] B16 (B16)
+   B16: 30 matches
+
+   [15/16] B16 (B16)
+   B16: 30 matches
+
+   [16/16] B19 (B19)
+   B19: 25 matches
+
+   Total: 482 unique matches (482 raw)
+   ✅ Staged 482 matches
+
+📋 [4/35] Georgia Soccer Fall 2024 GPL
+   Subdomain: gs-fall24gplacadathclrias
+   Tournament GUID: 7336D9D7-3A6F-46FD-9A85-D263981782DF
+   Discovering flights...
+   Found 33 flights
+     B12: B12 (322C5B83...)
+     B12: 12UB Pre GPL (E093F761...)
+     B13: 13UB GPL (1E3730DC...)
+     B13: 13UB Championship North (10468BCF...)
+     B13: 13UB Championship South (DF9C4C0F...)
+     B13: 13UB Conference (FDC4C6CD...)
+     B14: 14UB GPL/Champ. North/South (7DF6C5EF...)
+     B14: 14UB Championship (6D237412...)
+     B14: 14UB Conference North (9FA6087C...)
+     B14: 14UB Conference South (6FC140C1...)
+     B15: 15UB GPL (24A98239...)
+     B15: 15UB Championship (C14B0866...)
+     B15: 15UB Conference North (676F36BF...)
+     B15: 15UB Conference South (B049CAB0...)
+     B16: 16UB GPL (FD3F8110...)
+     B16: 16UB Championship North (8BC40B2D...)
+     B16: 16UB Championship South (98577225...)
+     B17: B17 (728E48F9...)
+     B17: 17UB GPL (59FAA537...)
+     B17: 17UB Championship (D444B790...)
+     B17: 17UB Conference North (CB4EE58A...)
+     B18: 18UB GPL (54DAC785...)
+     B19: B19 (6B9897DA...)
+     B19: B19 (DFA0C7E8...)
+     B19: B19 (70FD367A...)
+     B12: B12 (A72D3CCC...)
+     B14: B14 (AE037EA7...)
+     B14: B14 (4FDF849D...)
+     B16: B16 (3DA1FA12...)
+     B16: B16 (92229119...)
+     B16: B16 (CF1F825B...)
+     B19: B19 (255D8658...)
+     B19: B19 (732C5B64...)
+
+   [1/33] B12 (B12)
+   B12: 55 matches
+
+   [2/33] 12UB Pre GPL (B12)
+   12UB Pre GPL: 40 matches
+
+   [3/33] 13UB GPL (B13)
+   13UB GPL: 45 matches
+
+   [4/33] 13UB Championship North (B13)
+   13UB Championship North: 42 matches
+
+   [5/33] 13UB Championship South (B13)
+   13UB Championship South: 36 matches
+
+   [6/33] 13UB Conference (B13)
+   13UB Conference: 45 matches
+
+   [7/33] 14UB GPL/Champ. North/South (B14)
+   14UB GPL/Champ. North/South: 80 matches
+
+   [8/33] 14UB Championship (B14)
+   14UB Championship: 0 matches
+
+   [9/33] 14UB Conference North (B14)
+   14UB Conference North: 40 matches
+
+   [10/33] 14UB Conference South (B14)
+   14UB Conference South: 0 matches
+
+   [11/33] 15UB GPL (B15)
+   15UB GPL: 30 matches
+
+   [12/33] 15UB Championship (B15)
+   15UB Championship: 42 matches
+
+   [13/33] 15UB Conference North (B15)
+   15UB Conference North: 78 matches
+
+   [14/33] 15UB Conference South (B15)
+   15UB Conference South: 42 matches
+
+   [15/33] 16UB GPL (B16)
+   16UB GPL: 42 matches
+
+   [16/33] 16UB Championship North (B16)
+   16UB Championship North: 45 matches
+
+   [17/33] 16UB Championship South (B16)
+   16UB Championship South: 0 matches
+
+   [18/33] B17 (B17)
+   B17: 40 matches
+
+   [19/33] 17UB GPL (B17)
+   17UB GPL: 30 matches
+
+   [20/33] 17UB Championship (B17)
+   17UB Championship: 0 matches
+
+   [21/33] 17UB Conference North (B17)
+   17UB Conference North: 55 matches
+
+   [22/33] 18UB GPL (B18)
+   18UB GPL: 0 matches
+
+   [23/33] B19 (B19)
+   B19: 66 matches
+
+   [24/33] B19 (B19)
+   B19: 45 matches
+
+   [25/33] B19 (B19)
+   B19: 50 matches
+
+   [26/33] B12 (B12)
+   B12: 18 matches
+
+   [27/33] B14 (B14)
+   B14: 30 matches
+
+   [28/33] B14 (B14)
+   B14: 44 matches
+
+   [29/33] B16 (B16)
+   B16: 30 matches
+
+   [30/33] B16 (B16)
+   B16: 0 matches
+
+   [31/33] B16 (B16)
+   B16: 49 matches
+
+   [32/33] B19 (B19)
+   B19: 45 matches
+
+   [33/33] B19 (B19)
+   B19: 0 matches
+
+   Total: 1164 unique matches (1164 raw)
+   ✅ Staged 1164 matches
+
+📋 [5/35] MYSA Summer Competitive League 2026
+   Subdomain: mnyouth
+   Tournament GUID: E25F0B1C-C8CF-4B17-852D-5B1B093E0C58
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [6/35] UYSA Spring 2026 PL/SCL/IRL/XL
+   Subdomain: uysa
+   Tournament GUID: 5E854765-1884-4512-BA43-3CBED9A49BC9
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [7/35] UYSA Spring 2026 Challenger League
+   Subdomain: uysa
+   Tournament GUID: 1052F339-7E6A-467F-AA3E-69A32F9CF219
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [8/35] Utah Valley Competition League Spring 2026
+   Subdomain: uysa
+   Tournament GUID: 683829D2-6446-44E1-97CB-758E8748FB43
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [9/35] UYSA Spring 2026 SUIRL
+   Subdomain: uysa
+   Tournament GUID: 7D33FD32-99F9-47D5-BA19-E2B247566E97
+   Discovering flights...
+   Found 14 flights
+     ?: Unknown (CD1C3033...)
+     ?: Unknown (DAD1ACD1...)
+     ?: Unknown (5F694EB4...)
+     ?: Unknown (6E5C0977...)
+     ?: Unknown (2A3E1C26...)
+     ?: Unknown (049DC563...)
+     ?: Unknown (27F753CA...)
+     ?: Unknown (16EF7ECD...)
+     ?: Unknown (9B011D3A...)
+     ?: Unknown (C26FB7D5...)
+     ?: Unknown (FF689539...)
+     ?: Unknown (DC64F046...)
+     ?: Unknown (146D33EF...)
+     ?: Unknown (6F204A52...)
+
+   [1/14] Unknown (null)
+   Unknown: 0 matches
+
+   [2/14] Unknown (null)
+   Unknown: 0 matches
+
+   [3/14] Unknown (null)
+   Unknown: 0 matches
+
+   [4/14] Unknown (null)
+   Unknown: 0 matches
+
+   [5/14] Unknown (null)
+   Unknown: 0 matches
+
+   [6/14] Unknown (null)
+   Unknown: 0 matches
+
+   [7/14] Unknown (null)
+   Unknown: 0 matches
+
+   [8/14] Unknown (null)
+   Unknown: 28 matches
+
+   [9/14] Unknown (null)
+   Unknown: 20 matches
+
+   [10/14] Unknown (null)
+   Unknown: 20 matches
+
+   [11/14] Unknown (null)
+   Unknown: 28 matches
+
+   [12/14] Unknown (null)
+   Unknown: 32 matches
+
+   [13/14] Unknown (null)
+   Unknown: 32 matches
+
+   [14/14] Unknown (null)
+   Unknown: 32 matches
+
+   Total: 192 unique matches (192 raw)
+   ✅ Staged 192 matches
+
+📋 [10/35] SCSL 2026 Spring League
+   Subdomain: uysa
+   Tournament GUID: B35FF30A-45B5-47EC-AE03-D1273B19BF44
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [11/35] UYSA Spring 2026 YDL Academy
+   Subdomain: uysa
+   Tournament GUID: 320E89B9-73C3-4AC7-91DF-F4C306B033E4
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [12/35] La Roca Juniors Spring 2026
+   Subdomain: uysa
+   Tournament GUID: 7F128065-C47D-4638-956F-F22A8E330908
+   Discovering flights...
+   Found 5 flights
+     ?: Unknown (A690D5AD...)
+     ?: Unknown (59493C40...)
+     ?: Unknown (381C8DD8...)
+     ?: Unknown (AEBBDB48...)
+     ?: Unknown (EB930540...)
+
+   [1/5] Unknown (null)
+   Unknown: 0 matches
+
+   [2/5] Unknown (null)
+   Unknown: 0 matches
+
+   [3/5] Unknown (null)
+   Unknown: 0 matches
+
+   [4/5] Unknown (null)
+   Unknown: 0 matches
+
+   [5/5] Unknown (null)
+   Unknown: 0 matches
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [13/35] OYSA Spring League 2026
+   Subdomain: oysa
+   Tournament GUID: 2A349A09-F127-445D-9252-62C4D1029140
+   Discovering flights...
+   Found 34 flights
+     B11: B11 (BE23DE3C...)
+     B11: B11 (3E76CF66...)
+     B11: B11 (A85F085F...)
+     B11: B11 (A1A96408...)
+     B11: B11 (3E788CFA...)
+     B11: B11 (263B0032...)
+     B11: B11 (F0E6400C...)
+     B11: B11 (36395E08...)
+     B11: B11 (E3B7452A...)
+     B12: B12 (62311CE1...)
+     B12: B12 (16C948D6...)
+     B12: B12 (95EEDBAC...)
+     B12: B12 (AE3B4813...)
+     B12: B12 (BD816068...)
+     B12: B12 (ED832801...)
+     B12: B12 (4A135B3A...)
+     B12: B12 (CAAEBB20...)
+     B12: B12 (DE700B13...)
+     B12: B12 (4EE8FC68...)
+     B12: B12 (E6BFBB8D...)
+     B13: B13 (2C929DA9...)
+     B13: B13 (E3D31FF0...)
+     B13: B13 (9F74CA59...)
+     B13: B13 (90E421A8...)
+     B13: B13 (3CD6985E...)
+     B13: B13 (39E9F461...)
+     B14: B14 (789C6FEB...)
+     B14: B14 (109B1294...)
+     B14: B14 (E18BA81F...)
+     B14: B14 (6FE3F031...)
+     B14: B14 (35C0423E...)
+     B14: B14 (7681E072...)
+     B14: B14 (CF3AD855...)
+     B14: B14 (C73C48E5...)
+
+   [1/34] B11 (B11)
+   B11: 28 matches
+
+   [2/34] B11 (B11)
+   B11: 17 matches
+
+   [3/34] B11 (B11)
+   B11: 26 matches
+
+   [4/34] B11 (B11)
+   B11: 21 matches
+
+   [5/34] B11 (B11)
+   B11: 29 matches
+
+   [6/34] B11 (B11)
+   B11: 23 matches
+
+   [7/34] B11 (B11)
+   B11: 16 matches
+
+   [8/34] B11 (B11)
+   B11: 21 matches
+
+   [9/34] B11 (B11)
+   B11: 8 matches
+
+   [10/34] B12 (B12)
+   B12: 18 matches
+
+   [11/34] B12 (B12)
+   B12: 27 matches
+
+   [12/34] B12 (B12)
+   B12: 29 matches
+
+   [13/34] B12 (B12)
+   B12: 29 matches
+
+   [14/34] B12 (B12)
+   B12: 33 matches
+
+   [15/34] B12 (B12)
+   B12: 28 matches
+
+   [16/34] B12 (B12)
+   B12: 27 matches
+
+   [17/34] B12 (B12)
+   B12: 17 matches
+
+   [18/34] B12 (B12)
+   B12: 8 matches
+
+   [19/34] B12 (B12)
+   B12: 8 matches
+
+   [20/34] B12 (B12)
+   B12: 9 matches
+
+   [21/34] B13 (B13)
+   B13: 25 matches
+
+   [22/34] B13 (B13)
+   B13: 27 matches
+
+   [23/34] B13 (B13)
+   B13: 18 matches
+
+   [24/34] B13 (B13)
+   B13: 19 matches
+
+   [25/34] B13 (B13)
+   B13: 15 matches
+
+   [26/34] B13 (B13)
+   B13: 22 matches
+
+   [27/34] B14 (B14)
+   B14: 23 matches
+
+   [28/34] B14 (B14)
+   B14: 24 matches
+
+   [29/34] B14 (B14)
+   B14: 24 matches
+
+   [30/34] B14 (B14)
+   B14: 26 matches
+
+   [31/34] B14 (B14)
+   B14: 24 matches
+
+   [32/34] B14 (B14)
+   B14: 21 matches
+
+   [33/34] B14 (B14)
+   B14: 10 matches
+
+   [34/34] B14 (B14)
+   B14: 14 matches
+
+   Total: 714 unique matches (714 raw)
+   ✅ Staged 714 matches
+
+📋 [14/35] OYSA Spring League South 2026
+   Subdomain: oysa
+   Tournament GUID: D07BB454-E1CA-42C9-837D-DADFAADD9FCF
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [15/35] OYSA Winter League 2026
+   Subdomain: oysa
+   Tournament GUID: 72AD07B7-EE2C-43F5-9108-EDEB82F6B58A
+   Discovering flights...
+   Found 16 flights
+     B15: B15 (D319E265...)
+     B15: B15 (CB2DA48C...)
+     B15: B15 (293E1595...)
+     B15: B15 (0E6B93B9...)
+     B16: B16 (C718F16A...)
+     B16: B16 (1EA4D7C2...)
+     B16: B16 (402492F4...)
+     B16: B16 (DCBCA1AB...)
+     B16: B16 (32526949...)
+     B17: B17 (1D70C069...)
+     B17: B17 (57EF26CA...)
+     B17: B17 (A1B3709C...)
+     B19: B19 (81A933AE...)
+     B19: B19 (58488AB5...)
+     B19: B19 (376896FD...)
+     B19: B19 (0C118FF7...)
+
+   [1/16] B15 (B15)
+   B15: 40 matches
+
+   [2/16] B15 (B15)
+   B15: 60 matches
+
+   [3/16] B15 (B15)
+   B15: 40 matches
+
+   [4/16] B15 (B15)
+   B15: 75 matches
+
+   [5/16] B16 (B16)
+   B16: 40 matches
+
+   [6/16] B16 (B16)
+   B16: 35 matches
+
+   [7/16] B16 (B16)
+   B16: 40 matches
+
+   [8/16] B16 (B16)
+   B16: 65 matches
+
+   [9/16] B16 (B16)
+   B16: 65 matches
+
+   [10/16] B17 (B17)
+   B17: 55 matches
+
+   [11/16] B17 (B17)
+   B17: 30 matches
+
+   [12/16] B17 (B17)
+   B17: 55 matches
+
+   [13/16] B19 (B19)
+   B19: 50 matches
+
+   [14/16] B19 (B19)
+   B19: 50 matches
+
+   [15/16] B19 (B19)
+   B19: 50 matches
+
+   [16/16] B19 (B19)
+   B19: 55 matches
+
+   Total: 805 unique matches (805 raw)
+   ✅ Staged 805 matches
+
+📋 [16/35] PYSA Spring 2026
+   Subdomain: oysa
+   Tournament GUID: 778D98BC-B965-4920-866C-4DC51712D0DD
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [17/35] Spring Founders Cup OR 2026
+   Subdomain: oysa
+   Tournament GUID: 451BEF64-5474-49E9-8FF1-7B1DABE1E3EA
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [18/35] OYSA Spring Development League 2026
+   Subdomain: oysa
+   Tournament GUID: B7972C4B-4CA9-4F0F-91A2-6859C6AA36A2
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [19/35] Soccer 5 Spring 2026
+   Subdomain: oysa
+   Tournament GUID: 0607DE2A-47F2-448A-BB7F-ABA959993487
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [20/35] Spring Valley Academy League 2026
+   Subdomain: oysa
+   Tournament GUID: 5CDA2778-13D0-4E1D-BDC1-6EE6F3161633
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [21/35] Presidents Cup OR 25-26
+   Subdomain: oysa
+   Tournament GUID: B8FAC66F-0871-45AB-A909-89A2FE719FF5
+   Discovering flights...
+   Found 4 flights
+     ?: Unknown (B966B659...)
+     ?: Unknown (2A656710...)
+     ?: Unknown (36D569A2...)
+     ?: Unknown (BDA5D513...)
+
+   [1/4] Unknown (null)
+   Unknown: 33 matches
+
+   [2/4] Unknown (null)
+   Unknown: 27 matches
+
+   [3/4] Unknown (null)
+   Unknown: 24 matches
+
+   [4/4] Unknown (null)
+   Unknown: 24 matches
+
+   Total: 108 unique matches (108 raw)
+   ✅ Staged 108 matches
+
+📋 [22/35] State Cup OR 25-26
+   Subdomain: oysa
+   Tournament GUID: 789AF058-A919-4067-BB41-FB72BE118847
+   Discovering flights...
+   Found 4 flights
+     ?: Unknown (66C63B69...)
+     ?: Unknown (EB4DFF9D...)
+     ?: Unknown (0EC382C1...)
+     ?: Unknown (4F18F988...)
+
+   [1/4] Unknown (null)
+   Unknown: 24 matches
+
+   [2/4] Unknown (null)
+   Unknown: 24 matches
+
+   [3/4] Unknown (null)
+   Unknown: 15 matches
+
+   [4/4] Unknown (null)
+   Unknown: 15 matches
+
+   Total: 78 unique matches (78 raw)
+   ✅ Staged 78 matches
+
+📋 [23/35] Nebraska Youth Soccer League Spring 2026
+   Subdomain: nebraskasoccer
+   Tournament GUID: 17073438-1E6C-45B6-80C9-A59D5E670EFF
+   Discovering flights...
+   Found 32 flights
+     ?: Unknown (DBF4F814...)
+     ?: Unknown (83E6AFB7...)
+     ?: Unknown (0EC9E14D...)
+     ?: Unknown (8636E9EC...)
+     ?: Unknown (A138680B...)
+     ?: Unknown (C40E4A5C...)
+     ?: Unknown (4F18ABCF...)
+     ?: Unknown (BDF55CA9...)
+     ?: Unknown (7587A0D8...)
+     ?: Unknown (09D31D2C...)
+     ?: Unknown (CD29B626...)
+     ?: Unknown (AE1C0BFE...)
+     ?: Unknown (A3D5D093...)
+     ?: Unknown (D43A43C2...)
+     ?: Unknown (475DDDB4...)
+     ?: Unknown (C576D145...)
+     ?: Unknown (0C5554E9...)
+     ?: Unknown (801F78B4...)
+     ?: Unknown (08A87E22...)
+     ?: Unknown (28D6CE03...)
+     ?: Unknown (EAA1586A...)
+     ?: Unknown (98AEEC89...)
+     ?: Unknown (5B641649...)
+     ?: Unknown (9CB08C3E...)
+     ?: Unknown (BF40303E...)
+     ?: Unknown (EB4891F1...)
+     ?: Unknown (1F9F5945...)
+     ?: Unknown (EC6A5C25...)
+     ?: Unknown (E05D00C0...)
+     ?: Unknown (BD240A8C...)
+     ?: Unknown (18C5E50E...)
+     ?: Unknown (F819CDFA...)
+
+   [1/32] Unknown (null)
+   Unknown: 0 matches
+
+   [2/32] Unknown (null)
+   Unknown: 0 matches
+
+   [3/32] Unknown (null)
+   Unknown: 0 matches
+
+   [4/32] Unknown (null)
+   Unknown: 0 matches
+
+   [5/32] Unknown (null)
+   Unknown: 0 matches
+
+   [6/32] Unknown (null)
+   Unknown: 0 matches
+
+   [7/32] Unknown (null)
+   Unknown: 0 matches
+
+   [8/32] Unknown (null)
+   Unknown: 0 matches
+
+   [9/32] Unknown (null)
+   Unknown: 0 matches
+
+   [10/32] Unknown (null)
+   Unknown: 0 matches
+
+   [11/32] Unknown (null)
+   Unknown: 0 matches
+
+   [12/32] Unknown (null)
+   Unknown: 0 matches
+
+   [13/32] Unknown (null)
+   Unknown: 0 matches
+
+   [14/32] Unknown (null)
+   Unknown: 0 matches
+
+   [15/32] Unknown (null)
+   Unknown: 0 matches
+
+   [16/32] Unknown (null)
+   Unknown: 0 matches
+
+   [17/32] Unknown (null)
+   Unknown: 0 matches
+
+   [18/32] Unknown (null)
+   Unknown: 0 matches
+
+   [19/32] Unknown (null)
+   Unknown: 0 matches
+
+   [20/32] Unknown (null)
+   Unknown: 0 matches
+
+   [21/32] Unknown (null)
+   Unknown: 0 matches
+
+   [22/32] Unknown (null)
+   Unknown: 0 matches
+
+   [23/32] Unknown (null)
+   Unknown: 0 matches
+
+   [24/32] Unknown (null)
+   Unknown: 0 matches
+
+   [25/32] Unknown (null)
+   Unknown: 0 matches
+
+   [26/32] Unknown (null)
+   Unknown: 0 matches
+
+   [27/32] Unknown (null)
+   Unknown: 0 matches
+
+   [28/32] Unknown (null)
+   Unknown: 0 matches
+
+   [29/32] Unknown (null)
+   Unknown: 0 matches
+
+   [30/32] Unknown (null)
+   Unknown: 0 matches
+
+   [31/32] Unknown (null)
+   Unknown: 0 matches
+
+   [32/32] Unknown (null)
+   Unknown: 0 matches
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [24/35] NYSL Premier Cup 2026
+   Subdomain: nebraskasoccer
+   Tournament GUID: A83E1B5D-0929-47CB-B48D-3076BB91677C
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [25/35] CYSL Spring 2026
+   Subdomain: nebraskasoccer
+   Tournament GUID: 7F87869B-3C46-4DB9-8649-E6FFF66CEB3C
+   Discovering flights...
+   Found 23 flights
+     ?: Unknown (0D36EAEE...)
+     ?: Unknown (801E2554...)
+     ?: Unknown (5F862FF2...)
+     ?: Unknown (ABE04369...)
+     ?: Unknown (D6982342...)
+     ?: Unknown (FD7D0F0F...)
+     ?: Unknown (BF382088...)
+     ?: Unknown (B7007A3D...)
+     ?: Unknown (9FA0274E...)
+     ?: Unknown (BC6DB4D6...)
+     ?: Unknown (8B31C0D1...)
+     ?: Unknown (54C7DE77...)
+     ?: Unknown (D143751F...)
+     ?: Unknown (AB8F4AD7...)
+     ?: Unknown (F2BA33A5...)
+     ?: Unknown (E55B9572...)
+     ?: Unknown (C7AE439F...)
+     ?: Unknown (AB673747...)
+     ?: Unknown (25E4A942...)
+     ?: Unknown (ECB4E9C4...)
+     ?: Unknown (C065502C...)
+     ?: Unknown (B951A293...)
+     ?: Unknown (0B4FA687...)
+
+   [1/23] Unknown (null)
+   Unknown: 0 matches
+
+   [2/23] Unknown (null)
+   Unknown: 0 matches
+
+   [3/23] Unknown (null)
+   Unknown: 0 matches
+
+   [4/23] Unknown (null)
+   Unknown: 0 matches
+
+   [5/23] Unknown (null)
+   Unknown: 0 matches
+
+   [6/23] Unknown (null)
+   Unknown: 0 matches
+
+   [7/23] Unknown (null)
+   Unknown: 0 matches
+
+   [8/23] Unknown (null)
+   Unknown: 0 matches
+
+   [9/23] Unknown (null)
+   Unknown: 0 matches
+
+   [10/23] Unknown (null)
+   Unknown: 0 matches
+
+   [11/23] Unknown (null)
+   Unknown: 0 matches
+
+   [12/23] Unknown (null)
+   Unknown: 0 matches
+
+   [13/23] Unknown (null)
+   Unknown: 0 matches
+
+   [14/23] Unknown (null)
+   Unknown: 0 matches
+
+   [15/23] Unknown (null)
+   Unknown: 0 matches
+
+   [16/23] Unknown (null)
+   Unknown: 0 matches
+
+   [17/23] Unknown (null)
+   Unknown: 0 matches
+
+   [18/23] Unknown (null)
+   Unknown: 0 matches
+
+   [19/23] Unknown (null)
+   Unknown: 0 matches
+
+   [20/23] Unknown (null)
+   Unknown: 0 matches
+
+   [21/23] Unknown (null)
+   Unknown: 0 matches
+
+   [22/23] Unknown (null)
+   Unknown: 0 matches
+
+   [23/23] Unknown (null)
+   Unknown: 0 matches
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [26/35] Andrew Martinez Memorial Tournament 2026
+   Subdomain: nebraskasoccer
+   Tournament GUID: 6BA6442D-F610-4B56-BB3B-678EAC81577B
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [27/35] PA West Spring 2026 GLC/NAL/E64
+   Subdomain: pawest
+   Tournament GUID: ECCA2C2A-4BF9-43FE-8F75-5346D96736D8
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [28/35] PA West Spring 2026 Classic League
+   Subdomain: pawest
+   Tournament GUID: 289045CB-66E7-46B9-8EE8-6D31F3361119
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [29/35] PA West Spring 2026 Division 4 Travel
+   Subdomain: pawest
+   Tournament GUID: 96D3901D-BC97-40AA-BCFE-FEA3B371EFAA
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [30/35] PA West Spring 2026 District 1 East
+   Subdomain: pawest
+   Tournament GUID: F3997F36-D207-4874-9C99-3667C0436A80
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [31/35] PA West Spring 2026 District 2 North
+   Subdomain: pawest
+   Tournament GUID: 0783ABAF-F06D-44E7-BCA3-6D98FDB23EA9
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [32/35] PA West Spring 2026 District 3 West
+   Subdomain: pawest
+   Tournament GUID: 0A0FEAF6-FBCE-49E9-B557-86851DF92C31
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [33/35] PA West Spring 2026 District 4 South
+   Subdomain: pawest
+   Tournament GUID: DA351D5D-5D2E-4687-8BED-7EF9BD5DE7C9
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [34/35] PA West Spring 2026 District 5 Mountain
+   Subdomain: pawest
+   Tournament GUID: 3E812E1D-570D-44FD-8EE9-27873774816C
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+
+📋 [35/35] PA West Spring 2026 District 7 Lake
+   Subdomain: pawest
+   Tournament GUID: 22EB0AD6-57AD-405A-8FA2-F1BE387D0934
+   Discovering flights...
+   Found 0 flights
+
+   Total: 0 unique matches (0 raw)
+   ⏸️ No matches found (will retry next run)
+🗑️ Checkpoint cleared
+
+============================================================
+✅ SCRAPE COMPLETE
+============================================================
+   Adapter: SportsAffinity
+   Events found: 35
+   Events processed: 35
+   Events successful: 8
+   Events skipped: 27
+   Events failed: 0
+   Groups scraped: 0
+   Matches found: 4306
+   Matches staged: 8612
+   Runtime: 1234s
+   Completed: 2026-02-16T04:41:26.734Z
+
+📋 Next: Run Data Quality Engine to process staged data
+   node scripts/universal/intakeValidator.js --clean-staging
+   node scripts/universal/dataQualityEngine.js --process-staging
