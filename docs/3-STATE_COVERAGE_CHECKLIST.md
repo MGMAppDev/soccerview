@@ -1,6 +1,6 @@
 # SoccerView State Coverage Checklist
 
-> **Version 3.0** | Updated: February 15, 2026 | Session 98b
+> **Version 3.1** | Updated: February 15, 2026 | Session 98b
 >
 > **THE MASTER TRACKER** for national expansion. Every US state, every premier league, every platform, every action needed.
 > **Updated every session.** This is the single source of truth for coverage status.
@@ -19,6 +19,7 @@
 | 98 | Feb 15 | ECNL first scrape + FL/TX leagues + MLS Next reclass | +1,545 matches, TGS adapter | Fix 3 app bugs |
 | 98b | Feb 15 | Fixed 3 app bugs, verified all 55 state platforms, master plan | Bug fixes + research | Wave 2a GotSport discovery |
 | 98b-2 | Feb 15 | Wave 2a: Scraped 14 GotSport events across 10 states | +493 matches, +1,186 teams, +4 leagues | Wave 2b event discovery |
+| 98b-3 | Feb 15 | Wave 2b audit (34 states have data!) + Wave 2c (GA, USYS NL) | +87 matches, coverage audit | Wave 3 SportsAffinity |
 
 ## Completion Targets
 
@@ -213,10 +214,12 @@ Most Wave 2b states already had league data from prior GotSport discovery scrape
 - [x] SC — SCCL — **409 matches, 2 leagues**
 - [x] CT — Championship League + ACSL — **162 matches, 5 leagues**
 
-**Sub-wave 2c: National programs on GotSport:**
-- [ ] Girls Academy — discover all conference event IDs
-- [ ] USYS National League — 13 conferences
-- [ ] NPL Finals + regional events (16 GotSport leagues)
+**Sub-wave 2c: National programs — PARTIALLY COMPLETE (Session 98b-3):**
+Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scrapes.
+- [x] Girls Academy — 42137 (0, between seasons), 42138 (116 staged), 44874 (12), 45530 (8)
+- [x] USYS National League — Sunshine P1 (43114: 24), Sunshine P2 (43943: 6), GL+MW (between seasons)
+- [x] NPL — 26 NPL leagues already in DB with 1,104 matches (WA, CA, OH, FL, NJ, MN, VA, Central States, SAPL, Red River, JPL MW)
+- [ ] USYS NL remaining conferences — scrape when season starts (most between seasons Feb 2026)
 
 **Sub-wave 2d: Small/remaining markets:**
 - [ ] ND — Dakota Premier League
