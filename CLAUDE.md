@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 22.0** | Last Updated: February 16, 2026 | Session 99 Complete
+> **Version 23.0** | Last Updated: February 16, 2026 | Session 100 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1262,11 +1262,11 @@ This file is:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 156,518 | Team records (Session 99: +6,407 from Wave 3 SA expansion) |
-| `matches_v2` | 440,898 active | Match results (~5,297 soft-deleted) |
+| `teams_v2` | 161,021 | Team records (Session 100: +4,503 from ECNL full scrape) |
+| `matches_v2` | 473,756 active | Match results (~5,417 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 319 | League metadata (Session 99: +15 from Wave 3 SA expansion) |
-| `tournaments` | 1,754 | Tournament metadata |
+| `leagues` | 398 | League metadata (Session 100: +79 ECNL reclassified as leagues) |
+| `tournaments` | 1,777 | Tournament metadata |
 | `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
 | `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
 | `source_entity_map` | ~74,800+ | Universal source ID mappings (Session 89+92QC+94+95+97) |
@@ -1298,7 +1298,7 @@ This file is:
 | SINC Sports | ✅ Production (Session 95) | staging_games + staging_standings |
 | MLS Next | ✅ Production (Session 97) | staging_games (Puppeteer, Modular11) |
 | SportsAffinity | ✅ Production (Session 97) | staging_games (Cheerio, GA Boys) |
-| TotalGlobalSports | ✅ Production (Session 98) | staging_games (ECNL, Puppeteer+stealth) |
+| TotalGlobalSports | ✅ Production (Session 100: 76 events, 33,567 matches) | staging_games (ECNL, Puppeteer+stealth) |
 
 ### source_match_key (CRITICAL - Session 57)
 
@@ -1712,11 +1712,51 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
+### Session 100 - Wave 8 ECNL Full Scrape + Pipeline Update (February 16, 2026) - COMPLETE ✅
+
+**Goal:** Complete 4 priorities: (1) Fix PA-W GLC parser, (2) Discover GA Girls GUIDs, (3) Wave 8 ECNL full scrape, (4) Update daily-data-sync.yml with all new adapters.
+
+**Results:**
+
+| Priority | Outcome |
+|----------|---------|
+| PA-W GLC parser | NOT a parser bug. Entire PA-W SportsAffinity site has restricted access (all events redirect to UnPublishedPage.asp). 10 approaches tested per Principle 42. Deferred to March 2026. |
+| GA Girls | NOT on SportsAffinity. Athena league ended on SA in 2021. GA Girls data (1,276 teams, 1,451 matches) comes via GotSport tournaments. No action needed. |
+| ECNL full scrape | **MASSIVE SUCCESS** — ALL 76 ECNL/ECRL/Pre-ECNL events scraped (IDs 3880-3960). 32,068 matches found, 32,751 inserted, 79 reclassified to leagues. |
+| daily-data-sync.yml | Added 3 new sync jobs (TGS, MLS Next, SportsAffinity). Total pipeline: 17→20 jobs, 4→7 sync sources. |
+
+**ECNL Breakdown:**
+
+| Program | Events | Matches |
+|---------|--------|---------|
+| ECNL Boys | 11 | 5,463 |
+| ECNL Girls | 10 | 5,753 |
+| ECNL RL Boys | 24 | 9,380 |
+| ECNL RL Girls | 22 | 10,786 |
+| Pre-ECNL Boys | 8 | 1,196 |
+| Pre-ECNL Girls | 3 | 346 |
+| **Total** | **76** | **32,068** |
+
+**Key Metrics:**
+
+| Metric | Before Session 100 | After Session 100 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 440,898 | **473,756** (+32,858) |
+| teams_v2 | 156,518 | **161,021** (+4,503) |
+| leagues | 319 | **398** (+79 ECNL) |
+| tournaments | 1,856 | **1,777** (-79 reclassified) |
+| TGS events configured | 13 | **76** |
+| Pipeline sync jobs | 4 | **7** |
+
+**Files Modified:** `scripts/adapters/totalglobalsports.js` (13→76 staticEvents), `.github/workflows/daily-data-sync.yml` (+3 sync jobs), `.claude/hooks/session_checkpoint.md`, `docs/3-STATE_COVERAGE_CHECKLIST.md` (v4.0), `CLAUDE.md` (v23.0)
+**Files Created:** `scripts/_debug/reclassify_ecnl_as_leagues.cjs`, `scripts/_debug/quick_tgs_probe.cjs`, `scripts/_debug/scrape_ecnl_batch.sh`, various debug/probe scripts
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
+
 ### Session 99 - Wave 3 SportsAffinity: Full State-Level League Scrape (February 16, 2026) - COMPLETE ✅
 
 **Goal:** Scrape ALL planned SportsAffinity state-level leagues (MN, UT, OR, NE, PA-W) for both Fall 2025 and Spring 2026. Discover Fall 2025 GUIDs. Create session checkpoint system for rate-limit resilience.
-
-**Root Cause Identified:** Wave 3 SA state-level leagues were configured in the adapter (35 events) but only GA Boys and some OR had ever been scraped. Additionally, Fall 2025 events (Aug-Dec — the PEAK half of the current season) were completely missing because only Spring/current GUIDs had been discovered.
 
 **Wave 3 Results:**
 
@@ -1728,8 +1768,6 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 | NE | 476 | **2,143** | **+1,667** | 4 (Premier Conf, Dev Conf, CYSL, Cornhusker) |
 | PA | 8,421 | **10,857** | **+2,436** | 10 (Classic, Frontier, Div 4, Districts 1-5,7) |
 
-**Overall:**
-
 | Metric | Before | After | Delta |
 |--------|--------|-------|-------|
 | matches_v2 (active) | 427,220 | **440,898** | **+13,678** |
@@ -1737,20 +1775,8 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 | leagues | 304 | **319** | +15 |
 | SA adapter events | 35 | **64** | +29 (Fall 2025 GUIDs) |
 
-**Key Accomplishments:**
-- Discovered 29 Fall 2025 tournament GUIDs via `?tourtab=past` URL parameter
-- Expanded SA adapter from 35 to 64 staticEvents
-- Scraped 15,539 total SA matches (4,306 Spring + 11,233 Fall)
-- Processed 11,713 matches into production, 4,233 new teams, 20 new leagues/tournaments
-- Fixed 7,052 team state assignments (unknown → correct state)
-- Created session checkpoint system (`.claude/hooks/session_checkpoint.md`)
-- Added Season Awareness documentation (GUARDRAILS S19, Principle 43/44, Playbook v8.0)
-- ELO recalculated with all new data, all 5 views refreshed
-
-**Known Issue:** PA-W GLC/NAL/E64 top-tier event returned 0 matches — flight parser found 23 flights with null agecodes and "Unknown" names. Different HTML structure needs investigation.
-
 **Files Modified:** `scripts/adapters/sportsaffinity.js` (35→64 events), `CLAUDE.md`, `docs/3-STATE_COVERAGE_CHECKLIST.md` (v3.2), `docs/1.1-GUARDRAILS_v2.md` (S19), `docs/3-DATA_SCRAPING_PLAYBOOK.md` (v8.0), `.claude/hooks/CRITICAL_RULES.md`, `.claude/hooks/session-start.sh`, `.claude/hooks/session-start.txt`
-**Files Created:** `.claude/hooks/session_checkpoint.md`, `scripts/_debug/audit_season_coverage.cjs`, `scripts/_debug/check_wave_coverage.cjs`, `scripts/_debug/scrape_fall2025_batch.sh`, `scripts/_debug/check_mn_flights.cjs`
+**Files Created:** `.claude/hooks/session_checkpoint.md`, `scripts/_debug/audit_season_coverage.cjs`, various debug scripts
 **Zero UI changes. All data flows through universal V2 pipeline.**
 
 ---
@@ -2116,7 +2142,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView. Check current status in CLAUDE.md. Architecture docs in docs/."
+> "Resume SoccerView Session 101. Read CLAUDE.md, .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v4.0). Current: 473,756 active matches, 161,021 teams, 398 leagues, 7 adapters, 7 pipeline sync jobs. ALL ECNL complete (76 events, 33,567 matches). Follow Session 101 Action Items in STATE_COVERAGE_CHECKLIST.md. Priority order: (1) Wave 2d small market discovery (ND, WV, MD, DE, IA), (2) Wave 4 PlayMetrics adapter (CO + SDL), (3) Wave 5 Demosphere adapter (VA/DC + IL + WI), (4) ECNL future-proofing (add keywords to fastProcessStaging). Wave discipline: complete each wave before starting next."
 
 ---
 

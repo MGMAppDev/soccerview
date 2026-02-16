@@ -120,33 +120,108 @@ export default {
      */
     staticEvents: [
       // ========================
-      // ECNL GIRLS — 2025-26
+      // ECNL BOYS — 2025-26 (11 conferences)
       // ========================
-      { id: 3933, name: "ECNL Girls Southwest 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Southwest" },
+      { id: 3880, name: "ECNL Boys Mid-Atlantic 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Mid-Atlantic" },
+      { id: 3881, name: "ECNL Boys Midwest 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Midwest" },
+      { id: 3882, name: "ECNL Boys Mountain 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Mountain" },
+      { id: 3883, name: "ECNL Boys New England 2025-26", type: "league", year: 2026, gender: "Boys", conference: "New England" },
+      { id: 3884, name: "ECNL Boys North Atlantic 2025-26", type: "league", year: 2026, gender: "Boys", conference: "North Atlantic" },
+      { id: 3885, name: "ECNL Boys Northern Cal 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Northern Cal" },
+      { id: 3886, name: "ECNL Boys Northwest 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Northwest" },
+      { id: 3887, name: "ECNL Boys Ohio Valley 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Ohio Valley" },
+      { id: 3888, name: "ECNL Boys Southeast 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Southeast" },
+      { id: 3889, name: "ECNL Boys Southwest 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Southwest" },
+      { id: 3890, name: "ECNL Boys Texas 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Texas" },
+
+      // ========================
+      // ECNL GIRLS — 2025-26 (10 conferences)
+      // ========================
+      { id: 3925, name: "ECNL Girls Mid-Atlantic 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Mid-Atlantic" },
+      { id: 3926, name: "ECNL Girls Midwest 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Midwest" },
+      { id: 3927, name: "ECNL Girls New England 2025-26", type: "league", year: 2026, gender: "Girls", conference: "New England" },
       { id: 3928, name: "ECNL Girls North Atlantic 2025-26", type: "league", year: 2026, gender: "Girls", conference: "North Atlantic" },
+      { id: 3929, name: "ECNL Girls Northern Cal 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Northern Cal" },
+      { id: 3930, name: "ECNL Girls Northwest 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Northwest" },
+      { id: 3931, name: "ECNL Girls Ohio Valley 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Ohio Valley" },
+      { id: 3932, name: "ECNL Girls Southeast 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Southeast" },
+      { id: 3933, name: "ECNL Girls Southwest 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Southwest" },
+      { id: 3934, name: "ECNL Girls Texas 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Texas" },
 
       // ========================
-      // ECRL (Regional League) — 2025-26
+      // ECNL RL (Regional League) BOYS — 2025-26 (23 conferences with schedules)
       // ========================
-      { id: 3954, name: "ECRL Southwest 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Southwest" },
+      { id: 3891, name: "ECNL RL Boys Carolinas 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Carolinas" },
+      { id: 3892, name: "ECNL RL Boys Chicago Metro 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Chicago Metro" },
+      { id: 3893, name: "ECNL RL Boys Far West 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Far West" },
+      { id: 3894, name: "ECNL RL Boys Florida 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Florida" },
+      { id: 3895, name: "ECNL RL Boys Frontier 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Frontier" },
+      { id: 3896, name: "ECNL RL Boys Golden State 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Golden State" },
+      { id: 3897, name: "ECNL RL Boys Greater Michigan 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Greater Michigan" },
+      { id: 3898, name: "ECNL RL Boys Greater Michigan Alliance 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Greater Michigan Alliance" },
+      { id: 3899, name: "ECNL RL Boys Great Lakes Alliance 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Great Lakes Alliance" },
+      { id: 3900, name: "ECNL RL Boys Gulf Coast 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Gulf Coast" },
+      { id: 3901, name: "ECNL RL Boys Heartland 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Heartland" },
+      { id: 3902, name: "ECNL RL Boys Mid-America 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Mid-America" },
+      { id: 3903, name: "ECNL RL Boys Midwest 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Midwest" },
+      { id: 3904, name: "ECNL RL Boys Mountain 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Mountain" },
+      { id: 3905, name: "ECNL RL Boys New England 2025-26", type: "league", year: 2026, gender: "Boys", conference: "New England" },
+      { id: 3906, name: "ECNL RL Boys NorCal 2025-26", type: "league", year: 2026, gender: "Boys", conference: "NorCal" },
+      { id: 3907, name: "ECNL RL Boys North Atlantic 2025-26", type: "league", year: 2026, gender: "Boys", conference: "North Atlantic" },
+      { id: 3908, name: "ECNL RL Boys Northeast 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Northeast" },
+      { id: 3909, name: "ECNL RL Boys NTX 2025-26", type: "league", year: 2026, gender: "Boys", conference: "NTX" },
+      { id: 3910, name: "ECNL RL Boys Northwest 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Northwest" },
+      { id: 3911, name: "ECNL RL Boys SoCal 2025-26", type: "league", year: 2026, gender: "Boys", conference: "SoCal" },
+      { id: 3912, name: "ECNL RL Boys Southeast 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Southeast" },
+      { id: 3913, name: "ECNL RL Boys Texas 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Texas" },
+      // 3914: ECNL RL Boys STXCL — No Schedules Published, skipped
+      { id: 3915, name: "ECNL RL Boys Virginia 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Virginia" },
 
       // ========================
-      // NATIONAL EVENTS — 2025-26
+      // ECNL RL (Regional League) GIRLS — 2025-26 (22 conferences with schedules)
       // ========================
-      { id: 3388, name: "ECNL Phoenix Spring 2026", type: "tournament", year: 2026, gender: "Boys" },
-      { id: 3393, name: "ECNL North Carolina Spring 2026", type: "tournament", year: 2026, gender: "Girls" },
-      { id: 3391, name: "ECNL North Carolina 2025-26", type: "tournament", year: 2026, gender: "Girls" },
+      { id: 3935, name: "ECNL RL Girls Carolinas 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Carolinas" },
+      { id: 3936, name: "ECNL RL Girls Florida 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Florida" },
+      { id: 3937, name: "ECNL RL Girls Frontier 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Frontier" },
+      { id: 3938, name: "ECNL RL Girls Golden State 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Golden State" },
+      { id: 3939, name: "ECNL RL Girls Great Lakes Alliance 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Great Lakes Alliance" },
+      { id: 3940, name: "ECNL RL Girls Greater Michigan Alliance 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Greater Michigan Alliance" },
+      { id: 3941, name: "ECNL RL Girls Gulf Coast 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Gulf Coast" },
+      { id: 3942, name: "ECNL RL Girls Heartland 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Heartland" },
+      { id: 3943, name: "ECNL RL Girls Mid-America 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Mid-America" },
+      { id: 3944, name: "ECNL RL Girls Mountain 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Mountain" },
+      { id: 3945, name: "ECNL RL Girls New England 2025-26", type: "league", year: 2026, gender: "Girls", conference: "New England" },
+      { id: 3946, name: "ECNL RL Girls NorCal 2025-26", type: "league", year: 2026, gender: "Girls", conference: "NorCal" },
+      { id: 3947, name: "ECNL RL Girls North Atlantic 2025-26", type: "league", year: 2026, gender: "Girls", conference: "North Atlantic" },
+      { id: 3948, name: "ECNL RL Girls Northeast 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Northeast" },
+      { id: 3949, name: "ECNL RL Girls Northwest 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Northwest" },
+      { id: 3950, name: "ECNL RL Girls NTX 2025-26", type: "league", year: 2026, gender: "Girls", conference: "NTX" },
+      { id: 3951, name: "ECNL RL Girls Ohio Valley 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Ohio Valley" },
+      { id: 3952, name: "ECNL RL Girls Southeast 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Southeast" },
+      { id: 3953, name: "ECNL RL Girls Southern Cal 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Southern Cal" },
+      { id: 3954, name: "ECNL RL Girls Southwest 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Southwest" },
+      { id: 3955, name: "ECNL RL Girls Texas 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Texas" },
+      // 3956: ECNL RL Girls STXCL — No Schedules Published, skipped
+      { id: 3957, name: "ECNL RL Girls Virginia 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Virginia" },
 
       // ========================
-      // OLDER SEASON (for backfill / reference)
+      // PRE-ECNL BOYS — 2025-26 (7 with schedules)
       // ========================
-      { id: 3262, name: "ECRL Boys Texas 2024-25", type: "league", year: 2025, gender: "Boys", conference: "Texas" },
-      { id: 3255, name: "ECRL Boys North Texas 2024-25", type: "league", year: 2025, gender: "Boys", conference: "North Texas" },
-      { id: 3226, name: "ECRL Girls North Texas 2024-25", type: "league", year: 2025, gender: "Girls", conference: "North Texas" },
-      { id: 3215, name: "ECRL Girls Florida 2024-25", type: "league", year: 2025, gender: "Girls", conference: "Florida" },
-      { id: 2869, name: "ECNL Boys Texas 2023-24", type: "league", year: 2024, gender: "Boys", conference: "Texas" },
-      { id: 2261, name: "ECNL Boys National Playoffs 2024-25", type: "tournament", year: 2025, gender: "Boys" },
-      { id: 2118, name: "ECNL Girls National Playoffs 2024-25", type: "tournament", year: 2025, gender: "Girls" },
+      { id: 3916, name: "Pre-ECNL Boys Lake Michigan 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Lake Michigan" },
+      // 3917: DO NOT USE — marked by TGS, skipped
+      { id: 3918, name: "Pre-ECNL Boys Northeast 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Northeast" },
+      { id: 3919, name: "Pre-ECNL Boys New England 2025-26", type: "league", year: 2026, gender: "Boys", conference: "New England" },
+      { id: 3920, name: "Pre-ECNL Boys North Atlantic 2025-26", type: "league", year: 2026, gender: "Boys", conference: "North Atlantic" },
+      { id: 3921, name: "Pre-ECNL Boys NTX 2025 Fall", type: "league", year: 2026, gender: "Boys", conference: "NTX" },
+      { id: 3922, name: "Pre-ECNL Boys Ohio Valley 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Ohio Valley" },
+      { id: 3923, name: "Pre-ECNL Boys SoCal 2025-26", type: "league", year: 2026, gender: "Boys", conference: "SoCal" },
+
+      // ========================
+      // PRE-ECNL GIRLS — 2025-26 (3 with schedules)
+      // ========================
+      { id: 3958, name: "Pre-ECNL Girls Lake Michigan 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Lake Michigan" },
+      { id: 3959, name: "Pre-ECNL Girls North Atlantic 2025-26", type: "league", year: 2026, gender: "Girls", conference: "North Atlantic" },
+      { id: 3960, name: "Pre-ECNL Girls New England 2025-26", type: "league", year: 2026, gender: "Girls", conference: "New England" },
     ],
 
     discoverEvents: null, // Static events — expand as we discover more IDs
@@ -232,7 +307,7 @@ export default {
     /** Current + previous season */
     minDate: "2024-08-01",
     maxFutureDate: null,
-    maxEventsPerRun: 20,
+    maxEventsPerRun: 80,
 
     isValidMatch: (match) => {
       if (!match.homeTeamName || !match.awayTeamName) return false;

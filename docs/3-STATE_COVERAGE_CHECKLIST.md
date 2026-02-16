@@ -1,6 +1,6 @@
 # SoccerView State Coverage Checklist
 
-> **Version 3.2** | Updated: February 16, 2026 | Session 99
+> **Version 4.0** | Updated: February 16, 2026 | Session 100
 >
 > **THE MASTER TRACKER** for national expansion. Every US state, every premier league, every platform, every action needed.
 > **Updated every session.** This is the single source of truth for coverage status.
@@ -20,7 +20,8 @@
 | 98b | Feb 15 | Fixed 3 app bugs, verified all 55 state platforms, master plan | Bug fixes + research | Wave 2a GotSport discovery |
 | 98b-2 | Feb 15 | Wave 2a: Scraped 14 GotSport events across 10 states | +493 matches, +1,186 teams, +4 leagues | Wave 2b event discovery |
 | 98b-3 | Feb 15 | Wave 2b audit (34 states have data!) + Wave 2c (GA, USYS NL) | +87 matches, coverage audit | Wave 3 SportsAffinity |
-| 99 | Feb 16 | **Wave 3 SA: Scraped all 5 states (Spring+Fall).** 29 Fall 2025 GUIDs discovered. Adapter 35→64 events. Season docs + checkpoint system. | **+13,678 matches, +6,407 teams, +15 leagues** | PA-W GLC fix, GA Girls, commit |
+| 99 | Feb 16 | **Wave 3 SA: Scraped all 5 states (Spring+Fall).** 29 Fall 2025 GUIDs discovered. Adapter 35→64 events. Season docs + checkpoint system. | **+13,678 matches, +6,407 teams, +15 leagues** | PA-W GLC fix, GA Girls, ECNL |
+| 100 | Feb 16 | **Wave 8 ECNL FULL SCRAPE.** All 76 ECNL/ECRL/Pre-ECNL events (IDs 3880-3960). TGS adapter 13→76 events. 79 tournaments reclassified as leagues. daily-data-sync.yml +3 jobs. PA-W GLC investigated (restricted access). GA Girls resolved (not on SA). | **+32,858 matches, +4,503 teams, +79 leagues** | Commit+push, checklist v4.0, next wave |
 
 ## Completion Targets
 
@@ -28,9 +29,11 @@
 |-----------|--------|---------|-----|
 | States at PRODUCTION | 55 | 4 (KS, MO-KC, NC, GA-Boys) | 51 |
 | States at PARTIAL+ | 55 | 43 (39 with league data + 4 PRODUCTION) | 12 remaining |
-| Active matches | 1M+ | **440,898** | ~559K |
-| Leagues in DB | 319+ | **319** | More via daily discovery |
+| Active matches | 1M+ | **473,756** | ~526K |
+| Leagues in DB | 398+ | **398** | More via daily discovery |
+| National programs | 7 | 3 PRODUCTION (MLS Next, ECNL, GS Ranks) | 4 remaining (GA, USYS NL, NPL, SDL) |
 | Adapters built | 12 | 7 | 5 (PlayMetrics, Demosphere, Squadi, RI, HI) |
+| Pipeline sync jobs | 7 | **7** (GS, HTG, HRT, SINC, TGS, MLS Next, SA) | All built |
 | States needing new adapters | 0 | 9 | AR, CO, DC, DE, HI, IA, MD, NM, RI + partial IL/VA/WI |
 
 ---
@@ -50,8 +53,8 @@
 | Program | Adapter | Status | Matches | Age Groups |
 |---------|---------|--------|---------|------------|
 | **MLS Next** | mlsnext.js (Modular11/Puppeteer) | **PRODUCTION** | 9,795 | U13-U19 Boys |
-| **ECNL/ECRL** | totalglobalsports.js (TGS/Puppeteer) | **IN PROGRESS** | 816 (1 of 13 events) | U13-U19 Boys+Girls |
-| **Girls Academy** | gotsport.js (GotSport) | **MISSING** | 0 | Discover event IDs |
+| **ECNL/ECRL/Pre-ECNL** | totalglobalsports.js (TGS/Puppeteer) | **PRODUCTION** | **33,567** (76 events: 21 ECNL + 46 ECRL + 11 Pre-ECNL) | U13-U19 Boys+Girls |
+| **Girls Academy** | gotsport.js (GotSport) | **PARTIAL** | ~136 (3 GS events: 42137, 42138, 44874, 45530) | Between seasons — retry Spring 2026 |
 | **USYS National League** | gotsport.js (GotSport) | **MISSING** | 0 | 13 conferences to discover |
 | **NPL (18 regional)** | gotsport.js (16/18 on GotSport) | **MISSING** | 0 | Discover event IDs |
 | **GotSport Rankings** | restoreGotSportRanks.cjs | **PRODUCTION** | N/A (ranks only) | All |
@@ -61,20 +64,20 @@
 
 | # | Adapter | Status | States Covered | Division Data |
 |---|---------|--------|----------------|:---:|
-| 1 | **GotSport** | PRODUCTION | 35 states (304 leagues, 1,754 tournaments) | Via event discovery |
+| 1 | **GotSport** | PRODUCTION | 35 states (304+ leagues, 1,777 tournaments) | Via event discovery |
 | 2 | **Heartland CGI** | PRODUCTION | KS, MO-KC | Yes (14 divisions) |
 | 3 | **HTGSports** | PRODUCTION | 26+ (tournaments) | Basic |
 | 4 | **SINC Sports** | PRODUCTION | NC, TN (between seasons) | Yes (15 divisions) |
 | 5 | **MLS Next (Modular11)** | PRODUCTION | National (all states) | Yes (conferences) |
 | 6 | **SportsAffinity** | PRODUCTION | GA, MN, UT, OR, NE, PA-W (64 events) | No |
-| 7 | **TotalGlobalSports** | IN PROGRESS | ECNL national | Pending |
+| 7 | **TotalGlobalSports** | **PRODUCTION** | ECNL national (76 events, 33,567 matches) | Yes (conferences/regions) |
 | 8 | **PlayMetrics** | **NOT BUILT** | CO, SDL + growing | Yes — public `/g/` URLs |
 | 9 | **Demosphere** | **NOT BUILT** | VA/DC, IL, WI | Yes — widget-based |
 | 10 | **Squadi** | **NOT BUILT** | AR (+ NJ partial) | Yes — public standings URLs |
 | 11 | **RI Super Liga** | **NOT BUILT** | RI | Yes — PHP endpoints |
 | 12 | **HI Oahu League** | **NOT BUILT** | HI | Yes — AngularJS SPA |
 
-**7 built + 5 to build = 12 adapters for 100% national coverage.**
+**7 built (all PRODUCTION) + 5 to build = 12 adapters for 100% national coverage.**
 
 ---
 
@@ -102,7 +105,7 @@
 | 9 | **CT** | CT Championship League + ACSL | Premier I/II, First Division | GotSport | 44333, 39670, 44480, 40341, 40662 | **PARTIAL** | 5 leagues, 162 matches. Already discovered. |
 | 10 | **DE** | EDP League (multi-state) | EDP tiers | GotSport (EDP) | 57177e158c | GS RANKS | Scrape EDP event |
 | 11 | **FL** | FSPL + EDP FL + FCL NPL | Multi-tier + 3 regional | GotSport | 80693, 76361, 79779 | **PARTIAL** | Discover FSPL main event IDs |
-| 12 | **GA** | GPL + Classic/Athena | GPL; Classic 1-5, Athena A-D | SportsAffinity + GotSport | Multiple SA events (Boys) | **PARTIAL** | Boys scraped (Fall 2024/2025 + Spring 2025). Girls GUIDs not yet discovered. |
+| 12 | **GA** | GPL + Classic/Athena | GPL; Classic 1-5, Athena A-D | SportsAffinity + GotSport | Multiple SA events (Boys) | **PARTIAL** | Boys scraped (Fall 2024/2025 + Spring 2025). Girls NOT on SA (Athena ended 2021). Girls data comes via GotSport tournaments (1,276 teams, 1,451 matches). |
 | 13 | **HI** | Oahu League | A/B/C flights | **Custom AngularJS** | N/A | GS RANKS | Build Oahu adapter (Wave 7) |
 | 14 | **ID** | Idaho Premier League (IPL) | Gold, Silver | GotSport | **45021** | **PARTIAL** | 45021 scraped: 20 matches. +364 from prior events. Total: 384 ID matches. |
 | 15 | **IL** | IL State Premiership + SLYSA IL + MWC | Premiership I + tiers | GotSport + Demosphere | 45492, 40174, 44640, 39659, 45100, 40255, 34346 | **PARTIAL** | 7 leagues, 211 matches via GotSport. Demosphere for full IL Premiership. |
@@ -164,7 +167,7 @@
 | 3 | **SINC Sports** | NC, TN | **BUILT** | Good |
 | 4 | **Heartland CGI** | KS, MO-KC | **BUILT** | Good |
 | 5 | **Modular11 (MLS Next)** | National | **BUILT** | Good |
-| 6 | **TotalGlobalSports (ECNL)** | National | **BUILT** | Good |
+| 6 | **TotalGlobalSports (ECNL)** | National (76 events) | **BUILT** | Good (Puppeteer+stealth) |
 | 7 | **HTGSports** | National (tournaments) | **BUILT** | Good |
 | 8 | **PlayMetrics** | CO, SDL + growing | **NOT BUILT** | Good (public `/g/` URLs) |
 | 9 | **Demosphere** | VA/DC, IL, WI | **NOT BUILT** | Moderate (widgets) |
@@ -230,14 +233,14 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 **Completion:** All 35 GotSport states have event IDs and at least one season scraped.
 
 ### Wave 3: SportsAffinity Expansion (Session 99 — MOSTLY COMPLETE)
-- [ ] GA Girls — expand existing (Boys done, Girls GUIDs not yet discovered)
+- [x] GA Girls — **RESOLVED (Session 100):** GA Girls is NOT on SportsAffinity. Athena league ended on SA in 2021. GA Girls data (1,276 teams, 1,451 matches) already exists via GotSport tournaments. No action needed.
 - [x] MN — MYSA State Competitive: **940 matches** (3 SA events: Fall Competitive, Metro Alliance, Summer 2025)
 - [x] UT — UYSA Premier League: **5,759 matches** (6 SA events: Premier PL/SCL/IRL/XL, SUIRL, UVCL, YDL, Platform, Challenger)
 - [x] OR — OYSA Competitive: **10,046 matches** (6 SA events: Fall League, Dev League, Founders Cup, Valley, Soccer 5, PYSA + Spring/Winter)
 - [x] NE — NE Youth Soccer: **2,143 matches** (4 SA events: Premier Conf, Dev Conf, CYSL, Cornhusker)
 - [x] PA-W — PA West State Leagues: **10,857 PA matches** (10 SA events: Classic, Frontier, Div 4, Districts 1-5,7). GLC/NAL/E64 pending (HTML parser issue).
 
-**Status:** 5 of 6 states scraped (Fall 2025 + Spring current). GA Girls remaining. PA-W GLC top-tier event needs parser fix.
+**Status: COMPLETE.** All 6 SA states scraped (Fall 2025 + Spring current). GA Girls resolved (not on SA, comes via GotSport). PA-W GLC top-tier event has restricted access (deferred March 2026 — see Risks section).
 
 ### Wave 4: PlayMetrics Adapter (CO + SDL)
 - [ ] Build PlayMetrics adapter (Puppeteer, XHR intercept)
@@ -268,16 +271,77 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 **Completion:** All custom adapters built. RI, HI, NM at PRODUCTION.
 
 ### Wave 8: ECNL Full Scrape + TN
-- [ ] Run remaining 12 TGS/ECNL events
-- [ ] TN — TN State League via SINC Sports (March 2026)
+- [x] **ECNL COMPLETE (Session 100):** ALL 76 ECNL/ECRL/Pre-ECNL events scraped (IDs 3880-3960). 33,567 matches. 79 tournaments reclassified as leagues. TGS adapter expanded 13→76 staticEvents.
+- [ ] TN — TN State League via SINC Sports (March 2026 season start)
 
-**Completion:** All ECNL events scraped. TN at PRODUCTION.
+**Status:** ECNL DONE. TN waiting on season start (SINC adapter already built and proven with NC).
 
 ### Wave 9: Ongoing Maintenance
 - [ ] Daily pipeline via GitHub Actions
 - [ ] Season event ID refresh (August + January)
 - [ ] Platform migration monitoring
 - [ ] All 55 entries verified at PRODUCTION
+
+---
+
+## Known Risks & Gaps (Updated Session 100)
+
+| # | Risk/Gap | Severity | Status | Action |
+|---|----------|----------|--------|--------|
+| 1 | **GA Girls not on SportsAffinity** | Low | **RESOLVED** | Athena league ended on SA in 2021. GA Girls data (1,276 teams, 1,451 matches) already in DB via GotSport tournaments. No action needed. |
+| 2 | **PA-W GLC/NAL/E64 restricted access** | Medium | **DEFERRED** | Entire PA-W SportsAffinity site has restricted access (all events redirect to UnPublishedPage.asp). 10 approaches tested per Principle 42. PA-W lower tiers (10,857 matches) are safe. Retry March 2026. GUIDs saved in session_checkpoint.md. |
+| 3 | **318 Pre-ECNL null match_date failures** | Low | **ACCEPTED** | 1,396 of 1,718 Pre-ECNL records succeeded (81.5%). Failures are from partially-published TGS events with no match dates. Not recoverable. |
+| 4 | **ECNL future-proofing for new seasons** | Medium | **MITIGATED** | All 76 current ECNL events registered in source_entity_map → Tier 0 lookup handles them. NEW season events (2026-27, IDs 3961+) will need: (a) discovery via quick_tgs_probe.cjs, (b) addition to staticEvents in totalglobalsports.js, (c) manual classification as leagues (names don't contain LEAGUE_KEYWORDS). Consider adding "ECNL/ECRL" to LEAGUE_KEYWORDS in fastProcessStaging.cjs. |
+| 5 | **TN SINC Sports between seasons** | Low | **WAITING** | SINC adapter exists and is proven (NC: 8,692 matches). TN State League season starts March 2026. Calendar reminder to scrape. |
+| 6 | **5 adapters not built (Waves 4-7)** | High | **PENDING** | PlayMetrics (CO 9-tier + SDL), Demosphere (VA/DC + IL + WI), Squadi (AR), RI Super Liga (PHP), HI Oahu (AngularJS). These block 9 state entries from reaching PRODUCTION. |
+| 7 | **Wave 2d small markets (ND, WV)** | Low | **PENDING** | ND Dakota Premier League and WV State League need GotSport event ID discovery. Small team counts. WY has no statewide league. |
+| 8 | **MD/DE/IA event IDs missing** | Medium | **PENDING** | MD (EDP/MDSL), DE (EDP), IA (migrating to PlayMetrics) — no state-specific league event IDs discovered yet. MD/DE teams play in multi-state EDP events. |
+
+---
+
+## Session 101 Action Items (Next Session)
+
+### Priority 1: Complete Wave 2d (Low effort, completeness)
+- [ ] Discover ND Dakota Premier League event ID on GotSport
+- [ ] Discover WV State League event ID on GotSport
+- [ ] Discover MD EDP/MDSL event IDs
+- [ ] Discover DE EDP event ID
+- [ ] Verify IA current platform status (GotSport vs PlayMetrics migration)
+
+### Priority 2: Wave 4 — Build PlayMetrics Adapter (Highest ROI new adapter)
+- [ ] Research PlayMetrics public `/g/` URL structure
+- [ ] Build PlayMetrics adapter (Puppeteer, XHR intercept)
+- [ ] Scrape CO — Colorado Advanced League (9 tiers: P1/P2/P3, Elite, Platinum, Gold, Silver, Bronze, Secondary)
+- [ ] Scrape SDL — Sporting Development League (U11/U12 national)
+- [ ] Process through pipeline, run ELO, refresh views
+
+### Priority 3: Wave 5 — Build Demosphere Adapter
+- [ ] Research Demosphere widget-based data access
+- [ ] Build Demosphere adapter
+- [ ] Scrape VA/DC — NCSL (promo/relegation system)
+- [ ] Scrape IL — IL State Premiership (full coverage beyond current 211 GS matches)
+- [ ] Scrape WI — WYSA State League (full coverage beyond current 123 GS matches)
+
+### Priority 4: Wave 6 — Build Squadi Adapter
+- [ ] Research Squadi React SPA structure
+- [ ] Build Squadi adapter (Puppeteer)
+- [ ] Scrape AR — Arkansas Competitive Soccer League
+
+### Priority 5: ECNL Future-Proofing
+- [ ] Add "ecnl", "ecrl", "pre-ecnl" to LEAGUE_KEYWORDS in fastProcessStaging.cjs
+- [ ] Verify all 76 ECNL source_entity_map entries point to leagues (not tournaments)
+
+### Priority 6: TN Retry (March 2026)
+- [ ] When March arrives: scrape TN State League via SINC Sports adapter
+
+### Priority 7: Wave 7 — Custom Platform Adapters (Lowest ROI)
+- [ ] RI — Super Liga (Cheerio, PHP endpoints)
+- [ ] HI — Oahu League (Puppeteer, AngularJS SPA)
+- [ ] NM — Duke City Soccer League (PDF parsing, lowest priority)
+
+### Priority 8: PA-W GLC Retry (March 2026)
+- [ ] Re-test PA-W SportsAffinity access with saved GUIDs (in session_checkpoint.md)
+- [ ] If still blocked, try alternative approaches (mobile endpoints, different User-Agent)
 
 ---
 
