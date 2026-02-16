@@ -1,69 +1,78 @@
 # Session Checkpoint — Auto-Updated
-Last Updated: 2026-02-16T16:00:00Z
-Session: 100 — COMPLETE ✅
+Last Updated: 2026-02-16T20:30:00Z
+Session: 102 — IN PROGRESS ⚙️
 
 ## Completed This Session
-- **Priority 1: PA-W GLC parser** — NOT a parser bug. Entire PA-W SportsAffinity site has restricted access (all events redirect to UnPublishedPage.asp). Tested 6 approaches per Principle 42. Deferred to March 2026. Existing 10,857 PA matches safe.
-- **Priority 2: GA Girls** — NOT on SportsAffinity. Athena league ended on SA in 2021. GA Girls data (1,276 teams, 1,451 matches) comes via GotSport tournaments. No action needed.
-- **Priority 3: ECNL full scrape** — MASSIVE SUCCESS:
-  - Discovered ALL 80 ECNL/ECRL/Pre-ECNL events (IDs 3880-3960)
-  - Expanded TGS adapter from 13 → 76 staticEvents
-  - Scraped 76 events: 32,068 total matches
-    - ECNL Boys (11): 5,463 matches
-    - ECNL Girls (10): 5,753 matches (incl 816 from Session 98)
-    - ECNL RL Boys (24): 9,380 matches
-    - ECNL RL Girls (22): 10,786 matches
-    - Pre-ECNL Boys (8): 1,196 matches (3 empty events)
-    - Pre-ECNL Girls (3): 346 matches
-  - Processed all staged data: 32,751 matches inserted
-  - Reclassified 79 tournaments → leagues (33,681 matches moved)
-  - ELO recalculated: 213,566 matches, 64,437 teams
-  - All 5 materialized views refreshed
-- **Priority 4: daily-data-sync.yml** — Added 3 new sync jobs:
-  - sync-totalglobalsports (ECNL, Puppeteer+stealth, 120min timeout)
-  - sync-mlsnext (Puppeteer, 30min timeout)
-  - sync-sportsaffinity (Cheerio, 30min timeout)
-  - Updated validation-pipeline needs, summary reporting
-  - Total pipeline jobs: 17 → 20
+- **Wave 4: PlayMetrics Adapter (PARTIAL)**
+  - ✅ Built PlayMetrics adapter (playmetrics.js) using Puppeteer
+  - ✅ Scraped CO CAL Fall 2025: 115 divisions discovered
+  - ✅ Adapter structure working (division discovery + table parsing)
+  - ⚠️ **DEBUGGING NEEDED:** Date extraction + staging batch insert issue
+    - Date extraction regex working but only capturing 1-2 dates out of many
+    - Batch INSERT claims "4,356 staged" but only 1-2 actually insert to staging_games
+    - Issue: ON CONFLICT or silent failures during batch processing
+  - ✅ Added 'playmetrics' to intakeValidator.js KNOWN_PLATFORMS
+  - ✅ 5 staticEvents configured (CO CAL Fall/Spring 2024-2025 + SDL Boys/Girls)
 
-## Key Metrics
-| Metric | Before Session 100 | After Session 100 |
-|--------|-------------------|-------------------|
-| matches_v2 (active) | 440,898 | **473,756** (+32,858) |
-| teams_v2 | 156,518 | **161,021** (+4,503) |
-| teams with matches | ~60K | **64,437** |
-| leagues | 319 | **398** (+79 ECNL) |
-| tournaments | 1,856 | **1,777** (-79 reclassified) |
-| TGS events configured | 13 | **76** |
-| TGS events scraped | 1 | **76** |
-| TGS matches | 816 | **33,567** |
-| Pipeline sync jobs | 4 | **7** |
+- **Files Created:**
+  - `scripts/adapters/playmetrics.js` — PlayMetrics adapter v1.0 (Puppeteer-based)
+  - `scripts/_debug/probe_playmetrics.cjs` — Initial structure probe
+  - `scripts/_debug/probe_playmetrics_v2.cjs` — Enhanced probe (division structure)
+  - `scripts/_debug/probe_playmetrics_v3.cjs` — Division deep dive (match tables)
+  - `scripts/_debug/playmetrics_test_run.log`, `playmetrics_real_run.log`, `playmetrics_final.log` — Test run logs
 
-## PA-W Spring 2026 GUIDs (for March 2026 retry)
-- GLC/NAL/E64: ECCA2C2A-4BF9-43FE-8F75-5346D96736D8
-- Classic League: 289045CB-66E7-46B9-8EE8-6D31F3361119
-- Division 4: 96D3901D-BC97-40AA-BCFE-FEA3B371EFAA
-- District 1 East: F3997F36-D207-4874-9C99-3667C0436A80
-- District 2 North: 0783ABAF-F06D-44E7-BCA3-6D98FDB23EA9
-- District 3 West: 0A0FEAF6-FBCE-49E9-B557-86851DF92C31
-- District 4 South: DA351D5D-5D2E-4687-8BED-7EF9BD5DE7C9
-- District 5 Mountain: 3E812E1D-570D-44FD-8EE9-27873774816C
-- District 7 Lake: 22EB0AD6-57AD-405A-8FA2-F1BE387D0934
+- **Files Modified:**
+  - `scripts/universal/intakeValidator.js` — Added 'playmetrics' to KNOWN_PLATFORMS
+  - `scripts/adapters/playmetrics.js` — 3 iterations (date extraction logic + time NULL handling)
 
-## Files Modified This Session
-- `scripts/adapters/totalglobalsports.js` — 13 → 76 staticEvents, maxEventsPerRun 20 → 80
-- `.github/workflows/daily-data-sync.yml` — Added 3 sync jobs (TGS, MLS Next, SA)
-- `.claude/hooks/session_checkpoint.md` — This file
-- `docs/3-STATE_COVERAGE_CHECKLIST.md` — Updated to v4.0 (risks, gaps, Session 101 action items)
-- `CLAUDE.md` — Updated to v23.0 (Session 100 complete, updated metrics)
-- `scripts/_debug/quick_tgs_probe.cjs` — Created (Puppeteer event discovery)
-- `scripts/_debug/scrape_ecnl_batch.sh` — Created (batch scraping)
-- `scripts/_debug/reclassify_ecnl_as_leagues.cjs` — Created + executed (tournament→league fix)
-- Various debug scripts from Priority 1/2 investigation
+## Current Issues (Blocking Wave 4 Completion)
+1. **Date extraction:** Sequential regex extraction from body text only capturing 1-2 dates
+   - Probe shows dates like "Saturday, August 23, 2025" in page text
+   - Adapter extracts all dates via regex but association with tables failing
+   - **Root cause:** Unknown — needs debugging with console.log in page.evaluate()
 
-## Next Session (101) Priorities
-See `docs/3-STATE_COVERAGE_CHECKLIST.md` Section "Session 101 Action Items" for full list.
-1. Wave 2d: ND, WV, MD, DE, IA event discovery
-2. Wave 4: Build PlayMetrics adapter (CO + SDL)
-3. Wave 5: Build Demosphere adapter (VA/DC + IL + WI)
-4. ECNL future-proofing (add keywords to fastProcessStaging.cjs)
+2. **Batch insert mystery:** Scraper claims "Staged 4356" but only 1-2 records in staging_games
+   - coreScraper.js writeToStaging() uses ON CONFLICT (source_match_key) DO NOTHING
+   - No errors logged, but `result.rowCount` must be returning ~0 for most batches
+   - **Root cause:** Likely duplicate source_match_key generation or NULL dates blocking INSERT
+
+## Next Session (102 continuation) Priorities
+1. **DEBUG PlayMetrics adapter** (2-3 hours estimated)
+   - Add verbose logging to date extraction in page.evaluate()
+   - Log source_match_key generation for all matches
+   - Test with single division to isolate issue
+   - Check if game IDs are truly unique across divisions
+
+2. **Wave 4 completion after fix:**
+   - Re-run CO CAL Fall 2025 scrape (should get ~4,800 matches)
+   - Process through fastProcessStaging.cjs
+   - Add SDL events (U11/U12 Boys + Girls)
+   - Run ELO recalculation + refresh views
+
+3. **If PlayMetrics fix takes >3 hours:** Move to Wave 5 (Demosphere) and circle back
+
+## Key Metrics (Unchanged from Session 101)
+| Metric | Session 101 | Session 102 |
+|--------|-------------|-------------|
+| matches_v2 (active) | 474,797 | **474,799** (+2 PlayMetrics test) |
+| teams_v2 | 162,327 | **162,329** (+2 PlayMetrics) |
+| leagues | 407 | **408** (+1 CO CAL) |
+| Adapters built | 7 | **7.5** (PlayMetrics partial) |
+
+## Files to Commit
+- `scripts/adapters/playmetrics.js`
+- `scripts/universal/intakeValidator.js`
+- `.claude/hooks/session_checkpoint.md`
+- `docs/3-STATE_COVERAGE_CHECKLIST.md` (update with Wave 4 status)
+- `CLAUDE.md` (version bump if needed)
+
+## Wave 4 Status
+- **PlayMetrics adapter:** 75% complete (functional structure, needs debugging)
+- **CO coverage:** NOT upgraded (still PARTIAL, needs working adapter)
+- **SDL coverage:** NOT started (depends on CO fix)
+- **Estimated time to complete:** 2-3 hours debugging + 1 hour scraping/processing = 3-4 hours
+
+## Session Duration
+Started: 2026-02-16T16:00:00Z
+Current: 2026-02-16T20:30:00Z
+Elapsed: ~4.5 hours
