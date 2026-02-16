@@ -21,4 +21,12 @@ if [ "$UNCOMMITTED" -gt 10 ] 2>/dev/null; then
   echo "WARNING: More than 10 uncommitted files. Address before starting new work."
 fi
 
+# Session checkpoint — preserves progress across rate limits and context loss
+CHECKPOINT="$CLAUDE_PROJECT_DIR/.claude/hooks/session_checkpoint.md"
+if [ -f "$CHECKPOINT" ]; then
+  echo ""
+  echo "## Session Checkpoint (from previous work — READ THIS)"
+  cat "$CHECKPOINT"
+fi
+
 exit 0

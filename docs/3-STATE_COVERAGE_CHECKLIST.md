@@ -1,6 +1,6 @@
 # SoccerView State Coverage Checklist
 
-> **Version 3.1** | Updated: February 15, 2026 | Session 98b
+> **Version 3.2** | Updated: February 16, 2026 | Session 99
 >
 > **THE MASTER TRACKER** for national expansion. Every US state, every premier league, every platform, every action needed.
 > **Updated every session.** This is the single source of truth for coverage status.
@@ -20,17 +20,18 @@
 | 98b | Feb 15 | Fixed 3 app bugs, verified all 55 state platforms, master plan | Bug fixes + research | Wave 2a GotSport discovery |
 | 98b-2 | Feb 15 | Wave 2a: Scraped 14 GotSport events across 10 states | +493 matches, +1,186 teams, +4 leagues | Wave 2b event discovery |
 | 98b-3 | Feb 15 | Wave 2b audit (34 states have data!) + Wave 2c (GA, USYS NL) | +87 matches, coverage audit | Wave 3 SportsAffinity |
+| 99 | Feb 16 | **Wave 3 SA: Scraped all 5 states (Spring+Fall).** 29 Fall 2025 GUIDs discovered. Adapter 35→64 events. Season docs + checkpoint system. | **+13,678 matches, +6,407 teams, +15 leagues** | PA-W GLC fix, GA Girls, commit |
 
 ## Completion Targets
 
 | Milestone | Target | Current | Gap |
 |-----------|--------|---------|-----|
 | States at PRODUCTION | 55 | 4 (KS, MO-KC, NC, GA-Boys) | 51 |
-| States at PARTIAL+ | 55 | 38 (34 with league data + 4 PRODUCTION) | 17 remaining |
-| Active matches | 1M+ | 427,220 | ~573K |
-| Leagues in DB | 308+ | 308 | More via daily discovery |
+| States at PARTIAL+ | 55 | 43 (39 with league data + 4 PRODUCTION) | 12 remaining |
+| Active matches | 1M+ | **440,898** | ~559K |
+| Leagues in DB | 319+ | **319** | More via daily discovery |
 | Adapters built | 12 | 7 | 5 (PlayMetrics, Demosphere, Squadi, RI, HI) |
-| States needing new adapters | 0 | 14 | AR, CO, DC, DE, HI, IA, MD, NE, NM, OR, RI, TN, UT + partial IL/VA/WI |
+| States needing new adapters | 0 | 9 | AR, CO, DC, DE, HI, IA, MD, NM, RI + partial IL/VA/WI |
 
 ---
 
@@ -39,8 +40,8 @@
 | Status | Count | Description |
 |--------|-------|-------------|
 | **PRODUCTION** | 4 | Full data pipeline (matches + standings + schedules) |
-| **PARTIAL** | 34 | Some league data active, need standings/more events |
-| **GS RANKS** | 14 | GotSport ranking badges only — no local league data yet |
+| **PARTIAL** | 39 | Some league data active, need standings/more events |
+| **GS RANKS** | 9 | GotSport ranking badges only — no local league data yet |
 | **NO LEAGUE** | 3 | No statewide premier league exists (MS, SD, WY) |
 | **Total** | 55 | All 50 states + DC (CA split 3, PA split 2) |
 
@@ -65,7 +66,7 @@
 | 3 | **HTGSports** | PRODUCTION | 26+ (tournaments) | Basic |
 | 4 | **SINC Sports** | PRODUCTION | NC, TN (between seasons) | Yes (15 divisions) |
 | 5 | **MLS Next (Modular11)** | PRODUCTION | National (all states) | Yes (conferences) |
-| 6 | **SportsAffinity** | PRODUCTION | GA (Boys only) | No |
+| 6 | **SportsAffinity** | PRODUCTION | GA, MN, UT, OR, NE, PA-W (64 events) | No |
 | 7 | **TotalGlobalSports** | IN PROGRESS | ECNL national | Pending |
 | 8 | **PlayMetrics** | **NOT BUILT** | CO, SDL + growing | Yes — public `/g/` URLs |
 | 9 | **Demosphere** | **NOT BUILT** | VA/DC, IL, WI | Yes — widget-based |
@@ -101,7 +102,7 @@
 | 9 | **CT** | CT Championship League + ACSL | Premier I/II, First Division | GotSport | 44333, 39670, 44480, 40341, 40662 | **PARTIAL** | 5 leagues, 162 matches. Already discovered. |
 | 10 | **DE** | EDP League (multi-state) | EDP tiers | GotSport (EDP) | 57177e158c | GS RANKS | Scrape EDP event |
 | 11 | **FL** | FSPL + EDP FL + FCL NPL | Multi-tier + 3 regional | GotSport | 80693, 76361, 79779 | **PARTIAL** | Discover FSPL main event IDs |
-| 12 | **GA** | GPL + Classic/Athena | GPL; Classic 1-5, Athena A-D | SportsAffinity | N/A | **PARTIAL** | Expand Girls + more events |
+| 12 | **GA** | GPL + Classic/Athena | GPL; Classic 1-5, Athena A-D | SportsAffinity + GotSport | Multiple SA events (Boys) | **PARTIAL** | Boys scraped (Fall 2024/2025 + Spring 2025). Girls GUIDs not yet discovered. |
 | 13 | **HI** | Oahu League | A/B/C flights | **Custom AngularJS** | N/A | GS RANKS | Build Oahu adapter (Wave 7) |
 | 14 | **ID** | Idaho Premier League (IPL) | Gold, Silver | GotSport | **45021** | **PARTIAL** | 45021 scraped: 20 matches. +364 from prior events. Total: 384 ID matches. |
 | 15 | **IL** | IL State Premiership + SLYSA IL + MWC | Premiership I + tiers | GotSport + Demosphere | 45492, 40174, 44640, 39659, 45100, 40255, 34346 | **PARTIAL** | 7 leagues, 211 matches via GotSport. Demosphere for full IL Premiership. |
@@ -114,11 +115,11 @@
 | 22 | **MD** | EDP League + MDSL | EDP tiers | GotSport (EDP) | TBD | GS RANKS | Discover EDP/MDSL event IDs |
 | 23 | **MA** | GBYSL Select | NPL + lower | GotSport | 45209, 41506 | **PARTIAL** | 2 leagues, 48 matches. Need NEP event discovery for more. |
 | 24 | **MI** | MSPSP + MYSL | GL Premier, Premier 1/2, Classic 1/2 | GotSport | 45649, 46034, 50611 | **PARTIAL** | Scrape Spring events |
-| 25 | **MN** | MYSA State Competitive | Premier, Classic 1/2/3, Maroon, Gold (6 tiers) | SportsAffinity + GotSport | 6 GS leagues (190 matches) | **PARTIAL** | GotSport has 190 MN matches. SportsAffinity for full MYSA coverage. |
+| 25 | **MN** | MYSA State Competitive | Premier, Classic 1/2/3, Maroon, Gold (6 tiers) | SportsAffinity + GotSport | 6 GS leagues + 3 SA events | **PARTIAL** | **940 current-season matches** (190 GS + 531 SA Fall+Spring). SA adapter: 3 events (Fall Competitive, Metro Alliance, Summer 2025). |
 | 26 | **MS** | No statewide league (State Cup only) | N/A | GotSport (cup: 48449) | 48449 (cup only) | **NO LEAGUE** | Capture via USYS Mid South Conference |
 | 27 | **MO** | **SLYSA + Heartland (KC)** | Bracket-based | GotSport + Heartland | TBD (SLYSA) | **PARTIAL** | Discover SLYSA event IDs |
 | 28 | **MT** | Montana State Spring League (MSSL) | Premier, Select, Classic | GotSport | **40682** | **PARTIAL** | 40682: 0 (between seasons). Prior events: 45 MT matches. Retry Spring 2026. |
-| 29 | **NE** | NE Youth Soccer League | Divisions 1-4 | SportsAffinity | N/A | GS RANKS | SportsAffinity event discovery (Wave 3) |
+| 29 | **NE** | NE Youth Soccer League | Divisions 1-4 | SportsAffinity + GotSport | 4 SA events (Fall+Spring) | **PARTIAL** | **2,143 current-season matches** (476 GS + 1,667 SA). SA events: Premier Conf, Dev Conf, CYSL, Cornhusker. |
 | 30 | **NV** | NV South Youth Soccer League (NVSYSL) | Age-group based | GotSport | **40180** | **PARTIAL** | 40180 scraped: 316 staged (some team resolution issues). Total: 294 NV matches across 6 events. |
 | 31 | **NH** | NH Soccer League (NHSL) | Age-group based | GotSport | **46884** | **PARTIAL** | 46884 scraped: 404 matches. Total: 428 NH matches. Largest Wave 2a result. |
 | 32 | **NJ** | CJSL + NISL/NPL + SJSL + Inter-County + Mid NJ | Premier, Championship | GotSport | 45173, 40984, 44630, 41112, 40124, 44632, 43667, 39205, 45867, 41029, 45343, 40724, 44872, 40588 + more | **PARTIAL** | 21 leagues, 1,481 matches. Comprehensive NJ coverage. |
@@ -128,16 +129,16 @@
 | 36 | **ND** | Dakota Premier League (DPL) | TBD | GotSport (likely) | TBD | GS RANKS | Discover event ID (small) |
 | 37 | **OH** | OSPL/COPL/OCL + OPC + GCFYSL + WDDOA + FCL NPL | Premier I/II + divisions | GotSport | 45535, 40173, 46714, 40799, 45013, 40074, 43857, 43909, 43910, 33887, 45220, 36071 + more | **PARTIAL** | 19 leagues, 1,106 matches. Comprehensive OH coverage. |
 | 38 | **OK** | OK Premier League (OPL) + OPC | D1, D2 + Gold/Silver/Bronze | GotSport | **45220, 50796** | **PARTIAL** | 45220: 0 (between seasons), 50796: 38 matches. Total: 67 OK matches. |
-| 39 | **OR** | OYSA Competitive League | Premier Gold/Silver, Div 1/2 | SportsAffinity | N/A | GS RANKS | SportsAffinity event discovery (Wave 3) |
+| 39 | **OR** | OYSA Competitive League | Premier Gold/Silver, Div 1/2 | SportsAffinity + GotSport | 6 SA events (Fall+Spring) | **PARTIAL** | **10,046 current-season matches** (1,607 GS + 8,439 SA). SA events: Fall League, Dev League, Founders Cup, Valley Academy, Soccer 5, PYSA + Spring/Winter leagues. |
 | 40 | **PA-E** | APL/Acela + EPPL + PSSLU + MaxinMotion | Premier, Championship | GotSport | 43531, 40626, 46768, 41370, 44986, 34294, 40350, 48194, 41091, 44034, 39130 | **PARTIAL** | 14 leagues (PA combined), 907 matches. |
-| 41 | **PA-W** | PA West State Leagues | Divisions verified | SportsAffinity + GotSport | Part of PA-E above | **PARTIAL** | Included in PA totals. SportsAffinity for additional PA-W data. |
+| 41 | **PA-W** | PA West State Leagues | Divisions verified | SportsAffinity + GotSport | 10 SA events (Fall) | **PARTIAL** | **10,857 PA current-season matches** (+2,436 SA). SA events: Classic, Frontier, Div 4, Districts 1-5,7. GLC/NAL/E64 returned 0 (HTML parser issue — needs investigation). |
 | 42 | **RI** | Super Liga | 3 divisions per age/gender | **Custom PHP** (thesuperliga.com) | N/A | GS RANKS | Build RI adapter (Wave 7) |
 | 43 | **SC** | SCCL (SC Challenge League) | Challenge, Classic | GotSport | 45507, 40890 | **PARTIAL** | 2 leagues, 409 matches. Already discovered. |
 | 44 | **SD** | No statewide league | N/A | N/A | N/A | **NO LEAGUE** | Capture via USYS regional data |
 | 45 | **TN** | **TN State League (TSL)** | **Div 1, 2a, 2b, 3** | **SINC Sports** | N/A | GS RANKS | SINC adapter exists. March 2026 season start. |
 | 46 | **TX-N** | NTSSA competitive + EDPL + CCSAI | Multiple tiers | GotSport | 79367, 77871 | **PARTIAL** | Discover more TX-N event IDs |
 | 47 | **TX-S** | State Classic League + GCL | SCL Div I (East/West) | GotSport | 78565, 75263 | **PARTIAL** | Discover more TX-S event IDs |
-| 48 | **UT** | UYSA Premier League | Premier + tiers (320+ teams) | SportsAffinity | N/A | GS RANKS | SportsAffinity event discovery (Wave 3) |
+| 48 | **UT** | UYSA Premier League | Premier + tiers (320+ teams) | SportsAffinity + GotSport | 6 SA events (Fall+Spring) | **PARTIAL** | **5,759 current-season matches** (1,408 GS + 4,351 SA). SA events: Premier PL/SCL/IRL/XL (3,523!), SUIRL, UVCL, YDL, Platform, Challenger. |
 | 49 | **VT** | Vermont Soccer League (VSL) | D1, D2, D3 | GotSport | **39252** | **PARTIAL** | 39252 scraped: 148 matches. Total: 145 VT matches across 2 events. |
 | 50 | **VA** | NCSL + VCSL | Promo/relegation; Premier/Classic | Demosphere + GotSport | 4 GS leagues (125 matches) | **PARTIAL** | GotSport has 125 VA matches. Demosphere for full NCSL. |
 | 51 | **WA** | WPL + WSSL + EWSL | NPL + competitive tiers | GotSport | 44846, 44844, 45512, 44848, 40035, 39584, 40039, 38594, 39585, 48496, 40931, 46254 | **PARTIAL** | 12 leagues, 633 matches. Comprehensive WA coverage. |
@@ -228,15 +229,15 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 
 **Completion:** All 35 GotSport states have event IDs and at least one season scraped.
 
-### Wave 3: SportsAffinity Expansion (adapter BUILT)
-- [ ] GA Girls — expand existing
-- [ ] MN — MYSA State Competitive (6 tiers)
-- [ ] UT — UYSA Premier League (320+ teams)
-- [ ] OR — OYSA Competitive
-- [ ] NE — NE Youth Soccer
-- [ ] PA-W — PA West State Leagues
+### Wave 3: SportsAffinity Expansion (Session 99 — MOSTLY COMPLETE)
+- [ ] GA Girls — expand existing (Boys done, Girls GUIDs not yet discovered)
+- [x] MN — MYSA State Competitive: **940 matches** (3 SA events: Fall Competitive, Metro Alliance, Summer 2025)
+- [x] UT — UYSA Premier League: **5,759 matches** (6 SA events: Premier PL/SCL/IRL/XL, SUIRL, UVCL, YDL, Platform, Challenger)
+- [x] OR — OYSA Competitive: **10,046 matches** (6 SA events: Fall League, Dev League, Founders Cup, Valley, Soccer 5, PYSA + Spring/Winter)
+- [x] NE — NE Youth Soccer: **2,143 matches** (4 SA events: Premier Conf, Dev Conf, CYSL, Cornhusker)
+- [x] PA-W — PA West State Leagues: **10,857 PA matches** (10 SA events: Classic, Frontier, Div 4, Districts 1-5,7). GLC/NAL/E64 pending (HTML parser issue).
 
-**Completion:** All 6 SportsAffinity states at PRODUCTION.
+**Status:** 5 of 6 states scraped (Fall 2025 + Spring current). GA Girls remaining. PA-W GLC top-tier event needs parser fix.
 
 ### Wave 4: PlayMetrics Adapter (CO + SDL)
 - [ ] Build PlayMetrics adapter (Puppeteer, XHR intercept)

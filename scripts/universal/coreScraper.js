@@ -607,7 +607,7 @@ class CoreScraperEngine {
         event.type || "tournament",
         this.adapter.id,
         event.id.toString(),
-        this.adapter.transform.inferState ? this.adapter.transform.inferState() : null,
+        event.state || (this.adapter.transform.inferState ? this.adapter.transform.inferState(event.id) : null),
         rawData,
         false
       ]);

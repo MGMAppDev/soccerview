@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 21.0** | Last Updated: February 15, 2026 | Session 98b Complete
+> **Version 22.0** | Last Updated: February 16, 2026 | Session 99 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1184,6 +1184,76 @@ After onboarding ANY new state or league, verify in Expo Go:
 
 **Time budget:** Plan ~2 hours for QC + fixes per new state.
 
+### 42. NEVER ACCEPT "BLOCKED" — Find the Back Door (Session 99)
+
+**ABSOLUTE RULE: When a data source appears blocked, inaccessible, or difficult to scrape — FIND A WAY AROUND IT. No excuses. No deferring. No "we'll come back to it later."**
+
+**Minimum 5 techniques before deferring ANY data source:**
+1. Inspect Network tab for XHR/fetch API endpoints
+2. Check page source for embedded JSON (`<script>`, `window.__INITIAL_STATE__`)
+3. Try undocumented endpoints (`/api/`, `/json/`, `/data/`)
+4. Use Puppeteer stealth (`puppeteer-extra-plugin-stealth`)
+5. Check mobile endpoints and vary User-Agent strings
+6. Look for embed/widget URLs with public access
+7. Search WebSearch for API documentation by other developers
+8. Check Wayback Machine for historical data
+9. Search for alternative platforms hosting the same league data
+10. PDF parsing, OCR, or other extraction methods
+
+**"Between seasons" = TRY AGAIN LATER with specific retry date — NOT "skip permanently."**
+
+**Before deferring:** Document every technique tried, explain why each failed, propose next steps, get USER APPROVAL.
+
+**Anti-patterns (BANNED):**
+- ❌ Accepting "blocked" without trying 5+ approaches
+- ❌ Marking a state as "GS RANKS" when league data exists somewhere online
+- ❌ Deferring without a specific retry plan and date
+- ❌ Accepting empty scrape results without investigating why
+
+See [docs/1.1-GUARDRAILS_v2.md](docs/1.1-GUARDRAILS_v2.md) Section 18 for full policy.
+
+### 43. Season Awareness — ALWAYS Scrape the FULL Current Season (Session 99)
+
+**The SoccerView season runs August 1 → July 31.** Every scraping task MUST ensure coverage of BOTH halves:
+
+| Month | Season Phase | Scraping Action |
+|-------|-------------|----------------|
+| Aug-Nov | Fall (PEAK) | Scrape Fall events IMMEDIATELY |
+| Dec-Jan | Winter break | Scrape winter leagues where active |
+| Feb-Mar | Spring ramp-up | Discover Spring event IDs |
+| Apr-Jun | Spring season | Scrape Spring events |
+| Jul | Off-season | Plan next season |
+
+**Critical Rules:**
+1. NEVER look only at "current" or "upcoming" events — check Fall data too
+2. "Between seasons" = look for the OTHER half, NOT "no data exists"
+3. `year` field in staticEvents = season END year (2026), NOT calendar year
+4. SportsAffinity uses DIFFERENT subdomains per season (e.g., `gs-fall25{orgcode}`)
+5. GotSport uses SEPARATE event IDs for Fall vs Spring
+6. 0 matches = investigate immediately — wrong season? wrong event ID?
+7. Every new state MUST include BOTH Fall + Spring events
+
+**Root Cause (Session 99):** Season was documented as a data property (ELO start date) but NOT as an operational requirement (must scrape both halves). An entire session was wasted configuring only Spring 2026 events while Fall 2025 was ignored.
+
+See [docs/1.1-GUARDRAILS_v2.md](docs/1.1-GUARDRAILS_v2.md) Section 19 for full policy.
+
+### 44. Session Checkpoint Discipline — Survive Rate Limits (Session 99)
+
+**After every major task completion, update `.claude/hooks/session_checkpoint.md`.**
+
+This file is:
+- Read automatically on every session start/resume (via `session-start.sh`)
+- Referenced after every context compaction (via `CRITICAL_RULES.md`)
+- The ONLY reliable way to preserve progress across rate limits
+
+**What to include:**
+1. What was completed (with specific metrics/counts)
+2. What's in progress (with current state)
+3. Key findings that must not be lost (specific numbers, IDs, GUIDs)
+4. Files modified this session
+
+**Cost:** ~30 seconds per checkpoint write. **Value:** Prevents hours of repeated work.
+
 ---
 
 ## Quick Reference
@@ -1192,10 +1262,10 @@ After onboarding ANY new state or league, verify in Expo Go:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 150,111 | Team records (Session 98: +1,642 from ECNL + FL + TX leagues) |
-| `matches_v2` | 426,513 active | Match results (~5,297 soft-deleted) |
+| `teams_v2` | 156,518 | Team records (Session 99: +6,407 from Wave 3 SA expansion) |
+| `matches_v2` | 440,898 active | Match results (~5,297 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 304 | League metadata (Session 98: +23 FL + TX leagues) |
+| `leagues` | 319 | League metadata (Session 99: +15 from Wave 3 SA expansion) |
 | `tournaments` | 1,754 | Tournament metadata |
 | `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
 | `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
@@ -1641,6 +1711,49 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 99 - Wave 3 SportsAffinity: Full State-Level League Scrape (February 16, 2026) - COMPLETE ✅
+
+**Goal:** Scrape ALL planned SportsAffinity state-level leagues (MN, UT, OR, NE, PA-W) for both Fall 2025 and Spring 2026. Discover Fall 2025 GUIDs. Create session checkpoint system for rate-limit resilience.
+
+**Root Cause Identified:** Wave 3 SA state-level leagues were configured in the adapter (35 events) but only GA Boys and some OR had ever been scraped. Additionally, Fall 2025 events (Aug-Dec — the PEAK half of the current season) were completely missing because only Spring/current GUIDs had been discovered.
+
+**Wave 3 Results:**
+
+| State | Before | After | Delta | SA Events Scraped |
+|-------|--------|-------|-------|-------------------|
+| MN | 828 | **940** | +112 | 3 (Fall Competitive, Metro Alliance, Summer 2025) |
+| UT | 1,408 | **5,759** | **+4,351** | 6 (Premier PL/SCL/IRL/XL, SUIRL, UVCL, YDL, Platform, Challenger) |
+| OR | 1,607 | **10,046** | **+8,439** | 6 (Fall League, Dev League, Founders Cup, Valley, Soccer 5, PYSA + Spring/Winter) |
+| NE | 476 | **2,143** | **+1,667** | 4 (Premier Conf, Dev Conf, CYSL, Cornhusker) |
+| PA | 8,421 | **10,857** | **+2,436** | 10 (Classic, Frontier, Div 4, Districts 1-5,7) |
+
+**Overall:**
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| matches_v2 (active) | 427,220 | **440,898** | **+13,678** |
+| teams_v2 | ~150,111 | **156,518** | **+6,407** |
+| leagues | 304 | **319** | +15 |
+| SA adapter events | 35 | **64** | +29 (Fall 2025 GUIDs) |
+
+**Key Accomplishments:**
+- Discovered 29 Fall 2025 tournament GUIDs via `?tourtab=past` URL parameter
+- Expanded SA adapter from 35 to 64 staticEvents
+- Scraped 15,539 total SA matches (4,306 Spring + 11,233 Fall)
+- Processed 11,713 matches into production, 4,233 new teams, 20 new leagues/tournaments
+- Fixed 7,052 team state assignments (unknown → correct state)
+- Created session checkpoint system (`.claude/hooks/session_checkpoint.md`)
+- Added Season Awareness documentation (GUARDRAILS S19, Principle 43/44, Playbook v8.0)
+- ELO recalculated with all new data, all 5 views refreshed
+
+**Known Issue:** PA-W GLC/NAL/E64 top-tier event returned 0 matches — flight parser found 23 flights with null agecodes and "Unknown" names. Different HTML structure needs investigation.
+
+**Files Modified:** `scripts/adapters/sportsaffinity.js` (35→64 events), `CLAUDE.md`, `docs/3-STATE_COVERAGE_CHECKLIST.md` (v3.2), `docs/1.1-GUARDRAILS_v2.md` (S19), `docs/3-DATA_SCRAPING_PLAYBOOK.md` (v8.0), `.claude/hooks/CRITICAL_RULES.md`, `.claude/hooks/session-start.sh`, `.claude/hooks/session-start.txt`
+**Files Created:** `.claude/hooks/session_checkpoint.md`, `scripts/_debug/audit_season_coverage.cjs`, `scripts/_debug/check_wave_coverage.cjs`, `scripts/_debug/scrape_fall2025_batch.sh`, `scripts/_debug/check_mn_flights.cjs`
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
 
 ### Session 98b - Fix App Bugs + Nationwide Coverage Master Plan (February 15, 2026) - COMPLETE ✅
 

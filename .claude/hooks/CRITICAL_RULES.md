@@ -103,7 +103,24 @@ This file is re-injected after every context compaction. It must stay current.
 - When ending a session → check if this file needs updating (in GUARDRAILS end-of-session checklist).
 - The pre-edit hook will remind you when editing CLAUDE.md or GUARDRAILS.
 
+## SEASON AWARENESS — MOST CRITICAL OPERATIONAL RULE
+- **Season = August 1 → July 31.** Current season: 2025-26.
+- ALWAYS scrape BOTH halves: Fall (Aug–Dec 2025) AND Spring (Feb–Jun 2026).
+- "Between seasons" = look for the OTHER half. NOT "no data exists."
+- `year` field in staticEvents = season END year (2026), NOT event calendar year.
+- SportsAffinity: DIFFERENT subdomains per season (e.g., `gs-fall25{orgcode}` for Fall 2025).
+- GotSport: SEPARATE event IDs for Fall vs Spring seasons.
+- Before ANY scraping task: "Do we have Fall 2025 data for this state?" If not → find it.
+- NEVER accept 0 matches as "between seasons" without checking the other season half.
+
+## SESSION CONTINUITY — Survive Rate Limits
+- After completing each major task, UPDATE `.claude/hooks/session_checkpoint.md`.
+- On session start/resume, READ `session_checkpoint.md` FIRST.
+- Checkpoint must include: completed tasks, in-progress work, key findings with specific numbers.
+- This file survives rate limits, compaction, and session restarts.
+- If resuming from context loss, the checkpoint is your ground truth.
+
 ## AFTER READING THIS
-Context compaction just occurred. If working on database schema, new adapters,
-team merging, or UI modifications — re-read CLAUDE.md and docs/1.1-GUARDRAILS_v2.md
-for full context before proceeding.
+Context compaction just occurred. READ `.claude/hooks/session_checkpoint.md` for current progress.
+If working on database schema, new adapters, team merging, or UI modifications —
+re-read CLAUDE.md and docs/1.1-GUARDRAILS_v2.md for full context before proceeding.

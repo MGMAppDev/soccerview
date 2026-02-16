@@ -1,6 +1,6 @@
 ## SESSION START — Mandatory Actions
 1. READ docs/1.1-GUARDRAILS_v2.md IN FULL before taking any action.
-2. READ CLAUDE.md Critical Principles section (Principles 1-41).
+2. READ CLAUDE.md Critical Principles section (Principles 1-44).
 3. Check git status below for uncommitted work from previous sessions.
 4. If uncommitted changes exist, address them FIRST before starting new work.
 5. Ask user for current priorities before starting new work.
@@ -8,3 +8,5 @@
 7. Every fix must be UNIVERSAL (all affected records), not specific (one team).
 8. Three-layer verification: Intake → Processing → Presentation.
 9. "Events" is banned. Use "leagues" or "tournaments" only.
+10. READ .claude/hooks/session_checkpoint.md for in-progress work from previous context.
+11. SEASON = Aug 1 → Jul 31. Current: 2025-26. ALWAYS scrape BOTH Fall (Aug-Dec) AND Spring (Feb-Jun). "Between seasons" means look for the OTHER half, NOT "no data exists."

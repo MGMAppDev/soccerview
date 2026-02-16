@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 7.0** | Updated: February 14, 2026 | Post-Expansion QC Protocol (Session 96)
+> **Version 8.0** | Updated: February 15, 2026 | Season Completeness Check (Session 99)
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -18,6 +18,11 @@
 >
 > **⚠️ CRITICAL (Session 92 QC): DUAL-SYSTEM ARCHITECTURE**
 > SoccerView has TWO independent data pipelines. See "Dual-System Overview" below.
+>
+> **🔥 CRITICAL (Session 99): NEVER ACCEPT "BLOCKED"**
+> If a data source appears inaccessible, you MUST try at least 5 different techniques before deferring.
+> Stealth Puppeteer, XHR interception, mobile endpoints, embed URLs, WebSearch for APIs.
+> See [GUARDRAILS Section 18](1.1-GUARDRAILS_v2.md) for the complete policy.
 > Match data → Heavy pipeline → Rankings/ELO. Standings data → Lightweight absorption → League Standings page.
 
 ---
@@ -80,6 +85,46 @@ See [ARCHITECTURE.md](1.2-ARCHITECTURE.md) for full dual-system diagram.
 
 ---
 
+## Season Completeness Check (Session 99 — MANDATORY)
+
+**Before scraping ANY state or source, verify coverage of the FULL current season (Aug 1 → Jul 31).**
+
+### Pre-Scrape Checklist
+
+```
+□ Current season: August 1, 2025 → July 31, 2026
+□ Do we have FALL (Aug-Dec 2025) data for this state/source?
+□ Do we have SPRING (Feb-Jun 2026) data for this state/source?
+□ Are we using the correct event IDs for BOTH seasons?
+□ If the platform uses different subdomains per season, do we have ALL?
+□ If 0 matches returned, have we checked the other season half?
+```
+
+### Platform-Specific Season Notes
+
+| Platform | Fall vs Spring |
+|----------|----------------|
+| **GotSport** | Separate event IDs for Fall and Spring |
+| **SportsAffinity** | Different subdomains per season (e.g., `gs-fall25{orgcode}`) |
+| **SINC Sports** | Same platform, separate league IDs per season |
+| **MLS Next** | Single season config (Modular11 handles both) |
+| **Heartland** | Same platform, continuous season |
+| **TotalGlobalSports** | Single event per season (ECNL) |
+
+### What "Between Seasons" Actually Means
+
+| Situation | Wrong Conclusion | Right Action |
+|-----------|-----------------|-------------|
+| Spring event shows 0 matches in Feb | "Between seasons" | Check Fall events — the first half of this season |
+| No events listed on current page | "League is inactive" | Check archived/past events, different subdomain |
+| Event has future dates only | "League hasn't started" | The Spring half hasn't — but Fall half already played |
+
+### `year` Field = Season END Year
+
+In staticEvents config, `year: 2026` means the 2025-26 season. This is the season ENDING year, not the calendar year of the event. A Fall 2025 event uses `year: 2026`.
+
+---
+
 ## Universal Scraper Framework (Session 57) - PREFERRED
 
 **Adding a new data source now requires only a ~50 line config file, not a custom script.**
@@ -89,11 +134,14 @@ See [ARCHITECTURE.md](1.2-ARCHITECTURE.md) for full dual-system diagram.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     SOURCE ADAPTERS                              │
-│  /scripts/adapters/gotsport.js    (Cheerio - static HTML)       │
-│  /scripts/adapters/htgsports.js   (Puppeteer - JavaScript SPA)  │
-│  /scripts/adapters/heartland.js   (Puppeteer - CGI via AJAX)     │
-│  /scripts/adapters/sincsports.js  (Puppeteer - Bootstrap grid)  │
-│  /scripts/adapters/_template.js   (Template for new sources)    │
+│  /scripts/adapters/gotsport.js         (Cheerio - static HTML)       │
+│  /scripts/adapters/htgsports.js        (Puppeteer - JavaScript SPA)  │
+│  /scripts/adapters/heartland.js        (Puppeteer - CGI via AJAX)    │
+│  /scripts/adapters/sincsports.js       (Puppeteer - Bootstrap grid)  │
+│  /scripts/adapters/mlsnext.js          (Puppeteer - Modular11 SPA)   │
+│  /scripts/adapters/sportsaffinity.js   (Cheerio - multi-state)       │
+│  /scripts/adapters/totalglobalsports.js (Puppeteer+stealth - ECNL)  │
+│  /scripts/adapters/_template.js        (Template for new sources)    │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
