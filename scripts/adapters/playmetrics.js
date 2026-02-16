@@ -88,7 +88,7 @@ export default {
   // MATCH KEY FORMAT
   // =========================================
 
-  matchKeyFormat: "playmetrics-{gameId}",
+  matchKeyFormat: "playmetrics-{eventId}-{matchId}",
 
   // =========================================
   // EVENT DISCOVERY
@@ -113,23 +113,6 @@ export default {
         leagueId: "1017-1482-91a2b806",
         state: "CO",
       },
-      {
-        id: "cal-spring-2025",
-        name: "Colorado Advanced League Spring 2025",
-        type: "league",
-        year: 2025,
-        leagueId: "1017-1253-d76f4cb2",
-        state: "CO",
-      },
-      {
-        id: "cal-fall-2024",
-        name: "Colorado Advanced League Fall 2024",
-        type: "league",
-        year: 2025,
-        leagueId: "1017-1088-827359b7",
-        state: "CO",
-      },
-
       // Sporting Development League (SDL)
       {
         id: "sdl-fall-2025-boys",
@@ -168,12 +151,19 @@ export default {
       if (!divisionText) return { gender: null, ageGroup: null };
 
       // Division format: "U19G Premier 1", "U17B Elite", "U15G Platinum/Gold"
+      // Gender letter immediately follows age number: U19G = Girls, U17B = Boys
+      const ageGenderMatch = divisionText.match(/U(\d+)([BG])\b/i);
       let gender = null;
-      if (divisionText.includes("G")) gender = "Girls";
-      else if (divisionText.includes("B")) gender = "Boys";
+      let ageGroup = null;
 
-      const ageMatch = divisionText.match(/U(\d+)/i);
-      const ageGroup = ageMatch ? `U${ageMatch[1]}` : null;
+      if (ageGenderMatch) {
+        ageGroup = `U${ageGenderMatch[1]}`;
+        gender = ageGenderMatch[2].toUpperCase() === "G" ? "Girls" : "Boys";
+      } else {
+        // Fallback: just extract age
+        const ageMatch = divisionText.match(/U(\d+)/i);
+        ageGroup = ageMatch ? `U${ageMatch[1]}` : null;
+      }
 
       return { gender, ageGroup };
     },
@@ -247,9 +237,12 @@ export default {
 
     isValidMatch: (match) => {
       if (!match.homeTeamName || !match.awayTeamName) return false;
+      if (!match.matchDate) return false; // No date = "Not Scheduled" section
       if (match.homeTeamName === match.awayTeamName) return false;
       if (match.homeTeamName.toLowerCase() === "tbd") return false;
       if (match.awayTeamName.toLowerCase() === "tbd") return false;
+      // Filter out withdrawn teams
+      if (match.homeTeamName.includes("TEAM DROP") || match.awayTeamName.includes("TEAM DROP")) return false;
       return true;
     },
   },
@@ -307,77 +300,127 @@ export default {
           await page.goto(divisionUrl, { waitUntil: "networkidle2", timeout: 60000 });
           await new Promise(resolve => setTimeout(resolve, 5000));
 
-          // Extract matches from tables
+          // Extract matches using DOM-aware date association
+          // PlayMetrics structure: <div class="schedule__date"> contains both
+          // the <h5> date header AND the <table> with matches for that date
           const divisionMatches = await page.evaluate((divName) => {
             const matches = [];
-            const tables = Array.from(document.querySelectorAll("table"));
+            const datePattern = /(\w+)\s+(\d+),\s+(\d{4})/;
 
-            // Extract all dates from page text using regex
-            const bodyText = document.body.textContent;
-            const datePattern = /(\w+day),\s+(\w+)\s+(\d+),\s+(\d{4})/g;
-            const allDates = [];
-            let dateMatch;
-            while ((dateMatch = datePattern.exec(bodyText)) !== null) {
-              allDates.push(dateMatch[0]); // Full date string
-            }
+            // Primary: Use schedule__date containers (each has date + table)
+            const dateContainers = document.querySelectorAll(".schedule__date");
 
-            let dateIndex = 0;
+            if (dateContainers.length > 0) {
+              for (const container of dateContainers) {
+                // Extract date from the H5 inside this container
+                const h5 = container.querySelector("h5");
+                const dateText = h5 ? h5.textContent.trim() : null;
 
-            // Skip first table (standings table)
-            for (let t = 1; t < tables.length; t++) {
-              const table = tables[t];
-              const rows = table.querySelectorAll("tr");
+                // Find the schedule table inside this container
+                const table = container.querySelector("table");
+                if (!table) continue;
 
-              // Check if this is a schedule table (has specific headers)
-              const headers = Array.from(table.querySelectorAll("th")).map(th => th.textContent.trim());
-              const isScheduleTable = headers.includes("Home Team") && headers.includes("Away Team");
+                const headers = Array.from(table.querySelectorAll("th")).map(th => th.textContent.trim());
+                if (!headers.includes("Home Team") || !headers.includes("Away Team")) continue;
 
-              if (!isScheduleTable) continue;
+                // Find column indices
+                const timeIdx = headers.indexOf("Time");
+                const gameIdx = headers.indexOf("Game #");
+                const fieldIdx = headers.indexOf("Field");
+                const homeIdx = headers.findIndex(h => h.includes("Home Team"));
+                const awayIdx = headers.findIndex(h => h.includes("Away Team"));
+                const scoreIdx = headers.indexOf("Score");
+                const statusIdx = headers.indexOf("Status");
 
-              // Each schedule table corresponds to one date
-              // Use the next date from our sequential list
-              const currentDate = allDates[dateIndex] || null;
-              if (allDates.length > dateIndex + 1) {
-                dateIndex++; // Move to next date for next table
+                const rows = table.querySelectorAll("tr");
+                for (let r = 1; r < rows.length; r++) {
+                  const cells = Array.from(rows[r].querySelectorAll("td"));
+                  if (cells.length < 5) continue;
+
+                  const time = cells[timeIdx]?.textContent.trim() || null;
+                  const gameId = cells[gameIdx]?.textContent.trim() || null;
+                  const homeTeam = cells[homeIdx]?.textContent.trim() || null;
+                  const awayTeam = cells[awayIdx]?.textContent.trim() || null;
+                  const score = cells[scoreIdx]?.textContent.trim() || null;
+                  const status = cells[statusIdx]?.textContent.trim() || null;
+                  const field = cells[fieldIdx]?.textContent.trim() || null;
+
+                  if (!gameId || !homeTeam || !awayTeam) continue;
+
+                  matches.push({
+                    time,
+                    gameId,
+                    field,
+                    homeTeam,
+                    awayTeam,
+                    score,
+                    status,
+                    division: divName,
+                    matchDate: dateText,
+                  });
+                }
               }
+            } else {
+              // Fallback: walk tables and find dates from previous siblings
+              const tables = Array.from(document.querySelectorAll("table"));
+              for (const table of tables) {
+                const headers = Array.from(table.querySelectorAll("th")).map(th => th.textContent.trim());
+                if (!headers.includes("Home Team") || !headers.includes("Away Team")) continue;
 
-              // Find column indices
-              const timeIdx = headers.indexOf("Time");
-              const gameIdx = headers.indexOf("Game #");
-              const fieldIdx = headers.indexOf("Field");
-              const homeIdx = headers.findIndex(h => h.includes("Home Team"));
-              const awayIdx = headers.findIndex(h => h.includes("Away Team"));
-              const scoreIdx = headers.indexOf("Score");
-              const statusIdx = headers.indexOf("Status");
+                // Find date by walking up/back through DOM
+                let dateText = null;
+                let el = table.parentElement;
+                while (el && !dateText) {
+                  const prev = el.previousElementSibling;
+                  if (prev) {
+                    const h5 = prev.querySelector ? prev.querySelector("h5") : null;
+                    if (h5 && datePattern.test(h5.textContent)) {
+                      dateText = h5.textContent.trim();
+                      break;
+                    }
+                    if (datePattern.test(prev.textContent)) {
+                      const match = prev.textContent.match(/\w+day,\s+\w+\s+\d+,\s+\d{4}/);
+                      if (match) { dateText = match[0]; break; }
+                    }
+                  }
+                  el = el.parentElement;
+                }
 
-              // Parse each row (skip header)
-              for (let r = 1; r < rows.length; r++) {
-                const row = rows[r];
-                const cells = Array.from(row.querySelectorAll("td"));
+                const timeIdx = headers.indexOf("Time");
+                const gameIdx = headers.indexOf("Game #");
+                const fieldIdx = headers.indexOf("Field");
+                const homeIdx = headers.findIndex(h => h.includes("Home Team"));
+                const awayIdx = headers.findIndex(h => h.includes("Away Team"));
+                const scoreIdx = headers.indexOf("Score");
+                const statusIdx = headers.indexOf("Status");
 
-                if (cells.length < 5) continue; // Skip incomplete rows
+                const rows = table.querySelectorAll("tr");
+                for (let r = 1; r < rows.length; r++) {
+                  const cells = Array.from(rows[r].querySelectorAll("td"));
+                  if (cells.length < 5) continue;
 
-                const time = cells[timeIdx]?.textContent.trim() || null;
-                const gameId = cells[gameIdx]?.textContent.trim() || null;
-                const field = cells[fieldIdx]?.textContent.trim() || null;
-                const homeTeam = cells[homeIdx]?.textContent.trim() || null;
-                const awayTeam = cells[awayIdx]?.textContent.trim() || null;
-                const score = cells[scoreIdx]?.textContent.trim() || null;
-                const status = cells[statusIdx]?.textContent.trim() || null;
+                  const time = cells[timeIdx]?.textContent.trim() || null;
+                  const gameId = cells[gameIdx]?.textContent.trim() || null;
+                  const homeTeam = cells[homeIdx]?.textContent.trim() || null;
+                  const awayTeam = cells[awayIdx]?.textContent.trim() || null;
+                  const score = cells[scoreIdx]?.textContent.trim() || null;
+                  const status = cells[statusIdx]?.textContent.trim() || null;
+                  const field = cells[fieldIdx]?.textContent.trim() || null;
 
-                if (!gameId || !homeTeam || !awayTeam) continue;
+                  if (!gameId || !homeTeam || !awayTeam) continue;
 
-                matches.push({
-                  time,
-                  gameId,
-                  field,
-                  homeTeam,
-                  awayTeam,
-                  score,
-                  status,
-                  division: divName,
-                  matchDate: currentDate, // Pass date header to match
-                });
+                  matches.push({
+                    time,
+                    gameId,
+                    field,
+                    homeTeam,
+                    awayTeam,
+                    score,
+                    status,
+                    division: divName,
+                    matchDate: dateText,
+                  });
+                }
               }
             }
 
@@ -395,12 +438,18 @@ export default {
               // Parse date from section header (format: "Saturday, August 23, 2025")
               const parsedDate = engine.adapter.transform.parseDate(m.matchDate);
 
+              // Validate time: must look like HH:MM or H:MM AM/PM, else null
+              let matchTime = m.time;
+              if (matchTime && !/^\d{1,2}:\d{2}/.test(matchTime)) {
+                matchTime = null; // Not a valid time (e.g., "-", "TBD")
+              }
+
               allMatches.push({
                 eventId: event.id,
                 eventName: event.name,
                 matchId: m.gameId,
                 matchDate: parsedDate,
-                matchTime: m.time === "-" ? null : m.time, // Convert "-" to null
+                matchTime,
                 homeTeamName: m.homeTeam,
                 awayTeamName: m.awayTeam,
                 homeScore,

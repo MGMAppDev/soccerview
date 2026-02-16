@@ -1,78 +1,51 @@
 # Session Checkpoint — Auto-Updated
-Last Updated: 2026-02-16T20:30:00Z
-Session: 102 — IN PROGRESS ⚙️
+Last Updated: 2026-02-16T23:30:00Z
+Session: 102 — COMPLETE ✅
 
 ## Completed This Session
-- **Wave 4: PlayMetrics Adapter (PARTIAL)**
-  - ✅ Built PlayMetrics adapter (playmetrics.js) using Puppeteer
-  - ✅ Scraped CO CAL Fall 2025: 115 divisions discovered
-  - ✅ Adapter structure working (division discovery + table parsing)
-  - ⚠️ **DEBUGGING NEEDED:** Date extraction + staging batch insert issue
-    - Date extraction regex working but only capturing 1-2 dates out of many
-    - Batch INSERT claims "4,356 staged" but only 1-2 actually insert to staging_games
-    - Issue: ON CONFLICT or silent failures during batch processing
-  - ✅ Added 'playmetrics' to intakeValidator.js KNOWN_PLATFORMS
-  - ✅ 5 staticEvents configured (CO CAL Fall/Spring 2024-2025 + SDL Boys/Girls)
+- **Wave 4: PlayMetrics Adapter — COMPLETE**
+  - ✅ Diagnosed and fixed 3 root cause bugs:
+    1. matchKeyFormat used `{gameId}` but generateMatchKey() only replaces `{matchId}` → all matches got same key
+    2. `result.rowCount || batch.length` in coreScraper.js — 0 is falsy, fell through to batch.length
+    3. Date extraction used body text regex instead of DOM-aware `schedule__date` container traversal
+  - ✅ Additional fixes: parseDivision false gender matches, time validation, double-counting matchesStaged, TEAM DROP filter
+  - ✅ Scraped CO CAL Fall 2025: 4,764 matches (108 divisions)
+  - ✅ Scraped SDL Boys: 320 matches (U11B: 160, U12B: 160)
+  - ✅ Scraped SDL Girls: 29 matches (U12G only)
+  - ✅ Processed all through fastProcessStaging.cjs: 5,113 matches inserted
+  - ✅ ELO recalculated: 219,115 current-season matches, 67,615 teams updated
+  - ✅ All 5 materialized views refreshed
+  - ✅ Removed historical season staticEvents (ELO is current-season only)
+  - ✅ Added PlayMetrics to daily-data-sync.yml (8th sync job)
+  - ✅ coreScraper.js bugs fixed (rowCount falsy check + double-counting)
 
 - **Files Created:**
-  - `scripts/adapters/playmetrics.js` — PlayMetrics adapter v1.0 (Puppeteer-based)
-  - `scripts/_debug/probe_playmetrics.cjs` — Initial structure probe
-  - `scripts/_debug/probe_playmetrics_v2.cjs` — Enhanced probe (division structure)
-  - `scripts/_debug/probe_playmetrics_v3.cjs` — Division deep dive (match tables)
-  - `scripts/_debug/playmetrics_test_run.log`, `playmetrics_real_run.log`, `playmetrics_final.log` — Test run logs
+  - `scripts/_debug/probe_playmetrics_dates.cjs` — DOM structure probe
+  - `scripts/_debug/probe_sdl_leagues.cjs` — SDL league scope probe
+  - `scripts/_debug/playmetrics_cal_spring2025.log` — Test run log
 
 - **Files Modified:**
-  - `scripts/universal/intakeValidator.js` — Added 'playmetrics' to KNOWN_PLATFORMS
-  - `scripts/adapters/playmetrics.js` — 3 iterations (date extraction logic + time NULL handling)
+  - `scripts/adapters/playmetrics.js` — v2.0: DOM-aware scraping, fixed matchKeyFormat/parseDivision/isValidMatch
+  - `scripts/universal/coreScraper.js` — Fixed rowCount falsy check + removed double-counting
+  - `.github/workflows/daily-data-sync.yml` — Added sync-playmetrics job (8th source)
+  - `scripts/universal/intakeValidator.js` — Added 'playmetrics' to KNOWN_PLATFORMS (previous session)
+  - `.claude/hooks/session_checkpoint.md` — This file
+  - `docs/3-STATE_COVERAGE_CHECKLIST.md` — v4.2
+  - `CLAUDE.md` — v23.2
 
-## Current Issues (Blocking Wave 4 Completion)
-1. **Date extraction:** Sequential regex extraction from body text only capturing 1-2 dates
-   - Probe shows dates like "Saturday, August 23, 2025" in page text
-   - Adapter extracts all dates via regex but association with tables failing
-   - **Root cause:** Unknown — needs debugging with console.log in page.evaluate()
+## Key Metrics
 
-2. **Batch insert mystery:** Scraper claims "Staged 4356" but only 1-2 records in staging_games
-   - coreScraper.js writeToStaging() uses ON CONFLICT (source_match_key) DO NOTHING
-   - No errors logged, but `result.rowCount` must be returning ~0 for most batches
-   - **Root cause:** Likely duplicate source_match_key generation or NULL dates blocking INSERT
-
-## Next Session (102 continuation) Priorities
-1. **DEBUG PlayMetrics adapter** (2-3 hours estimated)
-   - Add verbose logging to date extraction in page.evaluate()
-   - Log source_match_key generation for all matches
-   - Test with single division to isolate issue
-   - Check if game IDs are truly unique across divisions
-
-2. **Wave 4 completion after fix:**
-   - Re-run CO CAL Fall 2025 scrape (should get ~4,800 matches)
-   - Process through fastProcessStaging.cjs
-   - Add SDL events (U11/U12 Boys + Girls)
-   - Run ELO recalculation + refresh views
-
-3. **If PlayMetrics fix takes >3 hours:** Move to Wave 5 (Demosphere) and circle back
-
-## Key Metrics (Unchanged from Session 101)
 | Metric | Session 101 | Session 102 |
 |--------|-------------|-------------|
-| matches_v2 (active) | 474,797 | **474,799** (+2 PlayMetrics test) |
-| teams_v2 | 162,327 | **162,329** (+2 PlayMetrics) |
-| leagues | 407 | **408** (+1 CO CAL) |
-| Adapters built | 7 | **7.5** (PlayMetrics partial) |
+| matches_v2 (active) | 474,797 | **479,910** (+5,113) |
+| teams_v2 | 162,327 | **164,599** (+2,272) |
+| leagues | 407 | **410** (+3: CAL Fall 2025 + SDL Boys + SDL Girls) |
+| Adapters built | 7 | **8** (added PlayMetrics) |
+| Pipeline sync jobs | 7 | **8** (added sync-playmetrics) |
+| CO teams in rankings | ~320 | **1,396** |
 
-## Files to Commit
-- `scripts/adapters/playmetrics.js`
-- `scripts/universal/intakeValidator.js`
-- `.claude/hooks/session_checkpoint.md`
-- `docs/3-STATE_COVERAGE_CHECKLIST.md` (update with Wave 4 status)
-- `CLAUDE.md` (version bump if needed)
-
-## Wave 4 Status
-- **PlayMetrics adapter:** 75% complete (functional structure, needs debugging)
-- **CO coverage:** NOT upgraded (still PARTIAL, needs working adapter)
-- **SDL coverage:** NOT started (depends on CO fix)
-- **Estimated time to complete:** 2-3 hours debugging + 1 hour scraping/processing = 3-4 hours
-
-## Session Duration
-Started: 2026-02-16T16:00:00Z
-Current: 2026-02-16T20:30:00Z
-Elapsed: ~4.5 hours
+## Next Session (103) Priorities
+1. **Wave 5: Demosphere Adapter** (VA/DC + IL + WI)
+2. **Wave 6: Squadi Adapter** (AR)
+3. Fix double-prefix team name failures (74 matches from Wave 2d)
+4. TN + WV retries (March 2026)

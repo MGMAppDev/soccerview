@@ -573,7 +573,7 @@ class CoreScraperEngine {
         `;
 
         const result = await pool.query(sql, values);
-        totalInserted += result.rowCount || batch.length;
+        totalInserted += result.rowCount;
 
       } catch (error) {
         console.error(`   ❌ Staging insert error: ${error.message}`);
@@ -837,7 +837,6 @@ class CoreScraperEngine {
           console.log(`   ✅ Staged ${inserted} matches`);
           await this.registerEventToStaging(event, matches.length);
           this.stats.eventsSuccessful++;
-          this.stats.matchesStaged += inserted;
 
           // UNIVERSAL FIX: Only mark as processed if we got data
           // Events with 0 matches (future events, empty brackets) should be retried
