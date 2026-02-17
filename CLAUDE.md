@@ -2271,7 +2271,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 104. Read CLAUDE.md (v23.3), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.1). Current: 495,178 active matches, 169,641 teams, 414 leagues, 9 adapters, 9 pipeline sync jobs. Wave 5 COMPLETE (Demosphere adapter built, NCSL VA/DC +10,882 matches, WI WYSA +4,394 matches via PlayMetrics). Follow Wave plan. Priority order: (1) Wave 6 Squadi adapter (AR), (2) Wave 7 custom platforms (RI, HI), (3) Fix double-prefix team name failures (74 matches), (4) TN/WV retries (March 2026). Wave discipline: complete each wave before starting next."
+> "Resume SoccerView Session 104. Read CLAUDE.md (v23.3), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.2). Current: 495,178 active matches, 169,641 teams, 414 leagues, 9 adapters, 9 pipeline sync jobs. Wave 5 COMPLETE. **PRIORITY 1: IL/VA/WI gap fill** — Session 103 research discovered 17 premier league event IDs NOT yet scraped (5 IL GotSport NISL events, 3 VA GotSport events, 9 WI PlayMetrics events). Add to existing adapters and scrape FIRST. See session_checkpoint.md 'Discovered Gaps' section for all IDs. **PRIORITY 2: Build Squadi adapter (AR).** Expected: +4,000-10,500 matches total. See STATE_COVERAGE_CHECKLIST.md Session 104 for full plan."
 
 ---
 

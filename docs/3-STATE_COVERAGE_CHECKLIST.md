@@ -50,14 +50,60 @@
 
 ---
 
-#### Session 104: Squadi Adapter (AR)
+#### Session 104: IL/VA/WI Gap Fill + Squadi Adapter (AR)
+
+**Phase 1: IL/VA/WI Gap Fill** (~1 hour) — Discovered via Session 103 research agents. DATA INTEGRITY demands we scrape known premier leagues, not skip them.
+
+- [ ] **IL — Add 5 NISL + SLYSA events to GotSport adapter** (NISL = 17,000 players, 1,300 teams)
+  - `44630` — NISL NPL Fall 2025
+  - `40124` — NISL NPL Spring 2025
+  - `44632` — NISL Club & Conference Fall 2025
+  - `41112` — NISL Club & Conference Spring 2025
+  - `45100` — SLYSA IL Central Division Fall 2025
+  - Scrape all 5, process via fastProcessStaging
+  - Expected: **+2,000-5,000 IL matches** (NISL is massive)
+
+- [ ] **VA — Add 3 VCSL/VPSL/TASL events to GotSport adapter**
+  - `44587` — VCSL (Virginia Club Soccer League) 2025-26 (20+ clubs)
+  - `42891` — VPSL NPL Fall 2025 (major VA league)
+  - `41359` — TASL Spring 2025 (Tidewater/Hampton Roads, 270+ teams)
+  - Scrape all 3, process via fastProcessStaging
+  - Expected: **+1,000-3,000 VA matches**
+
+- [ ] **WI — Add 5 regional leagues + 4 tournaments to PlayMetrics adapter**
+  - Leagues (3 new org IDs):
+    - `1027-1519-e326860f` — MAYSA League Fall 2025 (Madison, competitive)
+    - `1027-1262-9af9ea75` — MAYSA League Spring 2025
+    - `1028-1508-d9de4618` — East Central Classic League Fall 2025
+    - `1028-1245-87cf8b2e` — East Central Spring 2025
+    - `1033-1414-5115f522` — Central Wisconsin Soccer League
+  - Tournaments:
+    - `1014-1549-d93b8fa6` — WYSA State Championships Fall 2025
+    - `1014-1287-253aeff2` — WYSA State Championships Spring 2025
+    - `1014-1548-5e86d088` — WYSA Presidents Cup Fall 2025
+    - `1014-1286-98381605` — WYSA Presidents Cup Spring 2025
+  - Scrape all, process via fastProcessStaging
+  - Expected: **+500-1,500 WI matches**
+
+- [ ] **Run ELO recalculation + refresh views**
+
+**Phase 1 Expected Results:** +3,500-9,500 matches across IL/VA/WI — zero new adapters needed (all use existing GotSport + PlayMetrics)
+
+---
+
+**Phase 2: Squadi Adapter (AR)**
+
 - [ ] Research Squadi React SPA structure
 - [ ] Build Squadi adapter (Puppeteer-based)
 - [ ] Scrape Arkansas Competitive Soccer League
 - [ ] Process and deploy to production
 - [ ] Verify AR → PRODUCTION
 
-**Expected Results:** 1 state → PRODUCTION, +500-1,000 matches, 10th adapter
+**Phase 2 Expected Results:** 1 state → PRODUCTION, +500-1,000 matches, 10th adapter
+
+---
+
+**Session 104 Total Expected:** +4,000-10,500 matches, 10th adapter, IL/VA/WI significantly boosted
 
 ---
 
@@ -285,7 +331,7 @@
 | 12 | **GA** | GPL + Classic/Athena | GPL; Classic 1-5, Athena A-D | SportsAffinity + GotSport | Multiple SA events (Boys) | **PARTIAL** | Boys scraped (Fall 2024/2025 + Spring 2025). Girls NOT on SA (Athena ended 2021). Girls data comes via GotSport tournaments (1,276 teams, 1,451 matches). |
 | 13 | **HI** | Oahu League | A/B/C flights | **Custom AngularJS** | N/A | GS RANKS → **SESSION 105** | **BUILD HI ADAPTER** — Puppeteer-based, AngularJS SPA. Expected: +150-300 matches. |
 | 14 | **ID** | Idaho Premier League (IPL) | Gold, Silver | GotSport | **45021** | **PARTIAL** | 45021 scraped: 20 matches. +364 from prior events. Total: 384 ID matches. |
-| 15 | **IL** | IL State Premiership + SLYSA IL + MWC | Premiership I + tiers | GotSport | 45492, 40174, 44640, 39659, 45100, 40255, 34346 | **PARTIAL** | **S103 finding:** IL uses GotSport, NOT Demosphere. 7 leagues, 12,123 matches already in DB. No Demosphere adapter needed for IL. |
+| 15 | **IL** | IL State Premiership + NISL + SLYSA IL + MWC | Premiership I + NPL + Club/Conference + tiers | GotSport | 45492, 40174, 44640, 39659, 45100, 40255, 34346 + **NEW: 44630, 40124, 44632, 41112** | **PARTIAL** | **S103 finding:** IL uses GotSport, NOT Demosphere. 7 leagues, 12,123 matches. **S103 gap:** NISL (17K players, 1,300 teams) not yet scraped — 4 event IDs discovered (NPL Fall/Spring + Club/Conference Fall/Spring). **SESSION 104 Phase 1.** |
 | 16 | **IN** | IYSA D3L | Premier, 1st, 2nd White | GotSport | 45057, 40237 | **PARTIAL** | 2 leagues, 87 matches. Need more ISL event discovery. |
 | 17 | **IA** | Iowa Soccer League (ISL) + IDL + EIYSL | Age group-based | SportsAffinity + GotSport + HTGSports | SA: ISL Fall/Spring (580), GS: 47441 (32), HTG: 13486, 13113 (0, between seasons) | **PARTIAL** | 3 platforms. 612 matches total. SA GUIDs: Fall `7762C9F4`, Spring `627614EC`. EIYSL retry next season. |
 | 18 | **KS** | **Heartland Soccer** | **Division 1-14** | **Heartland CGI** | N/A | **PRODUCTION** | **DONE** |
@@ -320,10 +366,10 @@
 | 47 | **TX-S** | State Classic League + GCL | SCL Div I (East/West) | GotSport | 78565, 75263 | **PARTIAL** | Discover more TX-S event IDs |
 | 48 | **UT** | UYSA Premier League | Premier + tiers (320+ teams) | SportsAffinity + GotSport | 6 SA events (Fall+Spring) | **PARTIAL** | **5,759 current-season matches** (1,408 GS + 4,351 SA). SA events: Premier PL/SCL/IRL/XL (3,523!), SUIRL, UVCL, YDL, Platform, Challenger. |
 | 49 | **VT** | Vermont Soccer League (VSL) | D1, D2, D3 | GotSport | **39252** | **PARTIAL** | 39252 scraped: 148 matches. Total: 145 VT matches across 2 events. |
-| 50 | **VA** | NCSL + VCSL | Promo/relegation; Premier/Classic | **Demosphere** + GotSport | 80738 (NCSL Fall/Spring) + 4 GS leagues | **PARTIAL** | **Demosphere adapter BUILT (S103).** NCSL 10,882 matches processed. VA league matches: 11,000. Need standings scraper for PRODUCTION. |
+| 50 | **VA** | NCSL + VCSL + VPSL + TASL | Promo/relegation; Premier/Classic; NPL; Tidewater | **Demosphere** + GotSport | 80738 (NCSL) + 4 GS leagues + **NEW: 44587, 42891, 41359** | **PARTIAL** | **Demosphere adapter BUILT (S103).** NCSL 10,882 matches. VA total: 11,000 league matches. **S103 gap:** VCSL (20+ clubs), VPSL NPL, TASL (270+ teams) not yet scraped — 3 GotSport IDs discovered. **SESSION 104 Phase 1.** |
 | 51 | **WA** | WPL + WSSL + EWSL | NPL + competitive tiers | GotSport | 44846, 44844, 45512, 44848, 40035, 39584, 40039, 38594, 39585, 48496, 40931, 46254 | **PARTIAL** | 12 leagues, 633 matches. Comprehensive WA coverage. |
 | 52 | **WV** | WV State League | TBD | GotSport | Event ID behind registration hash | GS RANKS | Small market (~30-50 teams). Season starts March 2026. Retry then. |
-| 53 | **WI** | WYSA State League | Premier, First Division | **PlayMetrics** + GotSport | PM: WYSA Fall (2,164) + Spring (2,230) + 2 GS leagues | **PARTIAL** | **PlayMetrics expansion (S103).** WI league matches: 4,516. WYSA migrated from Demosphere to PlayMetrics (org 1014). Need standings scraper for PRODUCTION. |
+| 53 | **WI** | WYSA State League + MAYSA + East Central + CWSL | Premier, First Division + regional competitive | **PlayMetrics** + GotSport | PM: WYSA (org 1014) + **NEW: MAYSA (1027), East Central (1028), CWSL (1033)** + 2 GS leagues | **PARTIAL** | **PlayMetrics expansion (S103).** WI league matches: 4,516. **S103 gap:** MAYSA (Madison), East Central Classic, CWSL, State Cups/Presidents Cup not yet scraped — 9 PlayMetrics IDs discovered across 4 org IDs. **SESSION 104 Phase 1.** |
 | 54 | **WY** | No statewide league | N/A | GotSport (registration only) | N/A | **NO LEAGUE** | Capture via Snake River League if applicable |
 | 55 | **DC** | NCSL (shared VA/MD) | Promo/relegation | **Demosphere** | 80738 (shared with VA) | **PARTIAL** | **Demosphere adapter BUILT (S103).** DC teams captured via NCSL. Shared VA/MD data. |
 
@@ -514,14 +560,15 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 
 ---
 
-### Session 104: Squadi Adapter
-**Focus:** Build Squadi adapter → AR to PRODUCTION
+### Session 104: IL/VA/WI Gap Fill + Squadi Adapter
+**Focus:** (1) Scrape discovered IL/VA/WI premier leagues using existing adapters, (2) Build Squadi adapter → AR to PRODUCTION
 
 **Deliverables:**
-- Squadi.js adapter built (React SPA, Puppeteer)
-- Arkansas Competitive Soccer League scraped
-- AR upgraded to PRODUCTION
-- +500-1,000 matches, 10th adapter
+- IL: +2,000-5,000 matches from NISL (17K players) + SLYSA IL Central (5 GotSport events)
+- VA: +1,000-3,000 matches from VCSL + VPSL NPL + TASL (3 GotSport events)
+- WI: +500-1,500 matches from MAYSA + East Central + CWSL + State Cups (9 PlayMetrics events)
+- AR: Squadi.js adapter built, ACSL scraped, +500-1,000 matches, 10th adapter
+- Total: **+4,000-10,500 matches**, 10th adapter, 3 states significantly boosted
 
 ---
 

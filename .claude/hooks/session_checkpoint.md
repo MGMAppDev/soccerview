@@ -1,5 +1,5 @@
 # Session Checkpoint — Auto-Updated
-Last Updated: 2026-02-17T00:30:00Z
+Last Updated: 2026-02-17T01:00:00Z
 Session: 103 — COMPLETE ✅
 
 ## Completed This Session
@@ -31,6 +31,49 @@ Session: 103 — COMPLETE ✅
 - ELO recalculated: 225,171 matches processed, 69,677 teams updated, avg ELO 1500.3
 - All 5 materialized views refreshed
 
+## Session 103 Discovered Gaps — MUST SCRAPE in Session 104
+
+Research agents discovered significant premier league data NOT yet in any adapter. Per DATA INTEGRITY priority, these MUST be scraped.
+
+### Illinois — 5 GotSport Event IDs (NISL = 17,000 players, 1,300 teams)
+| Event ID | League | Season |
+|----------|--------|--------|
+| `44630` | NISL NPL | Fall 2025 |
+| `40124` | NISL NPL | Spring 2025 |
+| `44632` | NISL Club & Conference | Fall 2025 |
+| `41112` | NISL Club & Conference | Spring 2025 |
+| `45100` | SLYSA IL Central Division | Fall 2025 |
+
+**Source:** [NISL Schedules](https://northernillinoissoccerleague.com/index.php/en/competitions/npl/npl-schedules-standings), [SLYSA SICD](https://www.slysa.org/sicd)
+
+### Virginia — 3 GotSport Event IDs
+| Event ID | League | Season |
+|----------|--------|--------|
+| `44587` | VCSL (Virginia Club Soccer League) | 2025-26 |
+| `42891` | VPSL NPL (Virginia Premier Soccer League) | Fall 2025 |
+| `41359` | TASL (Tidewater Advanced Soccer League) | Spring 2025 |
+
+**Source:** [VCSL](https://www.vcsl.org/), [VPSL NPL](https://www.vapremierleague.com/npl), [TASL](https://tasli.org/)
+
+### Wisconsin — 5 PlayMetrics League IDs (regional competitive leagues)
+| League ID | League | Org ID | Season |
+|-----------|--------|--------|--------|
+| `1027-1519-e326860f` | MAYSA League (Madison) | 1027 | Fall 2025 |
+| `1027-1262-9af9ea75` | MAYSA League | 1027 | Spring 2025 |
+| `1028-1508-d9de4618` | East Central Classic League | 1028 | Fall 2025 |
+| `1028-1245-87cf8b2e` | East Central Classic League | 1028 | Spring 2025 |
+| `1033-1414-5115f522` | Central Wisconsin Soccer League | 1033 | Current |
+
+### Wisconsin — 4 PlayMetrics Tournament IDs
+| League ID | Tournament | Org ID | Season |
+|-----------|-----------|--------|--------|
+| `1014-1549-d93b8fa6` | WYSA State Championships | 1014 | Fall 2025 |
+| `1014-1287-253aeff2` | WYSA State Championships | 1014 | Spring 2025 |
+| `1014-1548-5e86d088` | WYSA Presidents Cup | 1014 | Fall 2025 |
+| `1014-1286-98381605` | WYSA Presidents Cup | 1014 | Spring 2025 |
+
+**Expected Session 104 Phase 1 yield: +3,500-9,500 matches across IL/VA/WI using EXISTING adapters.**
+
 ## Files Created
 - `scripts/adapters/demosphere.js` — v2.0 Demosphere/OttoSport adapter
 - `scripts/_debug/scrape_ncsl_all.cjs` — Full NCSL scraper (608 divisions)
@@ -43,7 +86,7 @@ Session: 103 — COMPLETE ✅
 - `scripts/adapters/playmetrics.js` — Added WYSA WI events (org 1014)
 - `scripts/universal/intakeValidator.js` — Added 'demosphere' to KNOWN_PLATFORMS
 - `.github/workflows/daily-data-sync.yml` — Added sync-demosphere (9th source), updated PlayMetrics name
-- `docs/3-STATE_COVERAGE_CHECKLIST.md` — v5.1
+- `docs/3-STATE_COVERAGE_CHECKLIST.md` — v5.2
 - `CLAUDE.md` — v23.3
 - `.claude/hooks/session_checkpoint.md` — This file
 
@@ -62,4 +105,4 @@ Session: 103 — COMPLETE ✅
 | WI league matches | ~123 | **4,516** | +4,393 |
 
 ## Resume Prompt (Session 104)
-"Resume SoccerView Session 104. Read CLAUDE.md (v23.3), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.1). Current: 495,178 active matches, 169,641 teams, 414 leagues, 9 adapters, 9 pipeline sync jobs. Wave 5 COMPLETE (Demosphere adapter built, NCSL VA/DC +10,882 matches, WI WYSA +4,394 matches via PlayMetrics). Follow Wave plan. Priority: (1) Wave 6 Squadi adapter (AR), (2) Wave 7 custom platforms (RI, HI), (3) Fix double-prefix failures (74 matches), (4) TN/WV retries (March 2026). Wave discipline: complete each wave before starting next."
+"Resume SoccerView Session 104. Read CLAUDE.md (v23.3), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.2). Current: 495,178 active matches, 169,641 teams, 414 leagues, 9 adapters, 9 pipeline sync jobs. Wave 5 COMPLETE. **PRIORITY 1: IL/VA/WI gap fill** — Session 103 research discovered 17 premier league event IDs NOT yet scraped (5 IL GotSport NISL events, 3 VA GotSport events, 9 WI PlayMetrics events). Add to existing adapters and scrape FIRST. See 'Discovered Gaps' section in this file for all IDs. **PRIORITY 2: Build Squadi adapter (AR).** Expected: +4,000-10,500 matches total. See STATE_COVERAGE_CHECKLIST.md Session 104 for full plan."
