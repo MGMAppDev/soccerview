@@ -228,6 +228,168 @@ export default {
   },
 
   // =========================================
+  // STANDINGS SCRAPING (Session 109)
+  // Universal pattern: discoverSources() + scrapeSource()
+  // Reuses existing group discovery + Cheerio parsing
+  // =========================================
+
+  standings: {
+    enabled: true,
+
+    /**
+     * Discover standings sources from GotSport leagues in the database.
+     * Each GotSport league = one standings source. Groups are discovered
+     * per-source inside scrapeSource().
+     */
+    discoverSources: async (engine, options) => {
+      const { rows } = await engine.pool.query(`
+        SELECT l.id, l.name, l.source_event_id, l.state
+        FROM leagues l
+        WHERE l.source_event_id LIKE 'gotsport-%'
+        ORDER BY l.name
+      `);
+
+      return rows.map(l => ({
+        id: l.source_event_id,
+        name: l.name,
+        event_id: l.source_event_id.replace('gotsport-', ''),
+        league_id: l.id,
+        league_source_id: l.source_event_id,
+        state: l.state,
+        snapshot_date: new Date().toISOString().split('T')[0],
+      }));
+    },
+
+    /**
+     * Scrape standings for all groups in a GotSport league event.
+     *
+     * Flow:
+     *   1. Fetch event page → discover group IDs (from group= links)
+     *   2. For each group, fetch results page → extract division heading + standings table
+     *   3. Return flat array of all standings entries
+     *
+     * GotSport results page structure:
+     *   - Heading: "Male U12 - B12U - 2014 P1 9v9" (division name)
+     *   - Table: table.table-bordered with columns:
+     *     [position, team, MP, W, L, D, GF, GA, GD, PTS, PPG]
+     *   - Team links: <a href="...?team={teamSourceId}">Team Name</a>
+     */
+    scrapeSource: async (engine, source) => {
+      const baseUrl = engine.adapter.baseUrl;
+      const eventUrl = `${baseUrl}/org_event/events/${source.event_id}`;
+
+      // Step 1: Discover groups from event page
+      const $ = await engine.fetchWithCheerio(eventUrl);
+      if (!$) return [];
+
+      const groupIds = new Set();
+      $('a[href*="group="]').each((_, el) => {
+        const href = $(el).attr('href');
+        const match = href?.match(/group=(\d+)/);
+        if (match) groupIds.add(match[1]);
+      });
+
+      const groups = Array.from(groupIds);
+      if (groups.length === 0) return [];
+
+      console.log(`  Found ${groups.length} groups for ${source.name}`);
+      const allStandings = [];
+
+      // Step 2: For each group, fetch results page and parse standings
+      for (let i = 0; i < groups.length; i++) {
+        const groupId = groups[i];
+        const resultsUrl = `${baseUrl}/org_event/events/${source.event_id}/results?group=${groupId}`;
+
+        const $r = await engine.fetchWithCheerio(resultsUrl);
+        if (!$r) {
+          await engine.applyRateLimit();
+          continue;
+        }
+
+        // Extract division name from heading (e.g., "Male U12 - B12U - 2014 P1 9v9 - FRI (8 games)")
+        let divisionName = null;
+        $r('h1, h2, h3, h4, h5').each((_, el) => {
+          const text = $r(el).text().trim();
+          if (!divisionName && (text.includes('Male') || text.includes('Female') || /U\d+/i.test(text))) {
+            divisionName = text.replace(/\s*\(\d+ games?\)\s*/i, '').trim();
+          }
+        });
+
+        if (!divisionName) divisionName = `Group ${groupId}`;
+
+        // Parse gender from division name (Male → Boys, Female → Girls)
+        let gender = null;
+        const lowerDiv = divisionName.toLowerCase();
+        if (lowerDiv.includes('female') || lowerDiv.includes('girls') || /\bg\d/i.test(divisionName)) {
+          gender = 'Girls';
+        } else if (lowerDiv.includes('male') || lowerDiv.includes('boys') || /\bb\d/i.test(divisionName)) {
+          gender = 'Boys';
+        }
+
+        // Parse age group
+        let ageGroup = null;
+        const ageMatch = divisionName.match(/U[-]?(\d+)/i);
+        if (ageMatch) ageGroup = `U${ageMatch[1]}`;
+
+        // Parse standings table rows
+        let groupStandings = 0;
+        $r('table.table-bordered tbody tr').each((_, row) => {
+          const cells = $r(row).find('td');
+          if (cells.length < 10) return;
+
+          const position = parseInt($r(cells[0]).text().trim(), 10);
+          const teamLink = $r(cells[1]).find('a');
+          const teamName = teamLink.text().trim();
+          const teamHref = teamLink.attr('href') || '';
+          const teamSourceId = teamHref.match(/team=(\d+)/)?.[1] || null;
+
+          if (!teamName) return;
+
+          const played = parseInt($r(cells[2]).text().trim(), 10) || 0;
+          const wins = parseInt($r(cells[3]).text().trim(), 10) || 0;
+          const losses = parseInt($r(cells[4]).text().trim(), 10) || 0;
+          const draws = parseInt($r(cells[5]).text().trim(), 10) || 0;
+
+          // GotSport has two column layouts:
+          //   11 cols: [pos, Team, MP, W, L, D, GF, GA, GD, PTS, PPG] → cells[9] = PTS
+          //   10 cols: [pos, Team, MP, W, L, D, GF, GA, GD, PPG]     → no PTS column
+          const hasPtsColumn = cells.length >= 11;
+          const points = hasPtsColumn
+            ? parseInt($r(cells[9]).text().trim(), 10) || 0
+            : (3 * wins) + draws;
+
+          allStandings.push({
+            league_source_id: source.league_source_id,
+            division: divisionName,
+            team_name: teamName,
+            team_source_id: teamSourceId || null,
+            played,
+            wins,
+            losses,
+            draws,
+            goals_for: parseInt($r(cells[6]).text().trim(), 10) || 0,
+            goals_against: parseInt($r(cells[7]).text().trim(), 10) || 0,
+            points,
+            position,
+            age_group: ageGroup,
+            gender,
+            season: '2025-2026',
+          });
+          groupStandings++;
+        });
+
+        if (engine.isVerbose && groupStandings > 0) {
+          console.log(`    Group ${i + 1}/${groups.length}: ${divisionName} — ${groupStandings} teams`);
+        }
+
+        await engine.applyRateLimit();
+      }
+
+      return allStandings;
+    },
+  },
+
+  // =========================================
   // CUSTOM SCRAPING LOGIC
   // Replicates scrapeGroupMatches from syncActiveEvents.js
   // =========================================

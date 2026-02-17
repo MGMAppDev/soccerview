@@ -1,55 +1,72 @@
 # Session Checkpoint — Auto-Updated
-Last Updated: 2026-02-17T20:30:00Z
-Session: 108 — COMPLETE ✅
+Last Updated: 2026-02-17T23:30:00Z
+Session: 109 — COMPLETE
 
 ## Completed This Session
 
-### Session 108: Pipeline Freshness & Reliability (Systemic Fix)
+### Session 109: GotSport Standings Scraper + Full Audit + 7-Session Completion Plan
 
-**Three systemic issues discovered and fixed:**
+**Goal:** Build GotSport standings scraper. Full audit of all remaining work. Create comprehensive 7-session plan to 100% completion.
 
-1. **CRITICAL BUG FIXED: Year filter removed ALL discovered events**
-   - coreScraper.js line 800: `events.filter(e => e.year >= currentYear - 1)`
-   - Discovered events have no `year` property → `undefined >= 2025` = `false` → ALL filtered out
-   - Fix: `events.filter(e => !e.year || e.year >= currentYear - 1)`
+**Phase 1-4: GotSport Standings Scraper (COMPLETE)**
+- Built standings section in `gotsport.js` adapter (discoverSources + scrapeSource)
+- 40/40 GotSport leagues scraped: 7,580 standings to staging_standings
+- Two column layouts: 11-col (PTS in cells[9]) vs 10-col (compute 3*W+D)
+- Fixed points column bug for Girls Academy Aspire (614 rows) + Tier 1 (756 rows)
+- Fast bulk processor: 10,753 rows processed in 15.1 seconds
+- 11,727 total production standings (up from 2,012 — 5.8x increase)
+- SportsAffinity confirmed NOT NEEDED (no native standings page — all URLs 404)
+- Added GotSport to scrape-standings job in daily-data-sync.yml
 
-2. **Smart discovery replaces narrow date windows**
-   - `discoverEventsFromDatabase()` rewritten: leagues 30d, tournaments 14d
-   - Removed custom `discoverEvents` from 4 adapters (gotsport, htgsports, heartland, sincsports)
-   - All 10 adapters now use unified fallback path (coreScraper.js line 780)
+**Phase 5: Full Audit + 7-Session Completion Plan (COMPLETE)**
+- Comprehensive audit of Sessions 95-109 work against SV Data Architecture
+- Verified: PRODUCTION = all 5 data elements flowing (Matches, ELO, GS Ranks, Standings AS-IS, Schedules)
+- Created 7-session completion plan (Sessions 110-116) in STATE_COVERAGE_CHECKLIST.md v6.0
+- ELO timing recommendation: once per sprint (idempotent, nightly pipeline handles it)
 
-3. **DQE replaced with fastProcessStaging in nightly pipeline**
-   - DQE timeout (40 min) cascade-failed ALL 7 downstream jobs
-   - fastProcessStaging: 240x faster, same V2 pipeline path
-   - Added cascade protection: 6 downstream jobs accept `failure` result
+**ELO Recalculation: RUNNING (background task b056ccd)**
+- 235,489 matches, started 20:28 UTC
+- Will complete on its own; nightly pipeline handles this automatically
 
-**PA-W GLC SOLVED:** GLC/NAL/E64 are national programs on GotSport, not SportsAffinity.
-**NAL reclassified:** Tournament → League (UUID: 100a1dac-6cf4-436f-9333-989f0877eabf)
-**84 NAL matches processed:** 84 inserted, 128 new teams, 0 failures
+## Key Metrics
 
-### New Principles Added (CLAUDE.md v23.8)
-- **Principle 45:** Smart Event Discovery — Leagues 30d, Tournaments 14d
-- **Principle 46:** fastProcessStaging for Nightly, DQE for Investigation
-- **Principle 47:** Pipeline Steps Must Not Cascade-Fail
-
-### GotSport Static Safety Net
-Added 4 critical national events to gotsport.js staticEvents:
-- NAL 2025-2026 (45671)
-- 2025 Fall NL Great Lakes Conference (50944)
-- 2025 Fall NL Midwest Conference (50937)
-- 2025 Fall NL South Atlantic Conference (50922)
-- maxEventsPerRun increased from 100 to 300 (295 GotSport leagues in DB)
+| Metric | Before Session 109 | After Session 109 |
+|--------|-------------------|-------------------|
+| league_standings | 2,012 | **11,727** (+9,715) |
+| staging_standings | 4,374 processed | **15,127** processed |
+| teams_v2 | ~177,565 | **182,742** (+5,177 from standings) |
+| matches_v2 (active) | 520,376 | **520,460** |
+| source_entity_map | ~75,139 | **82,782** (+7,643) |
+| leagues | 462 | **463** |
+| Standings adapters | 2 (Heartland, SINC) | **3** (+ GotSport) |
 
 ## Files Modified This Session
-- `scripts/universal/coreScraper.js` — Rewrote discoverEventsFromDatabase(), fixed year filter bug
-- `scripts/adapters/gotsport.js` — Added staticEvents, removed discoverEvents, maxEventsPerRun=300
-- `scripts/adapters/htgsports.js` — Removed custom discoverEvents, set to null
-- `scripts/adapters/heartland.js` — Removed custom discoverEvents, set to null
-- `scripts/adapters/sincsports.js` — Removed custom discoverEvents, set to null
-- `scripts/adapters/sportsaffinity.js` — Removed 2 dead GLC entries
-- `.github/workflows/daily-data-sync.yml` — DQE→fastProcessStaging, cascade protection (6 jobs)
-- `CLAUDE.md` — v23.8, Principles 45-47, Session 108 summary
+- `scripts/adapters/gotsport.js` — Added standings section with column detection
+- `.github/workflows/daily-data-sync.yml` — Added gotsport to scrape-standings job, increased timeouts
+- `docs/3-STATE_COVERAGE_CHECKLIST.md` — v6.0: Full 7-session completion plan (S110-S116)
+- `CLAUDE.md` — v23.9: Session 109 summary, DB counts, resume prompt for S110
 - `.claude/hooks/session_checkpoint.md` — This file
 
-## Resume Prompt (Session 109)
-"Resume SoccerView Session 109. Read CLAUDE.md (v23.8), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md. Current: ~508,200 active matches, ~174,900 teams, 437 leagues, 10 adapters. Session 108 COMPLETE — Fixed 3 systemic pipeline issues (year filter bug, narrow discovery windows, DQE timeout cascade). All 10 adapters on unified discovery path. **Next priorities: Girls Academy + USYS NL + NPL from STATE_COVERAGE_CHECKLIST.md.** Zero UI changes needed."
+## Files Created This Session
+- `scripts/_debug/probe_gotsport_standings.cjs` — HTML structure probe
+- `scripts/_debug/probe_gs_groups.cjs` — Group name probe
+- `scripts/_debug/probe_sa_standings.cjs` — SportsAffinity standings probe (all 404)
+- `scripts/_debug/check_sa_standings.cjs` — SA computed standings verification
+- `scripts/_debug/probe_gs_aspire_cols.cjs` — Column layout analysis
+- `scripts/_debug/fix_gs_standings_points.cjs` — Points column fix for 10-col layouts
+- `scripts/_debug/fast_process_gs_standings.cjs` — Fast bulk standings processor (15s vs hours)
+
+## 7-Session Completion Plan (S110-S116)
+
+| Session | Focus | Key Metric |
+|---------|-------|------------|
+| **110** | Standings mega-sprint (6 adapter scrapers) | +5K-15K standings |
+| **111** | Event discovery + Spring scrape blitz | +5K-15K matches |
+| **112** | NO LEAGUE + NM + tech debt | All tech debt cleared |
+| **113** | AthleteOne adapter + 50-state audit | 12th adapter |
+| **114** | March seasonal (TN, WV, IA) | TN/WV/IA upgraded |
+| **115** | RI + final gaps (March 28) | RI PRODUCTION |
+| **116** | Final verification + sign-off | 100% COMPLETE |
+
+## Resume Prompt (Session 110)
+"Resume SoccerView Session 110 — STANDINGS MEGA-SPRINT. Read CLAUDE.md (v23.9), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v6.0). Current: 520,460 active matches, 182,742 teams, 463 leagues, 11,727 standings (3 adapters), 10 adapters, 10 pipeline sync jobs. Session 109 COMPLETE — GotSport standings scraper built (7,580 standings from 40 leagues, 5.8x increase to 11,727 total). Full 7-session completion plan (S110-S116) written to STATE_COVERAGE_CHECKLIST.md v6.0. **Session 110 goal: Build standings scrapers for ALL remaining adapters (HTGSports, PlayMetrics, Demosphere, TotalGlobalSports, MLS Next, Squadi) in ONE session. This is the single highest-ROI action — unblocks 41+ states toward PRODUCTION.** Zero UI changes needed."

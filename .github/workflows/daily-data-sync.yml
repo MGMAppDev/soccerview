@@ -616,7 +616,7 @@ jobs:
         github.event.inputs.sync_type == 'heartland_only' ||
         github.event.inputs.sync_type == null
       }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     outputs:
       standings_staged: ${{ steps.scrape.outputs.standings }}
       status: ${{ job.status }}
@@ -651,6 +651,12 @@ jobs:
           echo "📋 Heartland standings: $HL"
           TOTAL=$((TOTAL + HL))
 
+          # GotSport standings (Cheerio — Session 109)
+          node scripts/universal/scrapeStandings.js --adapter gotsport 2>&1 | tee standings_gotsport.txt || true
+          GS=$(grep -oP 'Total standings:\s*\K\d+' standings_gotsport.txt | tail -1 || echo "0")
+          echo "📋 GotSport standings: $GS"
+          TOTAL=$((TOTAL + GS))
+
           # SINC Sports standings (Puppeteer)
           node scripts/universal/scrapeStandings.js --adapter sincsports 2>&1 | tee standings_sinc.txt || true
           SC=$(grep -oP 'Inserted \K\d+' standings_sinc.txt | tail -1 || echo "0")
@@ -659,7 +665,7 @@ jobs:
 
           echo "standings=$TOTAL" >> $GITHUB_OUTPUT
           echo "📋 Total standings scraped: $TOTAL"
-        timeout-minutes: 25
+        timeout-minutes: 50
         continue-on-error: true
 
   # ============================================================================

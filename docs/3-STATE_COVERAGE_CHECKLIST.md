@@ -1,13 +1,22 @@
 # SoccerView State Coverage Checklist
 
-> **Version 5.4** | Updated: February 17, 2026 | Session 105 COMPLETE
+> **Version 6.0** | Updated: February 17, 2026 | Session 109 Audit → 7-Session Completion Plan
 >
 > **THE MASTER TRACKER** for national expansion. Every US state, every premier league, every platform, every action needed.
 > **Updated every session.** This is the single source of truth for coverage status.
 >
-> **GUARANTEED END STATE:** All 55 entries at PRODUCTION — division structure, standings, matches, schedules for every premier league in every state.
+> **GUARANTEED END STATE:** All 55 entries at PRODUCTION — all 5 data elements flowing per SV Data Architecture.
 >
-> **SESSION 106 FOCUS:** Girls Academy + USYS NL + NPL national programs (see Priority 2)
+> **THE 5 DATA ELEMENTS (per DATA_EXPANSION_ROADMAP.md):**
+> 1. **Matches** — Flow 1: match results in matches_v2
+> 2. **SV Power Rating / ELO** — Computed from matches by recalculate_elo_v2.js
+> 3. **GotSport Rankings** — Tier 3 overlay (covers all 50 states via restoreGotSportRanks.cjs)
+> 4. **League Standings** — Flow 2: AS-IS scraped from source (NOT computed) via scrapeStandings.js
+> 5. **Schedules** — Flow 3: NULL-score future matches with league linkage via same pipeline
+>
+> **PRODUCTION = All 5 elements flowing. No exceptions. No shortcuts.**
+>
+> **COMPLETION PLAN: Sessions 110-116 (7 sessions to 100%)**
 
 ---
 
@@ -32,215 +41,238 @@
 | 106 | Feb 17 | **National Programs Complete.** GA (4 events reclassified tournament→league, 528 total GA matches). **USYS NL:** Discovered 21 new conference event IDs (Team Premier + Club P1/P2 + Winter). Scraped 1,151 USYS NL matches + 485 Winter showcase = 1,636 total. All NL team/club events reclassified as leagues. **TCSL NPL TX:** TGS event 3989 added, 947 matches staged (1,199 TGS total). **STXCL NPL:** AthleteOne platform — new adapter deferred. | **+2,163 matches, +2,011 teams, +26 leagues, +11 tournaments** | PA-W GLC (Session 107) |
 | 107 | Feb 17 | **Team Key Normalization Fix.** Systemic bug: fastProcessStaging built team lookup keys from raw names but teamMap used cleaned names. 2-line fix wrapping removeDuplicatePrefix(). Recovered 11,061 stuck staging records. | **+9,094 matches, +106 teams** | Session 108 pipeline fix |
 | 108 | Feb 17 | **Pipeline Freshness & Reliability (Systemic Fix).** PA-W GLC SOLVED (national GotSport programs). NAL reclassified tournament→league (84 matches). Fixed year filter bug (undefined >= 2025 = false). Smart discovery: leagues 30d, tournaments 14d. Removed custom discoverEvents from 4 adapters → unified path. DQE→fastProcessStaging in nightly (240x faster). Cascade protection on 6 downstream jobs. 3 new principles (45-47). | **+84 NAL matches, +128 teams, 3 systemic fixes** | Standings scrapers |
+| 109 | Feb 17 | **GotSport Standings Scraper.** Built standings section for gotsport.js adapter. Scraped 40/40 GotSport leagues = 7,580 standings. Fixed points column bug (10-col vs 11-col layouts). SportsAffinity confirmed NOT NEEDED (no native standings page). Fast bulk processor: 10,753 rows in 15.1s. Added to daily pipeline. | **+9,715 standings (2,012→11,727), +3,979 teams, +4,003 SEM entries** | Standings Part 2 |
 
 ---
 
-## Active Work Queue (Priority-Ordered Task List)
+## Completed Work (Sessions 95-109) — ARCHIVE
 
-> **CRITICAL:** This section tracks ALL incomplete work in priority order. Every item MUST be completed — no deferrals without "MUST SOLVE" override.
+> All completed session details moved here for reference. See Session Progress Log above for summary.
 
-### 🔴 Priority 1: CRITICAL PATH — Adapter Buildout (Sessions 103-105)
-**Blocks 7 states from PRODUCTION**
+<details>
+<summary>Click to expand completed session details (Sessions 103-109)</summary>
 
 #### Session 103: Demosphere Adapter (VA/DC, IL, WI) — COMPLETE ✅
-- [x] **Phase 1: Research** — Discovered Demosphere JSON API (`elements.demosphere-secure.com/{orgId}/schedules/{seasonName}/{divisionId}.js`). NCSL org 80738, 608 divisions. IL confirmed on GotSport (not Demosphere). WI migrated to PlayMetrics (org 1014).
-- [x] **Phase 2: Build Adapter** — Created `scripts/adapters/demosphere.js` v2.0 (Cheerio-based, JSON/XML endpoints). Added WI to PlayMetrics adapter.
-- [x] **Phase 3: Scraping** — NCSL: 32,289 found → 10,842 unique staged. WI WYSA Fall: 2,164. WI WYSA Spring: 2,230. Team names resolved from standings XML (1,106 teams, 9,915 records).
-- [x] **Phase 4: Pipeline Integration** — Processed through fastProcessStaging.cjs. Added 'demosphere' to KNOWN_PLATFORMS. 4 events reclassified as leagues.
-- [x] **Phase 5: Production Deployment** — sync-demosphere job added to pipeline. ELO recalculated (225,171 matches). Views refreshed.
-- [x] **Phase 6: Verification** — VA: 11,000 league matches. WI: 4,516 league matches. IL: unchanged (already 12,123 via GotSport).
-- [x] **Phase 7: Documentation** — Checkpoint, checklist v5.1, CLAUDE.md v23.3 updated.
-
 **Actual Results:** VA+DC+WI upgraded, **+15,268 matches, +5,042 teams, +4 leagues, 9th adapter, 9th pipeline job**
 
----
-
 #### Session 104: IL/VA/WI Gap Fill + Squadi Adapter (AR) — COMPLETE ✅
-
-**Phase 1: IL/VA/WI Gap Fill** — COMPLETE
-- [x] **IL — 5 NISL + SLYSA events via GotSport** → 488 matches (73+91+112+88+124)
-- [x] **VA — 3 VCSL/VPSL/TASL events via GotSport** → 238 matches (59+102+77)
-- [x] **WI — 9 events via PlayMetrics** → 7,095 matches (WYSA 532, East Central 1,159, CWSL 340, MAYSA Fall 2,522, MAYSA Spring 2,542)
-- [x] **ELO recalculated** (229,513 matches) + views refreshed
-
-**Phase 2: Squadi Adapter (AR)** — COMPLETE
-- [x] Researched Squadi REST API — fully public, no auth needed (api.us.squadi.com/livescores)
-- [x] Built pure REST API adapter (no Puppeteer needed!) — 10th adapter
-- [x] Scraped 6 events in 68 seconds: ACSL Fall/Spring, NWAL Fall/Spring, CAL Spring, State Championships
-- [x] Processed: 1,637 matches, 693 new teams, 0 failures
-- [x] Reclassified 4 tournaments → leagues, AR State Championships stays tournament
-- [x] Added sync-squadi to pipeline (10th sync source)
-
-**Bonus: Event classification fix** — fastProcessStaging now checks `staging_events.event_type` (from adapter declaration) before LEAGUE_KEYWORDS fallback
-
-**Actual Results: +9,352 matches, +4,630 teams, +18 leagues, 10th adapter, 10th pipeline job** (exceeded top estimate!)
-
----
+**Actual Results: +9,352 matches, +4,630 teams, +18 leagues, 10th adapter, 10th pipeline job**
 
 #### Session 105: HI Oahu League + RI Super Liga — COMPLETE ✅
-
-**Phase 1: HI Oahu League** — COMPLETE (uses SportsAffinity, NOT custom AngularJS!)
-- [x] **Discovery:** Oahu League runs on SportsAffinity — same platform as 7 other states
-- [x] **Config:** Added 4 events to existing SA adapter (no new adapter needed!)
-- [x] **Scraping:** All 4 seasons scraped: Fall 2025/26 (1,069) + Spring 2025/26 (736) + Fall 2024/25 (963) + Spring 2024/25 (821)
-- [x] **Processing:** fastProcessStaging → 3,589 inserted, 497 new teams, 4 new leagues
-- [x] **Metadata:** Fixed league state (HI), team state (310 teams), source_entity_map (4 entries)
-- [x] **ELO + Views:** Recalculated (230,571 matches) + all 5 views refreshed
-
-**Phase 2: RI Super Liga** — ADAPTER SKELETON BUILT, DATA LOST
-- [x] **Discovery:** Site purges data between seasons — Fall 2025 permanently gone
-- [x] **Principle 42:** 5+ approaches tried (Puppeteer, brute-force POST, URL probing, Wayback Machine)
-- [x] **Wayback:** Found Sep/Oct 2025 snapshots with dropdown values but POST response data was never archived
-- [x] **Adapter skeleton:** Built at `scripts/adapters/risuperliga.js` for March 28, 2026 retry
-- [x] **Documentation:** Updated GUARDRAILS S19 with DATA RETENTION WARNING
-
-**Actual Results: +3,589 matches, +497 teams, +4 leagues. HI upgraded to PARTIAL. RI deferred to March 28 (data-purging platform).**
-
----
-
-### 🟡 Priority 2: HIGH — National Programs Complete (Sessions 106-107)
+**Actual Results: +3,589 matches, +497 teams, +4 leagues. HI upgraded. RI adapter skeleton built (March 28 retry).**
 
 #### Session 106: National Programs — COMPLETE ✅
+**Actual Results: +2,163 matches, +2,011 teams, +26 leagues. GA + USYS NL + NPL (17/18) complete.**
 
-**ACTUAL Results: +2,163 matches, +2,011 teams, +26 leagues, +11 tournaments**
+#### Session 107: Team Key Normalization Fix — COMPLETE ✅
+**Actual Results: +9,094 matches recovered from stuck staging.**
 
-- [x] **Girls Academy — SCRAPED + RECLASSIFIED**
-  - Scraped: 42137 (0 new, 83 already), 42138 (+26 new), 44874 (+10 new), 45530 (0 new, 16 already)
-  - All 4 GA events reclassified from tournament → league (528 total GA league matches)
-  - GA Tier 1: 83 matches | GA Aspire: 379 matches | JGAL: 50 matches | FL GA: 16 matches
-  - **Note:** 42137 (GA Tier 1) returned 0 new — data between scraping windows. 528 total matches in DB.
-  - Reclassification script: `scripts/_debug/reclassify_ga_as_leagues.cjs`
+#### Session 108: Pipeline Freshness & Reliability — COMPLETE ✅
+**Actual Results: PA-W GLC solved. NAL reclassified. 3 systemic pipeline fixes.**
 
-- [x] **USYS National League — 21 NEW Events Scraped Across All Tiers**
-  - **Team Premier (8 new conferences):** Desert(30), Great Lakes(36), Mid Atlantic(67), Mid South(62), Midwest(41), New England(50), North Atlantic(35), Piedmont(10) = **331 matches**
-  - **Club P1 (7 new conferences):** Frontier(42), Great Lakes(37), Midwest(24), Northeast(11), Pacific(35), Piedmont(14), Southeast(14) = **177 matches**
-  - **Club P2 (4 new conferences):** Desert(36), Great Lakes(89), Midwest(25), Piedmont(8) = **158 matches**
-  - **Winter Events:** Nov 2025 (185), Jan 2026 (300) = **485 matches** (kept as tournaments)
-  - **All NL events reclassified as leagues** (except Winter Events)
-  - **Total USYS NL league matches: ~1,000** (up from 30)
-  - Discovery script: `scripts/_debug/reclassify_usysnl_as_leagues.cjs`
+#### Session 109: GotSport Standings Scraper — COMPLETE ✅
+**Actual Results: +9,715 standings (2,012→11,727). 40/40 GotSport leagues. SA confirmed NOT NEEDED.**
 
-- [x] **NPL Regional — 2 Remaining Leagues FOUND**
-  - **TCSL NPL TX** — TotalGlobalSports event 3989: **947 matches staged, 1,199 total TGS processed** (10 age groups: U14-U18 Boys + U14-U16 Girls)
-  - **STXCL NPL** — AthleteOne platform: new adapter required (defer to Session 110+)
-  - TCSL added to `scripts/adapters/totalglobalsports.js` staticEvents
-
-**Actual Results: +2,163 matches, +2,011 teams, +26 leagues**
+</details>
 
 ---
 
-#### Session 108: PA-W GLC — RESOLVED ✅
-**SOLVED:** GLC/NAL/E64 are NATIONAL programs (USYS NL, NAL, Club Premier) — match data lives on GotSport, NOT SportsAffinity. The SA restricted page is a registration portal only.
-- NAL reclassified from tournament → league (UUID: 100a1dac-6cf4-436f-9333-989f0877eabf)
-- 84 NAL matches scraped and processed (128 new teams)
-- SportsAffinity adapter cleaned (removed 2 dead GLC entries)
-- GotSport static safety net added (NAL 45671 + 3 USYS NL conferences)
-- Also fixed 3 systemic pipeline issues (Principles 45-47)
+## Active Work Queue — 7-Session Completion Plan (Sessions 110-116)
+
+> **DIRECTIVE:** Complete ALL remaining items. No deferrals. No "between seasons" excuses. No shortcuts. Every state at PRODUCTION with all 5 data elements. 100% completion.
+>
+> **Architecture:** All work uses the existing V2 system. Zero architecture changes. Zero new patterns.
+> - Standings scrapers: Add `standings` config to existing adapter files via scrapeStandings.js engine
+> - Event discovery: Find GotSport IDs, scrape through existing coreScraper.js pipeline
+> - New adapters: Follow existing `_template.js` pattern
 
 ---
 
-### 🟠 Priority 3: MEDIUM — Standings Scrapers (Sessions 108-109)
-**Upgrade 41 states from PARTIAL → PRODUCTION**
+### 🔴 Session 110: STANDINGS MEGA-SPRINT (6 Adapter Standings Scrapers)
 
-#### Session 108: Standings Part 1
-- [ ] **GotSport Adapter** — Add standings scraping
-  - States affected: 35 states
-  - Test on CA, TX, NY
-  - Expected: +5,000-10,000 standings entries
+**Goal:** Build standings scrapers for ALL remaining adapters in ONE session. Highest-ROI action — unblocks 41+ states toward PRODUCTION.
 
-- [ ] **SportsAffinity Adapter** — Add standings scraping
-  - States affected: GA, MN, UT, OR, NE, PA-W, IA (7 states)
-  - Expected: +3,000-5,000 standings entries
+| # | Adapter | States Affected | Has Standings Page? | Priority |
+|---|---------|----------------|--------------------|----|
+| 1 | HTGSports | 26+ (tournaments) | Research needed | HIGHEST — most states |
+| 2 | PlayMetrics | CO, WI, SDL | YES (public `/g/` URLs) | HIGH — known structure |
+| 3 | Demosphere | VA, DC | YES (XML endpoints) | HIGH — known structure |
+| 4 | TotalGlobalSports | ECNL national (76 events) | Research needed | MEDIUM |
+| 5 | MLS Next (Modular11) | National | Research needed | MEDIUM |
+| 6 | Squadi | AR | Research needed (REST API) | LOW — small market |
 
-**Expected Results:** +8,000-15,000 standings entries, 10+ states → PRODUCTION
+- [ ] Research standings page structure for each adapter
+- [ ] Build standings config for each (reuse scrapeStandings.js universal engine)
+- [ ] Scrape all standings + process to production via fast bulk processor
+- [ ] Add all 6 to `scrape-standings` job in daily-data-sync.yml
+- [ ] Verify standings counts per state
 
----
+**Expected:** +5,000-15,000 standings entries. Standings adapter count: 3 → 9.
 
-#### Session 109: Standings Part 2
-- [ ] **PlayMetrics Adapter** — Add standings scraping (CO, SDL)
-- [ ] **HTGSports Adapter** — Add standings scraping (26+ states)
-- [ ] **MLS Next Adapter** — Add standings scraping (national)
-- [ ] **TotalGlobalSports Adapter** — Add standings scraping (ECNL)
-
-**Expected Results:** +4,500-7,000 standings entries, 5+ states → PRODUCTION
+**SportsAffinity note:** Confirmed Session 109 — SA has NO native standings page (all 10 probed URLs = 404). SA states get standings via GotSport leagues or computed fallback in hybrid view.
 
 ---
 
-### 🟢 Priority 4: POLISH — Technical Debt & Optimization (Session 110+)
+### 🟡 Session 111: EVENT DISCOVERY + SPRING 2026 SCRAPE BLITZ
 
-#### Session 110a: Fix Double-Prefix Failures
-- [ ] Investigate 74 matches that failed team resolution in Wave 2d
-- [ ] Example: "Delmarva Rush Delmarva Rush Rush 2017B"
-- [ ] Fix edge cases in `cleanTeamName.cjs`
-- [ ] Re-process failed matches
+**Goal:** Find ALL missing event IDs. Scrape ALL Spring 2026 data now available (mid-Feb 2026 — many Spring seasons active). Re-scrape "between seasons" events. Fill national program gaps.
 
-**Expected Results:** +74 matches resolved
+**Event Discovery (6 states with unknown IDs):**
+- [ ] FL — Discover FSPL main GotSport event IDs
+- [ ] IN — Discover more ISL (Indiana Soccer League) event IDs
+- [ ] MA — Discover NEP (New England Premier) event IDs
+- [ ] MO-STL — Discover SLYSA event IDs
+- [ ] TX-N — Discover more NTSSA event IDs
+- [ ] TX-S — Discover more SCL/GCL event IDs
 
----
+**Spring 2026 Scrape (check ALL "between seasons" events NOW):**
+- [ ] AL — Spring 2026 event 51021
+- [ ] CO — CAL Spring 2026 via PlayMetrics
+- [ ] MI — Spring GotSport events (45649, 46034, 50611)
+- [ ] KY — KPL main event 48452 (was 0 in Fall)
+- [ ] MT — MSSL Spring event 40682 (was 0 in Fall)
+- [ ] OK — OPL event 45220 (was 0 in Fall)
+- [ ] AK — UAYSL event 5082 deep research (per Principle 42 — 5+ approaches before accepting "no data")
+- [ ] IA — EIYSL retry via HTGSports (events 13486, 13113)
 
-#### Session 110b: View Refresh Optimization
-- [ ] Diagnose app_league_standings 50+ sec refresh time
-- [ ] Add indexes to hybrid view
-- [ ] Optimize SQL queries
-- [ ] Test refresh performance
+**National Program Gaps:**
+- [ ] Girls Academy — Re-scrape all 4 events (current 528 vs expected 600-800)
+- [ ] USYS NL Spring conferences — Scrape any now active
+- [ ] SDL Spring 2026 — PlayMetrics when available
 
-**Expected Results:** <10 sec refresh time
-
----
-
-#### Session 110c: Source Entity Map Backfill
-- [ ] Analyze existing matches for missing SEM entries
-- [ ] Backfill from historical data
-- [ ] Expected: ~72K → 90K+ entries
-
----
-
-#### Ongoing: Daily Pipeline Monitoring
-- [ ] Monitor 8 sync jobs for failures
-- [ ] Add alerting for failures
-- [ ] Weekly pipeline health reports
+**Expected:** +5,000-15,000 matches from Spring events + newly discovered leagues. FL, IN, MA, MO, TX gaps filled.
 
 ---
 
-## Completion Targets (Updated Session 103)
+### 🟠 Session 112: NO-LEAGUE STATES + NM + ND + ALL TECHNICAL DEBT
 
-| Milestone | Current (S106) | Target (S110) | Target (S120) | Gap to S110 |
-|-----------|----------------|---------------|---------------|-------------|
-| **States at PRODUCTION** | 4 | **15** | **55** | 11 states |
+**Goal:** Solve the 3 NO LEAGUE states (MS, SD, WY) + 2 GS RANKS states (ND, NM). Clear ALL technical debt.
+
+**NO LEAGUE States (find data or document with evidence):**
+- [ ] MS — Research USYS Mid South Conference events. Find MS premier team activity. GotSport standings may cover MS teams from S109.
+- [ ] SD — Research USYS regional events. Find any SD premier team activity. If none, document with evidence.
+- [ ] WY — Research Snake River League, USYS regional. Find events or document.
+
+**GS RANKS States (must get local data):**
+- [ ] ND — Verify USYS Midwest Conference captures ND teams with matches. If teams exist with matches, ND has data.
+- [ ] NM — Build Duke City Soccer League adapter (PDF/WordPress scraping). Per Principle 42 — find the data.
+
+**Technical Debt (ALL items — clear in this session):**
+- [ ] Fix 74 double-prefix match failures (cleanTeamName.cjs edge cases, "Delmarva Rush Delmarva Rush Rush 2017B")
+- [ ] View refresh optimization (app_league_standings 50+ sec → target <10 sec, add indexes)
+- [ ] SEM backfill (+10-20K source_entity_map entries from existing data)
+- [ ] Pipeline monitoring/alerting (add failure alerts to GitHub Actions)
+- [ ] Update DATA_EXPANSION_ROADMAP.md (source table + wave status outdated)
+- [ ] Update DATA_SCRAPING_PLAYBOOK.md (adapter list + standings pipeline outdated)
+
+**Expected:** MS/SD/WY/ND resolved. NM adapter built. All tech debt cleared.
+
+---
+
+### 🟢 Session 113: AthleteOne ADAPTER + FULL 50-STATE PRODUCTION AUDIT
+
+**Goal:** Build 12th adapter (AthleteOne for STXCL NPL TX = 18th/18 NPL). Run comprehensive state-by-state audit — verify every state has all 5 data elements.
+
+- [ ] **AthleteOne adapter:** Research STXCL NPL platform, build adapter, scrape data. Complete 18/18 NPL leagues.
+- [ ] **50-State PRODUCTION Audit:** For each of 55 entries, verify via SQL:
+  - Has matches in matches_v2? (count per state)
+  - Has ELO ratings on teams? (check per state)
+  - Has GotSport rankings? (check per state)
+  - Has AS-IS standings in league_standings? (count per state)
+  - Has future scheduled matches with league linkage? (count per state)
+- [ ] **Fix ALL gaps found in audit** — any state missing any element, fix it
+- [ ] **Update every state row** in this checklist with verified status
+
+**Expected:** 12th adapter built. Comprehensive audit identifies + fixes remaining gaps. Most states at PRODUCTION.
+
+---
+
+### 🔵 Session 114: MARCH SEASONAL STATES (March 1-13, 2026)
+
+> **Calendar-gated:** Cannot start before March 1, 2026.
+
+- [ ] **TN State League** (March 1) — Scrape via SINC Sports adapter (proven with NC). Matches + standings + schedules. All 4 divisions (Div 1, 2a, 2b, 3).
+- [ ] **WV State League** (March 1) — Find event ID (behind registration hash per Principle 42 — 5+ approaches), scrape via GotSport.
+- [ ] **IA EIYSL** — Retry HTGSports events 13486, 13113.
+- [ ] **IA Spring 2026** (March 13) — SportsAffinity ISL Spring.
+- [ ] **Any remaining Spring 2026 events** across all states now available.
+- [ ] Process all through pipeline. ELO recalculation (one run).
+
+**Expected:** TN → PRODUCTION (matches + SINC standings + schedules). WV upgraded. IA complete. +2,000-5,000 matches.
+
+---
+
+### 🟣 Session 115: RI SUPER LIGA + FINAL GAPS (March 28, 2026)
+
+> **Calendar-gated:** Cannot start before March 28, 2026. DATA-PURGING PLATFORM — must scrape same day.
+
+- [ ] **RI Super Liga** (March 28) — Activate adapter skeleton (`risuperliga.js`). Scrape ALL matches + standings + schedules IMMEDIATELY. Data-purging platform — complete same day.
+- [ ] **AK UAYSL** — If Spring 2026 is now active, scrape. If not, document permanent status with evidence.
+- [ ] **Re-scrape any states** that were partial in Session 113 audit.
+- [ ] **Final gap closure** — any remaining incomplete items from prior sessions.
+
+**Expected:** RI upgraded. All gaps closed.
+
+---
+
+### ⬛ Session 116: FINAL VERIFICATION + 100% SIGN-OFF
+
+**Goal:** Verify 100% completion. Full ELO recalculation. App QC testing. Pipeline health check. Close the checklist.
+
+- [ ] **Full ELO recalculation** (one final run covering ALL matches)
+- [ ] **All 5 materialized views refreshed**
+- [ ] **App QC Testing** (per Post-Expansion QC Protocol, Principle 41):
+  - Home page match count correct
+  - Every state appears in Rankings state filter with teams visible
+  - Team names display correctly (no double-prefix, no encoding issues)
+  - League standings show for every state with leagues
+  - Team detail shows matches, correct state, ELO populated
+- [ ] **Pipeline dry-run:** Run full daily-data-sync.yml manually, verify all sync + standings + ELO jobs succeed
+- [ ] **Final metrics report:** States at PRODUCTION, total matches, teams, leagues, standings, schedules
+- [ ] **Update ALL documentation:** CLAUDE.md, STATE_COVERAGE_CHECKLIST.md (mark FINAL), DATA_EXPANSION_ROADMAP.md, DATA_SCRAPING_PLAYBOOK.md
+- [ ] **STATE_COVERAGE_CHECKLIST.md:** Mark version FINAL — all 55 states verified
+
+**Expected:** 100% completion. Checklist CLOSED.
+
+---
+
+## Completion Targets (Updated Session 109 Audit)
+
+| Milestone | Current (S109) | Target (S113) | Target (S116) | Gap |
+|-----------|----------------|---------------|---------------|-----|
+| **States at PRODUCTION** | 4 | **35+** | **55** | 51 states |
 | **States at PARTIAL+** | 48 | 55 | 55 | 7 states |
-| **Active matches** | **510,282** | **600,000** | **1,000,000** | +89,718 |
-| **Leagues in DB** | **462** | **500** | **700** | +38 |
-| **National programs** | **5 PROD** (GA, USYS NL added) | **7 PROD** | **7 PROD** | 2 programs |
-| **Adapters built** | 10 (+1 skeleton) | **11** | **12** | 1 adapter (RI March 28) + 1 (AthleteOne STXCL) |
-| **Pipeline sync jobs** | 10 | **11** | **11** | 1 job (RI) |
-| **Standings coverage** | 2 adapters | **8 adapters** | **8 adapters** | 6 adapters |
+| **Active matches** | ~510K | **575K+** | **650K+** | +140K |
+| **Leagues in DB** | 462 | **500+** | **550+** | +88 |
+| **National programs** | 5 PROD, NPL 17/18 | **7 PROD** (all) | **7 PROD** | +2 (RI, AthleteOne) |
+| **Adapters built** | 10 + 1 skeleton | **12** | **13** (+ NM) | +3 |
+| **Standings adapters** | 3 (Heartland, SINC, GotSport) | **9** | **9** | +6 |
+| **Pipeline sync jobs** | 10 | **12** | **13** | +3 |
+| **Tech debt items** | 4 open | **0** | **0** | Clear all |
 
-### Milestone Breakdown
+### Session-by-Session Milestones
 
-**By Session 110 (Est. 2 weeks):**
-- All 12 adapters built ✅
-- 15 states at PRODUCTION (KS, MO-KC, NC, GA, VA, DC, IL, WI, AR, RI, HI + 4 more via standings)
-- 600K+ matches (from national programs + standings scrapers)
-- All national programs complete (Girls Academy, USYS NL, NPL, SDL)
-- All high-priority technical debt cleared
-
-**By Session 120 (Est. 4-6 weeks):**
-- All 55 entries at PRODUCTION
-- 1M+ matches
-- Full standings coverage across all adapters
-- Daily pipeline running smoothly with zero gaps
+| Session | Date | Focus | Key Metric | Cumulative PRODUCTION |
+|---------|------|-------|------------|----------------------|
+| **110** | Immediate | 6 standings scrapers | +5K-15K standings | 30+ states |
+| **111** | Immediate | Event discovery + Spring scrape | +5K-15K matches | 35+ states |
+| **112** | Immediate | NO LEAGUE + NM + tech debt | All debt cleared | 40+ states |
+| **113** | Immediate | AthleteOne + 50-state audit | 12th adapter, full audit | 45+ states |
+| **114** | March 1-13 | TN, WV, IA seasonal | +2K-5K matches | 48+ states |
+| **115** | March 28 | RI + final gaps | RI PRODUCTION | 52+ states |
+| **116** | After 115 | Final verification + sign-off | 100% verified | **55/55** |
 
 ---
 
-## Coverage Summary
+## Coverage Summary (Post-Session 109)
 
-| Status | Count | Description |
-|--------|-------|-------------|
-| **PRODUCTION** | 4 | Full data pipeline (matches + standings + schedules) |
-| **PARTIAL** | 44 | Some league data active, need standings/more events |
-| **GS RANKS** | 4 | GotSport ranking badges only — no local league data yet |
-| **NO LEAGUE** | 3 | No statewide premier league exists (MS, SD, WY) |
-| **Total** | 55 | All 50 states + DC (CA split 3, PA split 2) |
+| Status | Count | Description | Target (S116) |
+|--------|-------|-------------|---------------|
+| **PRODUCTION** | 4 | All 5 data elements flowing (matches + ELO + GS ranks + standings + schedules) | **55** |
+| **PARTIAL** | 44 | Some data flows active, missing AS-IS standings and/or events | **0** |
+| **GS RANKS** | 4 | GotSport ranking badges only — no local match/standings data (AK, NM, TN, WV + RI deferred) | **0** |
+| **NO LEAGUE** | 3 | No statewide premier league (MS, SD, WY) — resolve via USYS regional | **0** (documented) |
+| **Total** | 55 | All 50 states + DC (CA split 3, PA split 2) | **55/55** |
 
 ### National Programs (Updated Session 103)
 
@@ -328,7 +360,7 @@
 | 38 | **OK** | OK Premier League (OPL) + OPC | D1, D2 + Gold/Silver/Bronze | GotSport | **45220, 50796** | **PARTIAL** | 45220: 0 (between seasons), 50796: 38 matches. Total: 67 OK matches. |
 | 39 | **OR** | OYSA Competitive League | Premier Gold/Silver, Div 1/2 | SportsAffinity + GotSport | 6 SA events (Fall+Spring) | **PARTIAL** | **10,046 current-season matches** (1,607 GS + 8,439 SA). SA events: Fall League, Dev League, Founders Cup, Valley Academy, Soccer 5, PYSA + Spring/Winter leagues. |
 | 40 | **PA-E** | APL/Acela + EPPL + PSSLU + MaxinMotion | Premier, Championship | GotSport | 43531, 40626, 46768, 41370, 44986, 34294, 40350, 48194, 41091, 44034, 39130 | **PARTIAL** | 14 leagues (PA combined), 907 matches. |
-| 41 | **PA-W** | PA West State Leagues | Divisions verified | SportsAffinity + GotSport | 10 SA events (Fall) | PARTIAL → **SESSION 107** | **10,857 PA matches safe.** GLC/NAL/E64 restricted access — **MUST SOLVE (Session 107)** per Principle 42. Try 5+ more approaches. NOT acceptable to defer. GUIDs in session_checkpoint.md. Expected: +500-1,000 top-tier matches. |
+| 41 | **PA-W** | PA West State Leagues | Divisions verified | SportsAffinity + GotSport | 10 SA events (Fall) | **PARTIAL** | **10,857 PA matches safe.** GLC/NAL/E64 RESOLVED (Session 108): national GotSport programs, not SportsAffinity. NAL reclassified as league (+84 matches). |
 | 42 | **RI** | Super Liga | Anchor, Classic Gold/Blue, Rhody + U7-U19 | **Custom PHP** (thesuperliga.com) | N/A | GS RANKS → **DEFERRED (March 28)** | **Session 105:** Site PURGES data between seasons — Fall 2025 permanently lost. Tried 5+ approaches per Principle 42. Adapter skeleton built (`risuperliga.js`). **RETRY: March 28, 2026** (Spring season start). ⚠️ DATA-PURGING PLATFORM — must scrape during active season. |
 | 43 | **SC** | SCCL (SC Challenge League) | Challenge, Classic | GotSport | 45507, 40890 | **PARTIAL** | 2 leagues, 409 matches. Already discovered. |
 | 44 | **SD** | No statewide league | N/A | N/A | N/A | **NO LEAGUE** | Capture via USYS regional data |
@@ -483,127 +515,50 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 
 ---
 
-## Known Risks & Gaps (Updated Session 103)
+## Known Risks & Gaps (Updated Session 109 Audit)
 
-> **CRITICAL:** All risks categorized by severity. 🔴 CRITICAL items MUST be resolved — no exceptions.
+> **DIRECTIVE:** ALL items MUST be resolved. No deferrals. Assigned to specific sessions.
 
-| # | Risk/Gap | Severity | Status | Impact | Action Plan |
-|---|----------|----------|--------|--------|-------------|
-| 1 | **RI adapter waiting on season** | 🟡 HIGH | WAITING | RI Super Liga purges data between seasons. Fall 2025 permanently lost. Adapter skeleton ready. | **March 28, 2026:** Retry when Spring 2026 season starts. ⚠️ SCRAPE IMMEDIATELY — data-purging platform. |
-| 2 | ~~PA-W GLC restricted access~~ | ✅ **RESOLVED** | **Session 108** | GLC/NAL/E64 are national GotSport programs, not SportsAffinity. SA page was registration portal only. 84 NAL matches scraped. | **CLOSED** |
-| 3 | **Girls Academy incomplete** | 🟡 HIGH | ACTIVE | Only 136 matches, should have 600-800 from Fall 2025. **NOT "between seasons"** — data exists. | **Session 106:** Scrape ALL Fall 2025 data (events 42137, 42138, 44874, 45530) + verify Spring schedule capture works |
-| 4 | **USYS NL 13 conferences missing** | 🟡 HIGH | ACTIVE | Only 30 matches, missing 10+ conference event IDs. **NOT "between seasons"** — discover NOW. | **Session 106:** Discover all 13 conference IDs, scrape all available Fall 2025 data, verify Spring schedule capture |
-| 5 | **NPL 2 leagues missing** | 🟡 MEDIUM | ACTIVE | 16/18 on GotSport, 2 remaining undiscovered | **Session 106:** Discover final 2 regional NPL leagues |
-| 6 | **PRODUCTION gap (4 vs 55)** | 🟡 MEDIUM | ACTIVE | Only 4/55 states (7.3%) at full PRODUCTION. 41 states lack standings/schedule data. | **Sessions 108-109:** Build standings scrapers for 6 major platforms |
-| 7 | **Match count gap (480K vs 1M)** | 🟡 MEDIUM | ACTIVE | Still 520K matches short of 1M target | **All sessions:** Event discovery + Spring 2026 data + standings |
-| 8 | **Double-prefix failures** | 🟢 LOW | ACTIVE | 74 matches failed team resolution in Wave 2d (e.g., "Delmarva Rush Delmarva Rush Rush 2017B") | **Session 110a:** Fix cleanTeamName.cjs edge cases |
-| 9 | **View refresh performance** | 🟢 LOW | ACTIVE | app_league_standings takes 50+ sec to refresh | **Session 110b:** Add indexes, optimize SQL |
-| 10 | **Source_entity_map coverage** | 🟢 LOW | ACTIVE | ~72K entries, could backfill +10K-20K from existing data | **Session 110c:** Backfill from historical matches |
-| 11 | **TN between seasons** | 🟢 LOW | WAITING | SINC adapter ready, season starts March 2026 | **March 2026:** Scrape TN State League |
-| 12 | **318 Pre-ECNL null dates** | 🟢 LOW | ACCEPTED | 81.5% success rate, failures from incomplete TGS events | No action (not recoverable) |
+| # | Risk/Gap | Severity | Session | Action |
+|---|----------|----------|---------|--------|
+| 1 | **RI data-purging platform** | 🔴 CRITICAL | **S115** (March 28) | Scrape SAME DAY Spring goes live. Adapter skeleton ready. |
+| 2 | **41 states lack AS-IS standings** | 🔴 CRITICAL | **S110** | Build 6 adapter standings scrapers in one session |
+| 3 | **6 states need event discovery** (FL, IN, MA, MO, TX-N, TX-S) | 🟡 HIGH | **S111** | GotSport event ID research for each |
+| 4 | **Spring 2026 not scraped** (AL, CO, MI, KY, MT, OK, AK) | 🟡 HIGH | **S111** | Scrape all — seasons should be active by mid-Feb |
+| 5 | **NO LEAGUE states** (MS, SD, WY) | 🟡 HIGH | **S112** | Research USYS regional data, find evidence |
+| 6 | **NM has no adapter** (PDF/WordPress) | 🟡 HIGH | **S112** | Build adapter per Principle 42 |
+| 7 | **STXCL NPL** (18th/18 NPL, AthleteOne) | 🟡 MEDIUM | **S113** | Build AthleteOne adapter |
+| 8 | **TN between seasons** (SINC ready) | 🟡 MEDIUM | **S114** (March 1) | Scrape via SINC adapter |
+| 9 | **WV event ID behind hash** | 🟡 MEDIUM | **S114** (March 1) | Per Principle 42, find it |
+| 10 | **Double-prefix failures** (74 matches) | 🟢 LOW | **S112** | Fix cleanTeamName.cjs edge cases |
+| 11 | **View refresh 50+ sec** | 🟢 LOW | **S112** | Add indexes, optimize SQL |
+| 12 | **SEM backfill** (~72K → 90K+) | 🟢 LOW | **S112** | Bulk SQL from historical data |
+| 13 | **Pipeline monitoring/alerting** | 🟢 LOW | **S112** | Add failure alerts to GitHub Actions |
+| 14 | **Girls Academy gap** (528 vs 800) | 🟢 LOW | **S111** | Re-scrape all 4 events |
+| 15 | **318 Pre-ECNL null dates** | ⚪ ACCEPTED | N/A | Not recoverable (81.5% success rate) |
+| 16 | **Outdated docs** (Roadmap, Playbook) | 🟢 LOW | **S112** | Update source tables, adapter lists |
 
 ### Resolved Risks (Archive)
 
 | # | Risk/Gap | Resolution | Session |
 |---|----------|----------|---------|
-| R1 | GA Girls not on SportsAffinity | Athena league ended on SA in 2021. GA Girls data (1,276 teams, 1,451 matches) already in DB via GotSport tournaments. | S100 |
-| R2 | ECNL future-proofing | Added LEAGUE_KEYWORDS + 74 TGS source_entity_map backfill → auto-classify new seasons | S101 |
-| R3 | MD/DE/IA event IDs missing | All 3 states upgraded from GS RANKS → PARTIAL (17 events discovered) | S101 |
-| R4 | Wave 2d small markets | ND resolved (no state league), MD/DE/IA scraped, WV deferred to March 2026 | S101 |
+| R1 | GA Girls not on SportsAffinity | Athena ended on SA in 2021. Girls via GotSport tournaments. | S100 |
+| R2 | ECNL future-proofing | LEAGUE_KEYWORDS + 74 TGS SEM backfill | S101 |
+| R3 | MD/DE/IA event IDs missing | All 3 upgraded GS RANKS → PARTIAL | S101 |
+| R4 | Wave 2d small markets | ND resolved, MD/DE/IA scraped | S101 |
+| R5 | PA-W GLC restricted access | National GotSport programs, not SA. NAL reclassified. | S108 |
+| R6 | GA incomplete (136 matches) | Scraped 4 events → 528 total. USYS NL 21 events. | S106 |
+| R7 | USYS NL 13 conferences | 21 events discovered + scraped. | S106 |
+| R8 | NPL 2 leagues missing | TCSL found (TGS). STXCL → AthleteOne S113. 17/18 done. | S106 |
+| R9 | SA has no standings page | Confirmed — all 10 URLs 404. Hybrid view computes. | S109 |
 
 ---
 
-## Session 104-110 Roadmap (Critical Path to National Coverage)
+## Session Roadmap — REPLACED
 
-> **PURPOSE:** 7-session sprint to complete adapter buildout, national programs, and standings scrapers.
+> **The old Sessions 104-110 roadmap has been replaced by the 7-Session Completion Plan (Sessions 110-116) in the Active Work Queue above.**
 >
-> **NOTE:** Session 103 detailed action items are in the "Active Work Queue" section at the top of this file.
-
-### ✅ Session 103: Demosphere Adapter — COMPLETE
-**Focus:** Built Demosphere adapter → VA/DC + WI upgraded. IL confirmed on GotSport.
-
-**Delivered:**
-- ✅ Demosphere.js adapter v2.0 built (Cheerio, JSON/XML endpoints)
-- ✅ NCSL (VA/DC) scraped: 608 divisions, 10,842 unique matches, 10,882 inserted
-- ✅ WI WYSA via PlayMetrics: 4,394 matches (Fall 2,164 + Spring 2,230)
-- ✅ IL confirmed already covered: 7 leagues, 12,123 matches via GotSport
-- ✅ **+15,268 matches, +5,042 teams, +4 leagues, 9th adapter, 9th pipeline job**
-
----
-
-### Session 104: IL/VA/WI Gap Fill + Squadi Adapter — COMPLETE ✅
-**Focus:** (1) Scrape discovered IL/VA/WI premier leagues using existing adapters, (2) Build Squadi adapter → AR to PRODUCTION
-
-**ACTUAL Results:**
-- IL: +488 matches from 5 NISL + SLYSA GotSport events (smaller than estimated — events are early-season)
-- VA: +238 matches from 3 VCSL/VPSL/TASL GotSport events
-- WI: +7,092 matches from 9 PlayMetrics events (MAYSA alone: 5,064!) — exceeded estimate by 5x
-- AR: Squadi REST API adapter built (no browser!), 6 events, +1,637 matches, 693 teams
-- Total: **+9,352 matches, +4,630 teams, +18 leagues**, 10th adapter, 10th pipeline job
-
----
-
-### Session 105: RI + HI Adapters
-**Focus:** Build final 2 custom adapters → RI + HI to PRODUCTION
-
-**Deliverables:**
-- RI Super Liga adapter (Cheerio, PHP endpoints)
-- HI Oahu League adapter (Puppeteer, AngularJS)
-- 2 states upgraded to PRODUCTION
-- +350-700 matches, 11th-12th adapters
-
-**Milestone:** ALL 12 ADAPTERS BUILT ✅
-
----
-
-### Session 106: National Programs — Complete Coverage
-**Focus:** Girls Academy + USYS NL + NPL — get ALL available data
-
-**CRITICAL:** "Between seasons" is NOT an excuse. Get all Fall 2025 data + ensure Spring schedules work.
-
-**Deliverables:**
-- Girls Academy: 136 → 600-800 matches (ALL Fall 2025 data)
-- USYS NL: Discover all 13 conference IDs, scrape all available data
-- NPL: Discover 2 remaining regional leagues
-- +1,500-3,000 matches
-
-**Milestone:** ALL NATIONAL PROGRAMS COMPLETE ✅
-
----
-
-### Session 107: Team Key Normalization Fix — COMPLETE ✅
-Fixed systemic team key normalization bug in fastProcessStaging.cjs. Recovered 11,061 staging records (+9,094 matches).
-
----
-
-### Session 108: Pipeline Freshness & Reliability — COMPLETE ✅
-**PA-W GLC SOLVED:** National programs on GotSport (not SA). 84 NAL matches processed.
-**3 systemic pipeline fixes:** Year filter bug, smart 30d/14d discovery, DQE→fastProcessStaging.
-**3 new principles:** 45 (Smart Discovery), 46 (fastProcessStaging Nightly), 47 (No Cascade Failure).
-All 10 adapters on unified discovery path. 6 downstream jobs cascade-protected.
-
----
-
-### Session 109+: Standings Scrapers Part 1
-**Focus:** Add standings to GotSport + SportsAffinity adapters
-
-**Deliverables:**
-- GotSport standings scraper (35 states affected)
-- SportsAffinity standings scraper (7 states affected)
-- +8,000-15,000 standings entries
-- 10+ states upgraded to PRODUCTION
-
----
-
-### Session 109: Standings Scrapers Part 2
-**Focus:** Add standings to PlayMetrics + HTGSports + MLS Next + TGS adapters
-
-**Deliverables:**
-- PlayMetrics, HTGSports, MLS Next, TGS standings scrapers
-- +4,500-7,000 standings entries
-- 5+ states upgraded to PRODUCTION
-
-**Milestone:** ALL ADAPTERS HAVE STANDINGS ✅
+> All completed session results are in the Session Progress Log and Completed Work archive at the top of this file.
 
 ---
 

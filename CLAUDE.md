@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 23.8** | Last Updated: February 17, 2026 | Session 108 Complete
+> **Version 23.9** | Last Updated: February 17, 2026 | Session 109 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1333,19 +1333,19 @@ All downstream jobs that depend on `validation-pipeline` accept three results:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 177,565 | Team records (Session 107: +106 from staging recovery) |
-| `matches_v2` | 520,376 active | Match results (~5,420 soft-deleted) |
+| `teams_v2` | 182,742 | Team records (Session 109: +5,177 from GotSport standings) |
+| `matches_v2` | 520,460 active | Match results (~5,420 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 462 | League metadata (Session 106: +26 — GA 4, USYS NL 21, misc 1) |
-| `tournaments` | 1,798 | Tournament metadata (Session 106: +11 incl. USYS NL Winter) |
-| `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
-| `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
-| `source_entity_map` | ~75,139+ | Universal source ID mappings |
+| `leagues` | 463 | League metadata (Session 109: +1 from standings processing) |
+| `tournaments` | 1,798 | Tournament metadata |
+| `league_standings` | 11,727 | Scraped standings: Heartland (~1,200) + SINC Sports NC (~800) + GotSport (~9,700) |
+| `staging_standings` | 15,127 | Raw standings staging (Session 92+95+109) |
+| `source_entity_map` | ~82,782 | Universal source ID mappings (Session 109: +7,643) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
 | `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
-| `staging_games` | 253,198 | Staging area (0 unprocessed — Session 107 cleared all 11,061) |
+| `staging_games` | 253,198 | Staging area (0 unprocessed) |
 | `staging_rejected` | 1 | Rejected intake data (Session 79) |
 | `seasons` | 3 | Season definitions |
 
@@ -1908,6 +1908,41 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 **Files Created:** `scripts/_debug/add_session106_gotsport_events.cjs`, `scripts/_debug/scrape_session106_gotsport.cjs`, `scripts/_debug/check_ga_db.cjs`, `scripts/_debug/check_usysnl_events.cjs`, `scripts/_debug/reclassify_ga_as_leagues.cjs`, `scripts/_debug/reclassify_usysnl_as_leagues.cjs`
 **Files Modified:** `scripts/adapters/totalglobalsports.js` (+TCSL NPL TX event 3989), `docs/3-STATE_COVERAGE_CHECKLIST.md` (v5.5), `.claude/hooks/session_checkpoint.md`, `CLAUDE.md` (v23.6)
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
+
+### Session 109 - GotSport Standings Scraper + Audit (February 17, 2026) - COMPLETE ✅
+
+**Goal:** Build GotSport standings scraper (Priority 3 Part 1). Comprehensive audit of all remaining checklist work. 7-session completion plan.
+
+**GotSport Standings Scraper:**
+- Built standings section in `gotsport.js` adapter (discoverSources + scrapeSource)
+- 40/40 GotSport leagues scraped: 7,580 standings to staging_standings
+- Two column layouts: 11-col (PTS in cells[9]) vs 10-col (compute 3*W+D)
+- Fixed points column bug for Girls Academy Aspire (614 rows) + Tier 1 (756 rows)
+- Fast bulk processor: 10,753 rows processed in 15.1 seconds
+- 11,727 total production standings (up from 2,012 — 5.8x increase)
+- SportsAffinity confirmed NOT NEEDED (no native standings page — all URLs 404)
+
+**Audit + Completion Plan:**
+- Full audit of all session work (Sessions 95-109) against SV Data Architecture
+- Verified: all 5 data elements defined (Matches, ELO, GS Ranks, Standings AS-IS, Schedules)
+- Created 7-session completion plan (Sessions 110-116) in STATE_COVERAGE_CHECKLIST.md v6.0
+- ELO timing: run once per sprint, not per session (idempotent, nightly pipeline handles it)
+
+**Key Metrics:**
+
+| Metric | Before Session 109 | After Session 109 |
+|--------|-------------------|-------------------|
+| league_standings | 2,012 | **11,727** (+9,715) |
+| staging_standings | 4,374 processed | **15,127** processed |
+| teams_v2 | ~174,768 | **~178,750** (+~3,979 from standings) |
+| source_entity_map | ~75,139 | **~79,142** (+4,003) |
+| Standings sources | 2 (Heartland, SINC) | **3** (+ GotSport) |
+
+**Files Modified:** `scripts/adapters/gotsport.js` (standings), `.github/workflows/daily-data-sync.yml` (scrape-standings), `docs/3-STATE_COVERAGE_CHECKLIST.md` (v6.0), `.claude/hooks/session_checkpoint.md`, `CLAUDE.md` (v23.9)
+**Files Created:** `scripts/_debug/fast_process_gs_standings.cjs`, `scripts/_debug/fix_gs_standings_points.cjs`, various probe scripts
 **Zero UI changes. All data flows through universal V2 pipeline.**
 
 ---
@@ -2543,7 +2578,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 109. Read CLAUDE.md (v23.8), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.5). Current: ~508,200 active matches, ~174,900 teams, 437 leagues, 10 adapters, 10 pipeline sync jobs. Session 108 COMPLETE — Fixed 3 systemic pipeline issues (year filter bug, narrow discovery windows, DQE timeout cascade). All 10 adapters on unified discovery path. 3 new principles (45-47). **Next priorities: Girls Academy + USYS NL + NPL from STATE_COVERAGE_CHECKLIST.md.** Zero UI changes needed."
+> "Resume SoccerView Session 110 — STANDINGS MEGA-SPRINT. Read CLAUDE.md (v23.9), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v6.0). Current: 520,460 active matches, 182,742 teams, 463 leagues, 11,727 standings (3 adapters), 10 adapters, 10 pipeline sync jobs. Session 109 COMPLETE — GotSport standings scraper built (7,580 standings from 40 leagues, 5.8x increase to 11,727 total). Full 7-session completion plan (S110-S116) written to STATE_COVERAGE_CHECKLIST.md v6.0. **Session 110 goal: Build standings scrapers for ALL remaining adapters (HTGSports, PlayMetrics, Demosphere, TotalGlobalSports, MLS Next, Squadi) in ONE session. This is the single highest-ROI action — unblocks 41+ states toward PRODUCTION.** Zero UI changes needed."
 
 ---
 
