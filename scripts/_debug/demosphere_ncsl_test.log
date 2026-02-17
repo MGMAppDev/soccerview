@@ -1,0 +1,45 @@
+🔄 Universal Core Scraper Engine v1.0
+==================================================
+Adapter: Demosphere/OttoSport Platform
+Active only: false
+Dry run: false
+Resume: false
+Event ID: 80738-fall2025
+Started: 2026-02-16T22:45:02.719Z
+
+🚀 Universal Scraper Engine v1.0
+   Adapter: Demosphere/OttoSport Platform (demosphere)
+   Technology: cheerio
+   Base URL: https://elements.demosphere-secure.com
+
+🔍 Testing database write capability (using pg Pool)...
+   Current staging_games count: 212091
+   ✅ Database write test PASSED (pg Pool)
+
+📋 Events to process: 1
+
+
+📋 [1/1] NCSL Travel Fall 2025
+   ❌ Error: engine.log is not a function
+
+============================================================
+✅ SCRAPE COMPLETE
+============================================================
+   Adapter: Demosphere/OttoSport Platform
+   Events found: 1
+   Events processed: 0
+   Events successful: 0
+   Events skipped: 0
+   Events failed: 1
+   Groups scraped: 0
+   Matches found: 0
+   Matches staged: 0
+   Runtime: 7s
+   Completed: 2026-02-16T22:45:09.821Z
+
+❌ ERRORS:
+   - Event 80738-fall2025: engine.log is not a function
+
+📋 Next: Run Data Quality Engine to process staged data
+   node scripts/universal/intakeValidator.js --clean-staging
+   node scripts/universal/dataQualityEngine.js --process-staging

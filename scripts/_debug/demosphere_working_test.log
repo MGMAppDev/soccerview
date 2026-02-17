@@ -1,0 +1,51 @@
+🔄 Universal Core Scraper Engine v1.0
+==================================================
+Adapter: Demosphere/OttoSport Platform
+Active only: false
+Dry run: false
+Resume: false
+Event ID: 80738-fall2025
+Started: 2026-02-16T22:49:26.180Z
+
+🚀 Universal Scraper Engine v1.0
+   Adapter: Demosphere/OttoSport Platform (demosphere)
+   Technology: cheerio
+   Base URL: https://elements.demosphere-secure.com
+
+🔍 Testing database write capability (using pg Pool)...
+   Current staging_games count: 212091
+   ✅ Database write test PASSED (pg Pool)
+
+📋 Events to process: 1
+
+
+📋 [1/1] NCSL Travel Fall 2025
+
+============================================================
+Scraping Demosphere Event: NCSL Travel Fall 2025
+Org ID: 80738, Season: Fall2025
+============================================================
+
+Fetching division index: https://elements.demosphere-secure.com/80738/schedules/index_E.html
+ERROR fetching index: Not found
+   ⏸️ No matches found (will retry next run)
+🗑️ Checkpoint cleared
+
+============================================================
+✅ SCRAPE COMPLETE
+============================================================
+   Adapter: Demosphere/OttoSport Platform
+   Events found: 1
+   Events processed: 1
+   Events successful: 0
+   Events skipped: 1
+   Events failed: 0
+   Groups scraped: 0
+   Matches found: 0
+   Matches staged: 0
+   Runtime: 3s
+   Completed: 2026-02-16T22:49:28.710Z
+
+📋 Next: Run Data Quality Engine to process staged data
+   node scripts/universal/intakeValidator.js --clean-staging
+   node scripts/universal/dataQualityEngine.js --process-staging

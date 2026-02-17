@@ -1,0 +1,115 @@
+🔄 Universal Core Scraper Engine v1.0
+==================================================
+Adapter: PlayMetrics
+Active only: false
+Dry run: false
+Resume: false
+Event ID: cal-spring-2025
+Started: 2026-02-16T18:37:39.866Z
+
+🚀 Universal Scraper Engine v1.0
+   Adapter: PlayMetrics (playmetrics)
+   Technology: puppeteer
+   Base URL: https://playmetricssports.com
+
+🔍 Testing database write capability (using pg Pool)...
+   Current staging_games count: 212091
+   ✅ Database write test PASSED (pg Pool)
+
+🌐 Launching Puppeteer browser...
+   Browser launched
+
+📋 Events to process: 1
+
+
+📋 [1/1] Colorado Advanced League Spring 2025
+   League ID: 1017-1253-d76f4cb2
+   State: CO
+   Loading league landing page...
+   Found 108 divisions
+
+   [1/108] U19B Premier 1
+      41 matches
+   [2/108] U19B Premier 2
+      45 matches
+   [3/108] U19B Elite Group A
+      40 matches
+   [4/108] U19B Elite Group B
+      44 matches
+   [5/108] U19B Platinum/Gold
+      44 matches
+   [6/108] U19B Silver/Bronze
+      20 matches
+   [7/108] U17B Premier 1
+      45 matches
+   [8/108] U17B Premier 2
+      41 matches
+   [9/108] U17B Premier 3
+      45 matches
+   [10/108] U17B Elite Group A
+      36 matches
+   [11/108] U17B Elite Group B
+      32 matches
+   [12/108] U17B Platinum
+      28 matches
+   [13/108] U17B Gold
+      40 matches
+   [14/108] U17B Silver/Bronze
+      40 matches
+   [15/108] U16B Elite
+      40 matches
+   [16/108] U16B Platinum
+      52 matches
+   [17/108] U16B Gold/Silver
+      52 matches
+   [18/108] U16B Bronze
+      32 matches
+   [19/108] U15B Premier 1
+      45 matches
+   [20/108] U15B Premier 2
+      45 matches
+   [21/108] U15B Elite
+      60 matches
+   [22/108] U15B Platinum
+      48 matches
+   [23/108] U15B Gold
+      40 matches
+   [24/108] U15B Silver
+      40 matches
+   [25/108] U15B Bronze
+      40 matches
+   [26/108] Secondary League A Bronze/League B Gold
+      32 matches
+   [27/108] Secondary League A Gold
+      24 matches
+   [28/108] Secondary League A Silver
+      32 matches
+   [29/108] Secondary League B Silver/Bronze
+      64 matches
+   [30/108] U14B Premier 1
+      37 matches
+   [31/108] U14B Premier 2
+      50 matches
+   [32/108] U14B Premier 3
+      45 matches
+   [33/108] U14G Premier 1
+      45 matches
+   [34/108] U14G Premier 2
+      45 matches
+   [35/108] U14G Premier 3
+      45 matches
+   [36/108] U14B Elite
+      44 matches
+   [37/108] U14G Elite/Platinum
+      60 matches
+   [38/108] U14B Platinum
+      56 matches
+   [39/108] U14B Gold
+      56 matches
+   [40/108] U14G Gold
+      48 matches
+   [41/108] U14B Silver Group A
+      36 matches
+   [42/108] U14B Silver Group B
+      36 matches
+   [43/108] U14G Silver

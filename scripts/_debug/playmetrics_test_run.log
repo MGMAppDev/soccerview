@@ -1,0 +1,286 @@
+🔄 Universal Core Scraper Engine v1.0
+==================================================
+Adapter: PlayMetrics
+Active only: false
+Dry run: true
+Resume: false
+Event ID: cal-fall-2025
+Started: 2026-02-16T16:07:12.133Z
+
+🚀 Universal Scraper Engine v1.0
+   Adapter: PlayMetrics (playmetrics)
+   Technology: puppeteer
+   Base URL: https://playmetricssports.com
+
+🔍 Testing database write capability (using pg Pool)...
+   Current staging_games count: 206977
+   ✅ Database write test PASSED (pg Pool)
+
+🌐 Launching Puppeteer browser...
+   Browser launched
+
+📋 Events to process: 1
+
+
+📋 [1/1] Colorado Advanced League Fall 2025
+   League ID: 1017-1482-91a2b806
+   State: CO
+   Loading league landing page...
+   Found 115 divisions
+
+   [1/115] U19G Premier 1
+      41 matches
+   [2/115] U19G Premier 2
+      45 matches
+   [3/115] U19G Premier 3
+      45 matches
+   [4/115] U19G Elite Group A
+      32 matches
+   [5/115] U19G Elite Group B
+      32 matches
+   [6/115] U19G Platinum/Gold
+      40 matches
+   [7/115] U19G Silver/Bronze
+      45 matches
+   [8/115] U17G Premier 1
+      45 matches
+   [9/115] U17G Premier 2
+      50 matches
+   [10/115] U17G Premier 3
+      45 matches
+   [11/115] U17G Premier 4
+      45 matches
+   [12/115] U17G Elite
+      28 matches
+   [13/115] U17G Platinum-Silver
+      48 matches
+   [14/115] U16G Elite/Platinum
+      40 matches
+   [15/115] U16G Gold
+      36 matches
+   [16/115] U16G Silver/Bronze
+      36 matches
+   [17/115] U15G Premier 1
+      45 matches
+   [18/115] U15G Premier 2
+      32 matches
+   [19/115] U15G Premier 3
+      45 matches
+   [20/115] U15G Elite
+      28 matches
+   [21/115] U15G Platinum
+      32 matches
+   [22/115] U15G Gold
+      28 matches
+   [23/115] U15G Silver
+      32 matches
+   [24/115] U15G Bronze
+      48 matches
+   [25/115] Secondary League A Bronze
+      36 matches
+   [26/115] Secondary League A Gold
+      52 matches
+   [27/115] Secondary League A Silver
+      56 matches
+   [28/115] Secondary League B North
+      52 matches
+   [29/115] Secondary League B South
+      44 matches
+   [30/115] U14B Premier 1
+      36 matches
+   [31/115] U14B Premier 2
+      41 matches
+   [32/115] U14G Premier 1
+      32 matches
+   [33/115] U14G Premier 2
+      45 matches
+   [34/115] U14G Premier 3
+      41 matches
+   [35/115] U14B Elite Group A
+      36 matches
+   [36/115] U14B Elite Group B
+      36 matches
+   [37/115] U14G Elite
+      44 matches
+   [38/115] U14B Platinum Group A
+      36 matches
+   [39/115] U14B Platinum Group B
+      40 matches
+   [40/115] U14G Platinum
+      43 matches
+   [41/115] U14B Gold Group A
+      32 matches
+   [42/115] U14B Gold Group B
+      36 matches
+   [43/115] U14G Gold
+      52 matches
+   [44/115] U14B Silver Group A
+      44 matches
+   [45/115] U14B Silver Group B
+      36 matches
+   [46/115] U14G Silver
+      36 matches
+   [47/115] U14B Bronze Group A
+      44 matches
+   [48/115] U14B Bronze Group B
+      40 matches
+   [49/115] U14G Bronze
+      36 matches
+   [50/115] U13B Premier 1
+      36 matches
+   [51/115] U13B Premier 2
+      45 matches
+   [52/115] U13G Premier 1
+      41 matches
+   [53/115] U13G Premier 2
+      32 matches
+   [54/115] U13G Premier 3
+      45 matches
+   [55/115] U13B Elite Group A
+      36 matches
+   [56/115] U13B Elite Group B
+      36 matches
+   [57/115] U13G Elite
+      36 matches
+   [58/115] U13B Platinum
+      52 matches
+   [59/115] U13G Platinum
+      48 matches
+   [60/115] U13B Gold Group A
+      54 matches
+   [61/115] U13B Gold Group B
+      56 matches
+   [62/115] U13G Gold
+      48 matches
+   [63/115] U13B Silver
+      57 matches
+   [64/115] U13G Silver
+      48 matches
+   [65/115] U13B Bronze
+      60 matches
+   [66/115] U13G Bronze Group A
+      36 matches
+   [67/115] U13G Bronze Group B
+      32 matches
+   [68/115] U12B Premier 1
+      45 matches
+   [69/115] U12B Premier 2
+      45 matches
+   [70/115] U12B Premier 3
+      45 matches
+   [71/115] U12G Premier 1
+      41 matches
+   [72/115] U12G Premier 2
+      45 matches
+   [73/115] U12G Premier 3
+      27 matches
+   [74/115] U12B Elite Group A
+      42 matches
+   [75/115] U12B Elite Group B
+      40 matches
+   [76/115] U12G Elite
+      32 matches
+   [77/115] U12B Platinum Group A
+      36 matches
+   [78/115] U12B Platinum Group B
+      40 matches
+   [79/115] U12G Platinum
+      44 matches
+   [80/115] U12B Gold Group A
+      40 matches
+   [81/115] U12B Gold Group B
+      40 matches
+   [82/115] U12G Gold Group A
+      36 matches
+   [83/115] U12G Gold Group B
+      38 matches
+   [84/115] U12B Silver Group A
+      52 matches
+   [85/115] U12B Silver Group B
+      52 matches
+   [86/115] U12G Silver Group A
+      40 matches
+   [87/115] U12G Silver Group B
+      36 matches
+   [88/115] U12B Bronze Group A
+      56 matches
+   [89/115] U12B Bronze Group B
+      52 matches
+   [90/115] U12B Bronze Group C
+      40 matches
+   [91/115] U12G Bronze Group A
+      60 matches
+   [92/115] U12G Bronze Group B
+      32 matches
+   [93/115] U11B Premier 1
+      45 matches
+   [94/115] U11B Premier 2
+      45 matches
+   [95/115] U11B Premier 3
+      45 matches
+   [96/115] U11G Premier 1
+      32 matches
+   [97/115] U11G Premier 2
+      41 matches
+   [98/115] U11G Premier 3
+      45 matches
+   [99/115] U11B Elite Group A
+      36 matches
+   [100/115] U11B Elite Group B
+      36 matches
+   [101/115] U11G Elite
+      44 matches
+   [102/115] U11B Platinum
+      68 matches
+   [103/115] U11G Platinum
+      32 matches
+   [104/115] U11B Gold Group A
+      44 matches
+   [105/115] U11B Gold Group B
+      44 matches
+   [106/115] U11G Gold
+      56 matches
+   [107/115] U11B Silver Group A
+      60 matches
+   [108/115] U11B Silver Group B
+      55 matches
+   [109/115] U11G Silver Group A
+      44 matches
+   [110/115] U11G Silver Group B
+      40 matches
+   [111/115] U11B Bronze Group A
+      48 matches
+   [112/115] U11B Bronze Group B
+      44 matches
+   [113/115] U11B Bronze Group C
+      36 matches
+   [114/115] U11G Bronze Group A
+      48 matches
+   [115/115] U11G Bronze Group B
+      44 matches
+
+   Total: 4855 unique matches
+   [DRY RUN] Would stage 4855 matches
+   ✅ Staged 4855 matches
+
+🌐 Browser closed
+🗑️ Checkpoint cleared
+
+============================================================
+✅ SCRAPE COMPLETE
+============================================================
+   Adapter: PlayMetrics
+   Events found: 1
+   Events processed: 1
+   Events successful: 1
+   Events skipped: 0
+   Events failed: 0
+   Groups scraped: 0
+   Matches found: 4855
+   Matches staged: 4855
+   Runtime: 1066s
+   Completed: 2026-02-16T16:24:58.579Z
+
+📋 Next: Run Data Quality Engine to process staged data
+   node scripts/universal/intakeValidator.js --clean-staging
+   node scripts/universal/dataQualityEngine.js --process-staging

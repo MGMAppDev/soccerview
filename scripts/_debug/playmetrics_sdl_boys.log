@@ -1,0 +1,59 @@
+🔄 Universal Core Scraper Engine v1.0
+==================================================
+Adapter: PlayMetrics
+Active only: false
+Dry run: false
+Resume: false
+Event ID: sdl-fall-2025-boys
+Started: 2026-02-16T18:25:29.371Z
+
+🚀 Universal Scraper Engine v1.0
+   Adapter: PlayMetrics (playmetrics)
+   Technology: puppeteer
+   Base URL: https://playmetricssports.com
+
+🔍 Testing database write capability (using pg Pool)...
+   Current staging_games count: 211742
+   ✅ Database write test PASSED (pg Pool)
+
+🌐 Launching Puppeteer browser...
+   Browser launched
+
+📋 Events to process: 1
+
+
+📋 [1/1] Sporting Development League Fall 2025 Boys U11/U12
+   League ID: 1133-1550-26d1bb55
+   State: National
+   Loading league landing page...
+   Found 2 divisions
+
+   [1/2] U12 Boys
+      160 matches
+   [2/2] U11 Boys
+      160 matches
+
+   Total: 320 unique matches
+   ✅ Staged 320 matches
+
+🌐 Browser closed
+🗑️ Checkpoint cleared
+
+============================================================
+✅ SCRAPE COMPLETE
+============================================================
+   Adapter: PlayMetrics
+   Events found: 1
+   Events processed: 1
+   Events successful: 1
+   Events skipped: 0
+   Events failed: 0
+   Groups scraped: 0
+   Matches found: 320
+   Matches staged: 320
+   Runtime: 33s
+   Completed: 2026-02-16T18:26:02.603Z
+
+📋 Next: Run Data Quality Engine to process staged data
+   node scripts/universal/intakeValidator.js --clean-staging
+   node scripts/universal/dataQualityEngine.js --process-staging

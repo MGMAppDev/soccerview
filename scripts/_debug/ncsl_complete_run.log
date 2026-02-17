@@ -1,0 +1,39 @@
+[dotenv@17.2.3] injecting env (5) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+NCSL Complete Scraper - Session 103
+===================================
+
+Existing demosphere staging records: 33
+
+============================================================
+SCRAPING: NCSL Travel Fall 2025
+Season: Fall2025, Key: 115189101
+============================================================
+
+Discovering divisions for Fall2025...
+  Found 10 division IDs from HTML
+
+Scraping 10 divisions...
+
+--- NCSL Travel Fall 2025 COMPLETE ---
+  Divisions with data: 1
+  Matches found: 33
+  Matches staged: 33
+
+============================================================
+SCRAPING: NCSL Travel Spring 2025
+Season: Spring2025, Key: 114346054
+============================================================
+
+Discovering divisions for Spring2025...
+  Could not fetch https://elements.demosphere-secure.com/80738/schedules/Spring2025/115189283.html
+  Trying JS-based discovery...
+  Found 0 divisions via probing
+  No divisions found for Spring2025 - skipping
+
+============================================================
+NCSL SCRAPE COMPLETE
+============================================================
+Total divisions scraped: 1
+Total matches found: 33
+Total matches staged: 33
+Demosphere staging records: 33 → 66 (+33)
