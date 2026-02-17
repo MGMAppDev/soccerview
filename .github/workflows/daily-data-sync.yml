@@ -17,6 +17,7 @@ name: Daily Data Sync (V2 Architecture)
 #      - SportsAffinity (7 states)   -> staging_games (Cheerio)
 #      - Demosphere (NCSL VA/DC)     -> staging_games (Cheerio)
 #      - PlayMetrics (CO/SDL/WI)      -> staging_games (Puppeteer)
+#      - Squadi (AR ACSL/NWAL/CAL)   -> staging_games (REST API)
 #   1.5. STANDINGS SCRAPING (parallel with Phase 1):
 #      - League standings (heartland + sincsports) -> staging_standings
 #   2. VALIDATION PIPELINE:
@@ -560,6 +561,46 @@ jobs:
         timeout-minutes: 50
         continue-on-error: true
 
+  sync-squadi:
+    name: "🏹 Squadi (AR)"
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.event.inputs.sync_type == 'full' ||
+        github.event.inputs.sync_type == null
+      }}
+    timeout-minutes: 15
+    outputs:
+      matches_staged: ${{ steps.sync.outputs.matches_staged }}
+      status: ${{ job.status }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync Squadi (API - AR ACSL/NWAL/CAL)
+        id: sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "🏹 Scraping Squadi (AR)"
+          node scripts/universal/coreScraper.js --adapter squadi --active-only 2>&1 | tee squadi_output.txt || true
+
+          MATCHES=$(grep -oP 'Total matches staged:\s*\K\d+' squadi_output.txt | tail -1 || echo "0")
+          echo "matches_staged=$MATCHES" >> $GITHUB_OUTPUT
+          echo "🏹 Squadi matches staged: $MATCHES"
+        timeout-minutes: 10
+        continue-on-error: true
+
   # ============================================================================
   # PHASE 1.5: STANDINGS SCRAPING (Parallel with match scraping)
   # Scrape authoritative league standings → staging_standings
@@ -629,7 +670,7 @@ jobs:
   validation-pipeline:
     name: "🔄 Validation Pipeline"
     runs-on: ubuntu-latest
-    needs: [sync-gotsport, sync-htgsports, sync-heartland, sync-sincsports, sync-totalglobalsports, sync-mlsnext, sync-sportsaffinity, sync-demosphere, sync-playmetrics]
+    needs: [sync-gotsport, sync-htgsports, sync-heartland, sync-sincsports, sync-totalglobalsports, sync-mlsnext, sync-sportsaffinity, sync-demosphere, sync-playmetrics, sync-squadi]
     if: >-
       ${{
         always() &&
@@ -661,7 +702,10 @@ jobs:
          needs.sync-demosphere.result == 'failure') &&
         (needs.sync-playmetrics.result == 'success' ||
          needs.sync-playmetrics.result == 'skipped' ||
-         needs.sync-playmetrics.result == 'failure')
+         needs.sync-playmetrics.result == 'failure') &&
+        (needs.sync-squadi.result == 'success' ||
+         needs.sync-squadi.result == 'skipped' ||
+         needs.sync-squadi.result == 'failure')
       }}
     timeout-minutes: 45
     outputs:
@@ -1254,6 +1298,7 @@ jobs:
       - sync-sportsaffinity
       - sync-demosphere
       - sync-playmetrics
+      - sync-squadi
       - scrape-standings
       - validation-pipeline
       - process-standings
@@ -1298,6 +1343,7 @@ jobs:
           echo "| SportsAffinity | ${{ needs.sync-sportsaffinity.result || '⏭️ skipped' }} | ${{ needs.sync-sportsaffinity.outputs.matches_staged || '-' }} | universal |" >> $GITHUB_STEP_SUMMARY
           echo "| Demosphere | ${{ needs.sync-demosphere.result || '⏭️ skipped' }} | ${{ needs.sync-demosphere.outputs.matches_staged || '-' }} | universal |" >> $GITHUB_STEP_SUMMARY
           echo "| PlayMetrics | ${{ needs.sync-playmetrics.result || '⏭️ skipped' }} | ${{ needs.sync-playmetrics.outputs.matches_staged || '-' }} | universal |" >> $GITHUB_STEP_SUMMARY
+          echo "| Squadi | ${{ needs.sync-squadi.result || '⏭️ skipped' }} | ${{ needs.sync-squadi.outputs.matches_staged || '-' }} | universal |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "## 📋 Phase 1.5: Standings Scraping" >> $GITHUB_STEP_SUMMARY

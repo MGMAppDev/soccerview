@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 23.3** | Last Updated: February 17, 2026 | Session 103 Complete
+> **Version 23.4** | Last Updated: February 17, 2026 | Session 104 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1262,14 +1262,14 @@ This file is:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 169,641 | Team records (Session 103: +5,042 from Demosphere VA/DC + PlayMetrics WI) |
-| `matches_v2` | 495,178 active | Match results (~5,417 soft-deleted) |
+| `teams_v2` | 174,271 | Team records (Session 104: +4,630 from IL/VA/WI gap fill + Squadi AR) |
+| `matches_v2` | 504,530 active | Match results (~5,420 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 414 | League metadata (Session 103: +4 from Demosphere NCSL + PlayMetrics WYSA) |
-| `tournaments` | 1,780 | Tournament metadata |
+| `leagues` | 432 | League metadata (Session 104: +18 from IL/VA GotSport + WI PlayMetrics + AR Squadi) |
+| `tournaments` | 1,787 | Tournament metadata |
 | `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
 | `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
-| `source_entity_map` | ~75,139+ | Universal source ID mappings (Session 103: +265 from Demosphere/PlayMetrics) |
+| `source_entity_map` | ~75,139+ | Universal source ID mappings |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
@@ -1299,8 +1299,9 @@ This file is:
 | MLS Next | ✅ Production (Session 97) | staging_games (Puppeteer, Modular11) |
 | SportsAffinity | ✅ Production (Session 97) | staging_games (Cheerio, GA/MN/UT/OR/NE/PA-W/IA — 66 events) |
 | TotalGlobalSports | ✅ Production (Session 100: 76 events, 33,567 matches) | staging_games (ECNL, Puppeteer+stealth) |
-| PlayMetrics | ✅ Production (Session 102-103: CO CAL + SDL + WI WYSA, 9,507 matches) | staging_games (Puppeteer, Vue SPA) |
+| PlayMetrics | ✅ Production (Session 102-104: CO CAL + SDL + WI WYSA/MAYSA/EC/CWSL, 16,602 matches) | staging_games (Puppeteer, Vue SPA) |
 | Demosphere | ✅ Production (Session 103: NCSL VA/DC, 10,882 matches) | staging_games (Cheerio, JSON/XML endpoints) |
+| Squadi | ✅ Production (Session 104: AR ACSL/NWAL/CAL, 1,637 matches) | staging_games (REST API, no browser needed) |
 
 ### source_match_key (CRITICAL - Session 57)
 
@@ -1499,6 +1500,7 @@ eas build --platform android
 | `scripts/adapters/sportsaffinity.js` | **NEW (Session 97)** SportsAffinity adapter (Cheerio, GA Soccer) |
 | `scripts/adapters/playmetrics.js` | **NEW (Session 102)** PlayMetrics adapter (Puppeteer, CO CAL + SDL + WI WYSA) |
 | `scripts/adapters/demosphere.js` | **NEW (Session 103)** Demosphere/OttoSport adapter (Cheerio, NCSL VA/DC) |
+| `scripts/adapters/squadi.js` | **NEW (Session 104)** Squadi adapter (REST API, AR ACSL/NWAL/CAL) |
 | `scripts/adapters/_template.js` | Template for creating new adapters |
 
 **Usage:**
@@ -1715,6 +1717,45 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 104 - IL/VA/WI Gap Fill + Squadi AR Adapter (February 17, 2026) - COMPLETE ✅
+
+**Goal:** Scrape 17 discovered premier league event IDs (IL/VA/WI) from Session 103 research. Build 10th adapter for Arkansas (Squadi platform).
+
+**Key Results:**
+- All 17 discovered gaps from Session 103 SCRAPED and PROCESSED
+- New Squadi adapter built — pure REST API, no browser, 68-second scrape
+- Event classification fix: fastProcessStaging now checks staging_events.event_type before LEAGUE_KEYWORDS
+- MAYSA (Madison Area Youth Soccer): 175 divisions, 5,064 matches — largest WI regional league
+
+**Scraping Results:**
+
+| Source | Events | Matches Staged | Matches Inserted | New Teams |
+|--------|--------|---------------|-----------------|-----------|
+| GotSport IL (5 events) | NISL NPL/Club, SLYSA | 488 | ~488 | — |
+| GotSport VA (3 events) | VCSL, VPSL, TASL | 238 | ~137 | — |
+| PlayMetrics WI (9 events) | WYSA/MAYSA/EC/CWSL | 7,095 | 7,092 | 2,599 |
+| Squadi AR (6 events) | ACSL/NWAL/CAL/State Champs | 1,639 | 1,637 | 693 |
+| **Total** | **23** | **9,460** | **9,354** | **~4,630** |
+
+**Key Metrics:**
+
+| Metric | Before Session 104 | After Session 104 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 495,178 | **504,530** (+9,352) |
+| teams_v2 | 169,641 | **174,271** (+4,630) |
+| leagues | 414 | **432** (+18) |
+| tournaments | 1,780 | **1,787** (+7) |
+| Adapters built | 9 | **10** (added Squadi) |
+| Pipeline sync jobs | 9 | **10** (added sync-squadi) |
+| AR league matches | 0 | **1,637** |
+| WI league matches | 4,516 | **~11,600** (+~7,092) |
+
+**Files Created:** `scripts/adapters/squadi.js` (10th adapter), `scripts/_debug/add_session104_gotsport_events.cjs`, `scripts/_debug/scrape_session104_gotsport.cjs`, `scripts/_debug/probe_squadi_api.cjs`, `scripts/_debug/reclassify_squadi_leagues.cjs`, various WI debug scripts
+**Files Modified:** `scripts/adapters/playmetrics.js` (+9 WI events), `scripts/universal/intakeValidator.js` (+squadi), `scripts/maintenance/fastProcessStaging.cjs` (event type classification fix), `.github/workflows/daily-data-sync.yml` (+sync-squadi), `.claude/hooks/session_checkpoint.md`, `CLAUDE.md` (v23.4)
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
 
 ### Session 103 - Wave 5 Demosphere Adapter + WI PlayMetrics (February 16-17, 2026) - COMPLETE ✅
 
@@ -2271,7 +2312,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 104. Read CLAUDE.md (v23.3), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.2). Current: 495,178 active matches, 169,641 teams, 414 leagues, 9 adapters, 9 pipeline sync jobs. Wave 5 COMPLETE. **PRIORITY 1: IL/VA/WI gap fill** — Session 103 research discovered 17 premier league event IDs NOT yet scraped (5 IL GotSport NISL events, 3 VA GotSport events, 9 WI PlayMetrics events). Add to existing adapters and scrape FIRST. See session_checkpoint.md 'Discovered Gaps' section for all IDs. **PRIORITY 2: Build Squadi adapter (AR).** Expected: +4,000-10,500 matches total. See STATE_COVERAGE_CHECKLIST.md Session 104 for full plan."
+> "Resume SoccerView Session 105. Read CLAUDE.md (v23.4), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.3). Current: 504,530 active matches, 174,271 teams, 432 leagues, 10 adapters, 10 pipeline sync jobs. Session 104 COMPLETE — IL/VA/WI gap fill + Squadi AR adapter (+9,352 matches, 10th adapter). **Next priorities from STATE_COVERAGE_CHECKLIST.md.** Zero UI changes needed."
 
 ---
 

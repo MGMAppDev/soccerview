@@ -333,14 +333,26 @@ async function main() {
 
       console.log(`  ${eventMap.size} existing events found (${semRows.length} from source_entity_map, ${existTournaments.length} tournaments, ${existLeagues.length} leagues)`);
 
-      // Create missing — classify by name keywords (league vs tournament)
+      // Create missing — classify using staging_events.event_type first, then name keywords (league vs tournament)
       const LEAGUE_KEYWORDS = ['league', 'season', 'conference', 'division', 'premier', 'ecnl', 'ecrl', 'pre-ecnl'];
+      // Pre-fetch staging_events type declarations (set by adapter staticEvents via coreScraper)
+      const missingEvIds = [...uniqueEvents.keys()].filter(id => !eventMap.has(id));
+      const stagingEventTypes = new Map();
+      if (missingEvIds.length > 0) {
+        const { rows: seRows } = await client.query(
+          `SELECT source_event_id, event_type FROM staging_events WHERE source_event_id = ANY($1)`, [missingEvIds]
+        );
+        for (const se of seRows) stagingEventTypes.set(se.source_event_id, se.event_type);
+      }
       if (!dryRun) {
         let createdLeagues = 0, createdTournaments = 0;
         for (const [evId, ev] of uniqueEvents) {
           if (eventMap.has(evId)) continue;
+          // Priority 1: staging_events.event_type from adapter declaration
+          const declaredType = stagingEventTypes.get(evId);
+          // Priority 2: LEAGUE_KEYWORDS in event name
           const lowerName = (ev.name || '').toLowerCase();
-          const isLeague = LEAGUE_KEYWORDS.some(kw => lowerName.includes(kw));
+          const isLeague = declaredType === 'league' || (!declaredType && LEAGUE_KEYWORDS.some(kw => lowerName.includes(kw)));
 
           const { rows: dateRange } = await client.query(
             `SELECT MIN(match_date) as sd, MAX(match_date) as ed FROM staging_games WHERE event_id = $1`, [evId]
