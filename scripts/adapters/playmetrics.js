@@ -341,6 +341,198 @@ export default {
   },
 
   // =========================================
+  // STANDINGS SCRAPING (Session 110)
+  // Universal pattern: discoverSources() + scrapeSource()
+  // Requires Puppeteer — Vue SPA renders standings tables client-side.
+  //
+  // PlayMetrics division_view.html page has TWO tables:
+  //   1. Schedule table (has "Home Team"/"Away Team" headers)
+  //   2. Standings table (has "Team"/"MP"/"W"/"D"/"L"/"GF"/"GA"/"GD"/"Pts" headers)
+  // =========================================
+
+  standings: {
+    enabled: true,
+
+    /**
+     * Discover sources from PlayMetrics static events.
+     * Only league events (not tournaments) have standings.
+     */
+    discoverSources: async (engine) => {
+      const sources = [];
+
+      for (const evt of engine.adapter.discovery.staticEvents) {
+        if (evt.type !== 'league') continue;
+        if (!evt.leagueId) continue;
+
+        // Verify this event exists in the DB
+        const { rows } = await engine.pool.query(
+          `SELECT id FROM leagues WHERE source_event_id = $1 AND source_platform = 'playmetrics' LIMIT 1`,
+          [evt.id]
+        );
+        if (rows.length === 0) continue;
+
+        sources.push({
+          id: evt.id,
+          name: evt.name,
+          league_source_id: evt.id, // source_entity_id in source_entity_map
+          leagueId: evt.leagueId,
+          season: evt.year >= 2026 ? '2025-2026' : '2024-2025',
+          snapshot_date: new Date().toISOString().split('T')[0],
+        });
+      }
+
+      return sources;
+    },
+
+    /**
+     * Scrape standings for a PlayMetrics league.
+     * Uses Puppeteer to load the Vue SPA and extract standings tables.
+     *
+     * Flow:
+     *   1. Load league landing page → discover division links
+     *   2. For each division, load division_view.html (wait 5s for Vue)
+     *   3. Parse the standings table (any table with a "Pts" or "Points" column
+     *      that does NOT have "Home Team" columns — this distinguishes it from
+     *      the schedule/matches table on the same page)
+     */
+    scrapeSource: async (engine, source) => {
+      const allStandings = [];
+      const { leagueId, league_source_id, season } = source;
+      const baseUrl = engine.adapter.baseUrl;
+
+      const b = await engine.initPuppeteer();
+      const page = await b.newPage();
+
+      try {
+        // Step 1: Load league landing page to discover division links
+        const landingUrl = `${baseUrl}/g/leagues/${leagueId}/league_view.html`;
+        await page.goto(landingUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        await engine.sleep(8000); // Vue SPA render
+
+        const divisions = await page.evaluate(() => {
+          const cards = Array.from(document.querySelectorAll('.league-divisions__grid__card'));
+          return cards.map(card => {
+            const nameEl = card.querySelector('.league-divisions__grid__card__name');
+            const linkEl = card.querySelector('a.button');
+            return {
+              name: nameEl ? nameEl.textContent.trim() : null,
+              href: linkEl ? linkEl.getAttribute('href') : null,
+            };
+          }).filter(d => d.name && d.href);
+        });
+
+        if (divisions.length === 0) {
+          console.log(`  No divisions found for ${source.name}`);
+          await page.close();
+          return [];
+        }
+
+        console.log(`  Found ${divisions.length} divisions for ${source.name}`);
+
+        // Step 2: Scrape each division for standings
+        for (let i = 0; i < divisions.length; i++) {
+          const division = divisions[i];
+          const { gender, ageGroup } = engine.adapter.transform.parseDivision(division.name);
+
+          try {
+            const divisionUrl = `${baseUrl}${division.href}`;
+            await page.goto(divisionUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+            await engine.sleep(5000); // Vue SPA render
+
+            // Step 3: Extract standings table
+            const standings = await page.evaluate((divName) => {
+              const results = [];
+              const tables = Array.from(document.querySelectorAll('table'));
+
+              for (const table of tables) {
+                const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim());
+
+                // Skip schedule/match tables (they have "Home Team" column)
+                if (headers.some(h => h.includes('Home Team') || h.includes('Away Team'))) continue;
+
+                // Look for standings table (has "Pts" or "Points" column)
+                const hasPts = headers.some(h => h === 'Pts' || h === 'Points' || h === 'PTS');
+                const hasTeam = headers.some(h => h === 'Team' || h === 'Club');
+                if (!hasPts || !hasTeam) continue;
+
+                // Find column indices
+                const teamIdx = headers.findIndex(h => h === 'Team' || h === 'Club');
+                const mpIdx = headers.findIndex(h => h === 'MP' || h === 'P' || h === 'GP' || h === 'Played');
+                const wIdx = headers.findIndex(h => h === 'W' || h === 'Wins');
+                const dIdx = headers.findIndex(h => h === 'D' || h === 'T' || h === 'Ties' || h === 'Draws');
+                const lIdx = headers.findIndex(h => h === 'L' || h === 'Losses');
+                const gfIdx = headers.findIndex(h => h === 'GF' || h === 'F' || h === 'Goals For');
+                const gaIdx = headers.findIndex(h => h === 'GA' || h === 'A' || h === 'Goals Against');
+                const ptsIdx = headers.findIndex(h => h === 'Pts' || h === 'Points' || h === 'PTS');
+
+                const rows = table.querySelectorAll('tbody tr');
+                for (let r = 0; r < rows.length; r++) {
+                  const cells = Array.from(rows[r].querySelectorAll('td'));
+                  if (cells.length < 4) continue;
+
+                  const teamName = cells[teamIdx]?.textContent.trim();
+                  if (!teamName) continue;
+
+                  results.push({
+                    division: divName,
+                    team_name: teamName,
+                    position: r + 1,
+                    played: mpIdx >= 0 ? parseInt(cells[mpIdx]?.textContent.trim(), 10) || 0 : null,
+                    wins: wIdx >= 0 ? parseInt(cells[wIdx]?.textContent.trim(), 10) || 0 : null,
+                    draws: dIdx >= 0 ? parseInt(cells[dIdx]?.textContent.trim(), 10) || 0 : null,
+                    losses: lIdx >= 0 ? parseInt(cells[lIdx]?.textContent.trim(), 10) || 0 : null,
+                    goals_for: gfIdx >= 0 ? parseInt(cells[gfIdx]?.textContent.trim(), 10) || 0 : null,
+                    goals_against: gaIdx >= 0 ? parseInt(cells[gaIdx]?.textContent.trim(), 10) || 0 : null,
+                    points: ptsIdx >= 0 ? parseInt(cells[ptsIdx]?.textContent.trim(), 10) || 0 : null,
+                  });
+                }
+
+                if (results.length > 0) break; // Found standings table, stop searching
+              }
+
+              return results;
+            }, division.name);
+
+            for (const s of standings) {
+              allStandings.push({
+                league_source_id,
+                division: s.division,
+                team_name: s.team_name,
+                team_source_id: null,
+                played: s.played,
+                wins: s.wins,
+                losses: s.losses,
+                draws: s.draws,
+                goals_for: s.goals_for,
+                goals_against: s.goals_against,
+                points: s.points,
+                position: s.position,
+                age_group: ageGroup,
+                gender,
+                season,
+              });
+            }
+
+            if (engine.isVerbose) {
+              console.log(`    [${i + 1}/${divisions.length}] ${division.name}: ${standings.length} entries`);
+            }
+
+          } catch (err) {
+            console.log(`    Division ${division.name} error: ${err.message}`);
+          }
+
+          await engine.sleep(engine.adapter.rateLimiting.iterationDelay);
+        }
+
+      } finally {
+        await page.close();
+      }
+
+      return allStandings;
+    },
+  },
+
+  // =========================================
   // CUSTOM SCRAPING LOGIC
   // =========================================
 

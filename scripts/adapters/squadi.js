@@ -291,6 +291,150 @@ export default {
   },
 
   // =========================================
+  // STANDINGS SCRAPING (Session 110)
+  // Universal pattern: discoverSources() + scrapeSource()
+  // Uses the REST API ladder endpoint:
+  //   GET /teams/ladder/v2?divisionIds={divId}&competitionKey={key}&showForm=1&sportRefId=1
+  //   Returns: { ladders: [{ name, P, W, L, D, F, A, PTS, rk, divisionName, grade, ... }] }
+  // =========================================
+
+  standings: {
+    enabled: true,
+
+    /**
+     * Discover standings sources from Squadi static events (leagues only).
+     * Tournaments (e.g., state champs) are excluded — no league standings.
+     */
+    discoverSources: async (engine) => {
+      const sources = [];
+
+      for (const evt of engine.adapter.discovery.staticEvents) {
+        // Only leagues have standings
+        if (evt.type !== 'league') continue;
+
+        // Look up league UUID via source_entity_map
+        const { rows: semRows } = await engine.pool.query(
+          `SELECT sv_id FROM source_entity_map
+           WHERE entity_type = 'league' AND source_platform = 'squadi' AND source_entity_id = $1
+           LIMIT 1`,
+          [evt.id]
+        );
+
+        // Also try leagues table directly
+        if (semRows.length === 0) {
+          const { rows: leagueRows } = await engine.pool.query(
+            `SELECT id FROM leagues WHERE source_event_id = $1 AND source_platform = 'squadi' LIMIT 1`,
+            [evt.id]
+          );
+          if (leagueRows.length === 0) continue; // League not in DB yet, skip
+        }
+
+        sources.push({
+          id: evt.id,
+          name: evt.name,
+          league_source_id: evt.id, // source_entity_id in source_entity_map
+          competitionId: evt.competitionId,
+          competitionKey: evt.competitionKey,
+          season: evt.year >= 2026 ? '2025-2026' : '2024-2025',
+          snapshot_date: new Date().toISOString().split('T')[0],
+        });
+      }
+
+      return sources;
+    },
+
+    /**
+     * Scrape standings for a Squadi competition.
+     * Step 1: Fetch all divisions for the competition
+     * Step 2: For each division, fetch the ladder (standings) via REST API
+     */
+    scrapeSource: async (engine, source) => {
+      const allStandings = [];
+      const { competitionId, competitionKey, league_source_id, season } = source;
+      const baseUrl = engine.adapter.baseUrl;
+
+      // Step 1: Fetch divisions
+      const divisionsUrl = `${baseUrl}/division?competitionId=${competitionId}`;
+      let divisions;
+
+      try {
+        const response = await fetch(divisionsUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!response.ok) {
+          console.log(`  Squadi divisions HTTP ${response.status} for competition ${competitionId}`);
+          return [];
+        }
+        divisions = await response.json();
+      } catch (err) {
+        console.log(`  Squadi divisions error: ${err.message}`);
+        return [];
+      }
+
+      if (!divisions || divisions.length === 0) return [];
+
+      console.log(`  Found ${divisions.length} divisions for ${source.name}`);
+
+      // Step 2: For each division, fetch the ladder
+      for (let i = 0; i < divisions.length; i++) {
+        const div = divisions[i];
+        const divName = div.name || div.divisionName || `Division ${div.id}`;
+        const { gender, ageGroup } = engine.adapter.transform.parseDivision(divName);
+
+        const ladderUrl = `${baseUrl}/teams/ladder/v2?divisionIds=${div.id}&competitionKey=${competitionKey}&showForm=1&sportRefId=1`;
+
+        try {
+          const response = await fetch(ladderUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (!response.ok) {
+            console.log(`  Division ${divName}: HTTP ${response.status}`);
+            continue;
+          }
+
+          const data = await response.json();
+          const ladders = data.ladders || [];
+
+          for (const entry of ladders) {
+            if (!entry.name) continue;
+
+            allStandings.push({
+              league_source_id,
+              division: divName,
+              team_name: entry.name,
+              team_source_id: entry.teamUniqueKey || String(entry.id) || null,
+              played: parseInt(entry.P, 10) || 0,
+              wins: parseInt(entry.W, 10) || 0,
+              losses: parseInt(entry.L, 10) || 0,
+              draws: parseInt(entry.D, 10) || 0,
+              goals_for: parseInt(entry.F, 10) || 0,
+              goals_against: parseInt(entry.A, 10) || 0,
+              points: parseInt(entry.PTS, 10) || 0,
+              position: parseInt(entry.rk, 10) || null,
+              age_group: ageGroup,
+              gender,
+              season,
+            });
+          }
+
+        } catch (err) {
+          console.log(`  Division ${divName} ladder error: ${err.message}`);
+        }
+
+        // Rate limit between divisions
+        if (i < divisions.length - 1) {
+          await engine.sleep(engine.adapter.rateLimiting.iterationDelay);
+        }
+      }
+
+      return allStandings;
+    },
+  },
+
+  // =========================================
   // CUSTOM SCRAPING LOGIC
   // =========================================
 

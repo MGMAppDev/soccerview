@@ -156,6 +156,162 @@ export default {
   },
 
   // =========================================
+  // STANDINGS SCRAPING (Session 110)
+  // Universal pattern: discoverSources() + scrapeSource()
+  // Uses the XML standings endpoint: /{orgId}/standings/{seasonKey}/{divisionId}.xml
+  // =========================================
+
+  standings: {
+    enabled: true,
+
+    /**
+     * Discover standings sources from Demosphere static events.
+     * Each static event has all division IDs pre-configured.
+     * We look up the league UUID from the database via source_entity_map.
+     */
+    discoverSources: async (engine) => {
+      const sources = [];
+
+      for (const evt of engine.adapter.discovery.staticEvents) {
+        // Look up league UUID via source_entity_map (Tier 1) or leagues table (Tier 2)
+        let leagueSourceId = evt.id; // Default: use event ID as-is
+
+        const { rows: semRows } = await engine.pool.query(
+          `SELECT sv_id FROM source_entity_map
+           WHERE entity_type = 'league' AND source_platform = 'demosphere' AND source_entity_id = $1
+           LIMIT 1`,
+          [evt.id]
+        );
+        if (semRows.length > 0) {
+          // Tier 1 found: use the source_entity_id which resolveLeague will match
+          leagueSourceId = evt.id;
+        }
+
+        sources.push({
+          id: evt.id,
+          name: evt.name,
+          league_source_id: leagueSourceId,
+          orgId: evt.orgId,
+          seasonKey: evt.seasonKey,
+          divisions: evt.divisions,
+          season: evt.year >= 2026 ? '2025-2026' : '2024-2025',
+          snapshot_date: new Date().toISOString().split('T')[0],
+        });
+      }
+
+      return sources;
+    },
+
+    /**
+     * Scrape standings for all divisions in a Demosphere event.
+     * Fetches XML from: /{orgId}/standings/{seasonKey}/{divisionId}.xml
+     * XML structure:
+     *   <teams>
+     *     <teamgroup key="..." name="GU16 Division 3">
+     *       <team key="..." name="Team Name" rank="1">
+     *         <td>22</td>  <!-- Points -->
+     *         <td>9</td>   <!-- Games Played -->
+     *         <td>7</td>   <!-- Wins -->
+     *         <td>0</td>   <!-- Losses -->
+     *         <td>2</td>   <!-- Ties -->
+     *         <td>22</td>  <!-- Goals For -->
+     *         <td>8</td>   <!-- Goals Against -->
+     *       </team>
+     *     </teamgroup>
+     *   </teams>
+     */
+    scrapeSource: async (engine, source) => {
+      const cheerio = await import('cheerio');
+      const { orgId, seasonKey, divisions, league_source_id, season } = source;
+      const allStandings = [];
+
+      console.log(`  Scraping ${divisions.length} divisions for ${source.name}`);
+
+      for (let i = 0; i < divisions.length; i++) {
+        const divisionId = divisions[i];
+        const standingsUrl = `${engine.adapter.baseUrl}/${orgId}/standings/${seasonKey}/${divisionId}.xml`;
+
+        try {
+          const response = await fetch(standingsUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/xml, text/xml, */*' },
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (!response.ok) {
+            if (response.status !== 404) {
+              console.log(`    Division ${divisionId}: HTTP ${response.status}`);
+            }
+            continue;
+          }
+
+          const xmlText = await response.text();
+
+          // Parse XML with cheerio in XML mode
+          const $ = cheerio.load(xmlText, { xmlMode: true });
+
+          $('teamgroup').each((_, tgEl) => {
+            const divisionName = $(tgEl).attr('name') || `Division ${divisionId}`;
+
+            // Parse gender + age from division name (e.g., "GU16 Division 3", "BU14 Premier")
+            const { gender, ageGroup } = engine.adapter.transform.parseDivision(divisionName);
+
+            $(tgEl).find('team').each((_, teamEl) => {
+              const teamName = $(teamEl).attr('name');
+              const teamKey = $(teamEl).attr('key');
+              const rank = parseInt($(teamEl).attr('rank'), 10) || null;
+
+              if (!teamName) return;
+
+              const statCells = $(teamEl).find('td');
+              const points = parseInt($(statCells[0]).text(), 10) || 0;
+              const played = parseInt($(statCells[1]).text(), 10) || 0;
+              const wins = parseInt($(statCells[2]).text(), 10) || 0;
+              const losses = parseInt($(statCells[3]).text(), 10) || 0;
+              const draws = parseInt($(statCells[4]).text(), 10) || 0;
+              const goalsFor = parseInt($(statCells[5]).text(), 10) || 0;
+              const goalsAgainst = parseInt($(statCells[6]).text(), 10) || 0;
+
+              allStandings.push({
+                league_source_id,
+                division: divisionName,
+                team_name: teamName,
+                team_source_id: teamKey || null,
+                played,
+                wins,
+                losses,
+                draws,
+                goals_for: goalsFor,
+                goals_against: goalsAgainst,
+                points,
+                position: rank,
+                age_group: ageGroup,
+                gender,
+                season,
+              });
+            });
+          });
+
+        } catch (err) {
+          if (!err.message.includes('timeout') && !err.message.includes('404')) {
+            console.log(`    Division ${divisionId} error: ${err.message}`);
+          }
+        }
+
+        // Rate limit between divisions (lighter than match scraping)
+        if (i % 20 === 19) {
+          await engine.sleep(engine.adapter.rateLimiting.requestDelayMin);
+        }
+      }
+
+      if (engine.isVerbose) {
+        console.log(`  ${source.name}: ${allStandings.length} standings entries`);
+      }
+
+      return allStandings;
+    },
+  },
+
+  // =========================================
   // DATA TRANSFORMATION
   // =========================================
 

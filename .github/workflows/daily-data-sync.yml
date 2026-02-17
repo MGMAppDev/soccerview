@@ -663,9 +663,27 @@ jobs:
           echo "📋 SINC Sports standings: $SC"
           TOTAL=$((TOTAL + SC))
 
+          # Demosphere standings (Cheerio + XML — NCSL VA/DC/MD, Session 110)
+          node scripts/universal/scrapeStandings.js --adapter demosphere 2>&1 | tee standings_demosphere.txt || true
+          DE=$(grep -oP 'Total standings:\s*\K\d+' standings_demosphere.txt | tail -1 || echo "0")
+          echo "📋 Demosphere standings: $DE"
+          TOTAL=$((TOTAL + DE))
+
+          # Squadi standings (REST API ladder — AR, Session 110)
+          node scripts/universal/scrapeStandings.js --adapter squadi 2>&1 | tee standings_squadi.txt || true
+          SQ=$(grep -oP 'Total standings:\s*\K\d+' standings_squadi.txt | tail -1 || echo "0")
+          echo "📋 Squadi standings: $SQ"
+          TOTAL=$((TOTAL + SQ))
+
+          # PlayMetrics standings (Puppeteer + Vue SPA — CO/WI/SDL, Session 110)
+          node scripts/universal/scrapeStandings.js --adapter playmetrics 2>&1 | tee standings_playmetrics.txt || true
+          PM=$(grep -oP 'Total standings:\s*\K\d+' standings_playmetrics.txt | tail -1 || echo "0")
+          echo "📋 PlayMetrics standings: $PM"
+          TOTAL=$((TOTAL + PM))
+
           echo "standings=$TOTAL" >> $GITHUB_OUTPUT
           echo "📋 Total standings scraped: $TOTAL"
-        timeout-minutes: 50
+        timeout-minutes: 90
         continue-on-error: true
 
   # ============================================================================
