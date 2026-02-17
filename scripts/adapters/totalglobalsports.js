@@ -222,6 +222,11 @@ export default {
       { id: 3958, name: "Pre-ECNL Girls Lake Michigan 2025-26", type: "league", year: 2026, gender: "Girls", conference: "Lake Michigan" },
       { id: 3959, name: "Pre-ECNL Girls North Atlantic 2025-26", type: "league", year: 2026, gender: "Girls", conference: "North Atlantic" },
       { id: 3960, name: "Pre-ECNL Girls New England 2025-26", type: "league", year: 2026, gender: "Girls", conference: "New England" },
+
+      // ========================
+      // NPL (National Premier League) — via TGS
+      // ========================
+      { id: 3989, name: "TCSL NPL Texas 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Texas", notes: "Texas Club Soccer League NPL Division" },
     ],
 
     discoverEvents: null, // Static events — expand as we discover more IDs

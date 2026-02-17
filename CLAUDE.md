@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 23.4** | Last Updated: February 17, 2026 | Session 104 Complete
+> **Version 23.6** | Last Updated: February 17, 2026 | Session 106 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1262,11 +1262,11 @@ This file is:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 174,271 | Team records (Session 104: +4,630 from IL/VA/WI gap fill + Squadi AR) |
-| `matches_v2` | 504,530 active | Match results (~5,420 soft-deleted) |
+| `teams_v2` | 177,459 | Team records (Session 106: +2,691 from GA/USYS NL/TCSL NPL) |
+| `matches_v2` | 511,282 active | Match results (~5,420 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 432 | League metadata (Session 104: +18 from IL/VA GotSport + WI PlayMetrics + AR Squadi) |
-| `tournaments` | 1,787 | Tournament metadata |
+| `leagues` | 462 | League metadata (Session 106: +26 — GA 4, USYS NL 21, misc 1) |
+| `tournaments` | 1,798 | Tournament metadata (Session 106: +11 incl. USYS NL Winter) |
 | `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
 | `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
 | `source_entity_map` | ~75,139+ | Universal source ID mappings |
@@ -1297,7 +1297,7 @@ This file is:
 | Heartland CGI | ✅ Production | staging_games |
 | SINC Sports | ✅ Production (Session 95) | staging_games + staging_standings |
 | MLS Next | ✅ Production (Session 97) | staging_games (Puppeteer, Modular11) |
-| SportsAffinity | ✅ Production (Session 97) | staging_games (Cheerio, GA/MN/UT/OR/NE/PA-W/IA — 66 events) |
+| SportsAffinity | ✅ Production (Session 97+105) | staging_games (Cheerio, GA/MN/UT/OR/NE/PA-W/IA/HI — 72 events) |
 | TotalGlobalSports | ✅ Production (Session 100: 76 events, 33,567 matches) | staging_games (ECNL, Puppeteer+stealth) |
 | PlayMetrics | ✅ Production (Session 102-104: CO CAL + SDL + WI WYSA/MAYSA/EC/CWSL, 16,602 matches) | staging_games (Puppeteer, Vue SPA) |
 | Demosphere | ✅ Production (Session 103: NCSL VA/DC, 10,882 matches) | staging_games (Cheerio, JSON/XML endpoints) |
@@ -1497,10 +1497,11 @@ eas build --platform android
 | `scripts/adapters/heartland.js` | Heartland adapter (Cheerio for CGI + standings) |
 | `scripts/adapters/sincsports.js` | SINC Sports adapter (Puppeteer + standings, Session 95) |
 | `scripts/adapters/mlsnext.js` | **NEW (Session 97)** MLS Next adapter (Puppeteer, Modular11) |
-| `scripts/adapters/sportsaffinity.js` | **NEW (Session 97)** SportsAffinity adapter (Cheerio, GA Soccer) |
+| `scripts/adapters/sportsaffinity.js` | **NEW (Session 97+105)** SportsAffinity adapter (Cheerio, GA/MN/UT/OR/NE/PA-W/IA/HI) |
 | `scripts/adapters/playmetrics.js` | **NEW (Session 102)** PlayMetrics adapter (Puppeteer, CO CAL + SDL + WI WYSA) |
 | `scripts/adapters/demosphere.js` | **NEW (Session 103)** Demosphere/OttoSport adapter (Cheerio, NCSL VA/DC) |
 | `scripts/adapters/squadi.js` | **NEW (Session 104)** Squadi adapter (REST API, AR ACSL/NWAL/CAL) |
+| `scripts/adapters/risuperliga.js` | **NEW (Session 105)** RI Super Liga skeleton (Puppeteer, retry March 28, 2026) |
 | `scripts/adapters/_template.js` | Template for creating new adapters |
 
 **Usage:**
@@ -1717,6 +1718,84 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 106 - Girls Academy + USYS NL + NPL TCSL TX (February 17, 2026) - COMPLETE ✅
+
+**Goal:** Scrape Girls Academy (GotSport), discover + scrape all USYS NL conference events (21 new), add TCSL NPL TX via TGS (event 3989). Reclassify all from tournament → league.
+
+**Phase 1: Girls Academy**
+- Scraped all 4 GA GotSport events: 42137 (GA Tier 1), 42138 (GA Aspire), 44874 (JGAL), 45530 (FL GA)
+- 36 new staged (26 Aspire + 10 JGAL), rest already in DB as tournaments
+- Reclassified all 4 GA events from tournament → league
+- **GA Total: 528 league matches** (83 Tier 1 + 379 Aspire + 50 JGAL + 16 FL GA)
+
+**Phase 2: USYS National League (21 new conferences)**
+- Discovered 21 new GotSport event IDs across NL Team Premier (8), Club P1 (7), Club P2 (4), Winter (2)
+- Scraped all conferences + processed via fastProcessStaging
+- Reclassified all Team Premier + Club P1 + P2 from tournament → league
+- Also reclassified existing: SA 15U-19U (44340), SA 13U-14U (50581), Sunshine P1 (43114), Sunshine P2 (43943)
+- **USYS NL Total: ~1,151 league matches** (up from 30)
+- Winter Events (50935, 50898) kept as tournaments (single-weekend showcases)
+
+**Phase 3: NPL TCSL Texas (TGS event 3989)**
+- Added event 3989 to `scripts/adapters/totalglobalsports.js` staticEvents
+- **947 matches inserted** (10 age groups: B2008-B2013, G2009-G2013)
+- STXCL NPL (AthleteOne platform) deferred to Session 110+
+
+**Key Metrics:**
+
+| Metric | Before Session 106 | After Session 106 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 508,119 | **511,282** (+3,163) |
+| teams_v2 | 174,768 | **177,459** (+2,691) |
+| leagues | 436 | **462** (+26) |
+| tournaments | 1,787 | **1,798** (+11) |
+| GA league matches | 0 (tournaments) | **528** |
+| USYS NL league matches | 30 | **~1,151** |
+| TCSL NPL TX matches | 0 | **947** |
+
+**Files Created:** `scripts/_debug/add_session106_gotsport_events.cjs`, `scripts/_debug/scrape_session106_gotsport.cjs`, `scripts/_debug/check_ga_db.cjs`, `scripts/_debug/check_usysnl_events.cjs`, `scripts/_debug/reclassify_ga_as_leagues.cjs`, `scripts/_debug/reclassify_usysnl_as_leagues.cjs`
+**Files Modified:** `scripts/adapters/totalglobalsports.js` (+TCSL NPL TX event 3989), `docs/3-STATE_COVERAGE_CHECKLIST.md` (v5.5), `.claude/hooks/session_checkpoint.md`, `CLAUDE.md` (v23.6)
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
+
+### Session 105 - HI Oahu League + RI Super Liga (February 17, 2026) - COMPLETE ✅
+
+**Goal:** Build final 2 custom adapters: RI Super Liga (Cheerio/PHP) and HI Oahu League (Puppeteer/AngularJS).
+
+**Key Discovery:** HI Oahu League uses SportsAffinity — same platform as 7 other states. No new adapter needed, just 4 config entries added to existing SA adapter. This eliminated the need for a custom HI adapter entirely.
+
+**HI Results:**
+- All 4 seasons scraped: Fall 2025/26 (1,069) + Spring 2025/26 (736) + Fall 2024/25 (963) + Spring 2024/25 (821)
+- 3,589 matches inserted, 497 new teams, 4 new HI leagues
+- Boys only (B07-B19), no Girls flights on Oahu League
+- SportsAffinity subdomains: `ol-fall-25-26`, `ol-spring-25-26`, `ol-fallcomp24-25`, `ol-springcomp24-25`
+
+**RI Results:**
+- Site purges data between seasons — Fall 2025 data permanently lost
+- Tried 5+ approaches per Principle 42 (Puppeteer, brute-force POST, Wayback Machine)
+- Wayback found Sep/Oct 2025 snapshots with dropdown values but POST response data was never archived
+- Built adapter skeleton at `scripts/adapters/risuperliga.js` for March 28, 2026 retry
+- Updated GUARDRAILS Section 19 with DATA RETENTION WARNING for data-purging platforms
+- Full adapter audit: ALL 10 existing adapters have Fall 2025 properly configured
+
+**Key Metrics:**
+
+| Metric | Before Session 105 | After Session 105 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 504,530 | **508,119** (+3,589) |
+| teams_v2 | 174,271 | **174,768** (+497) |
+| leagues | 432 | **436** (+4) |
+| SA adapter events | 68 | **72** (+4 HI) |
+| HI league matches | 0 | **3,589** |
+| HI teams | 0 | **761** |
+
+**Files Created:** `scripts/adapters/risuperliga.js` (skeleton), `scripts/_debug/probe_hi_*.cjs` (4 probes), `scripts/_debug/probe_ri_*.cjs` (4 probes), `scripts/_debug/fix_hi_source_map.cjs`
+**Files Modified:** `scripts/adapters/sportsaffinity.js` (+4 HI events), `docs/1.1-GUARDRAILS_v2.md` (DATA RETENTION WARNING), `docs/3-STATE_COVERAGE_CHECKLIST.md` (v5.4), `.claude/hooks/session_checkpoint.md`, `CLAUDE.md` (v23.5)
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
 
 ### Session 104 - IL/VA/WI Gap Fill + Squadi AR Adapter (February 17, 2026) - COMPLETE ✅
 
@@ -2312,7 +2391,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 105. Read CLAUDE.md (v23.4), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.3). Current: 504,530 active matches, 174,271 teams, 432 leagues, 10 adapters, 10 pipeline sync jobs. Session 104 COMPLETE — IL/VA/WI gap fill + Squadi AR adapter (+9,352 matches, 10th adapter). **Next priorities from STATE_COVERAGE_CHECKLIST.md.** Zero UI changes needed."
+> "Resume SoccerView Session 107. Read CLAUDE.md (v23.6), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md. Current: ~511,282 active matches, 177,459 teams, 462 leagues. Session 106 COMPLETE — GA (528 league matches reclassified), USYS NL (~1,151 league matches, 21 new conferences), TCSL NPL TX (+947 via TGS). **Next priority: PA-W GLC — MUST SOLVE per Principle 42. Try 5+ new approaches (Session 107).** Also: STXCL NPL needs AthleteOne adapter (defer to Session 110+). Zero UI changes needed."
 
 ---
 

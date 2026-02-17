@@ -721,6 +721,46 @@ export default {
         subdomain: "2025isl-spring",
         tournamentGuid: "627614EC-DC51-43A5-B273-A972616BD454",
       },
+
+      // =============================================
+      // HAWAII (ol-*.sportsaffinity.com — Oahu League)
+      // =============================================
+      {
+        id: "hi-fall2025",
+        name: "Oahu League Fall 2025/26 Season",
+        type: "league",
+        year: 2026,
+        state: "HI",
+        subdomain: "ol-fall-25-26",
+        tournamentGuid: "AD6E28FC-3EBE-46E9-842B-66E6A2EEB086",
+      },
+      {
+        id: "hi-spring2026",
+        name: "Oahu League Spring 2025/26 Season",
+        type: "league",
+        year: 2026,
+        state: "HI",
+        subdomain: "ol-spring-25-26",
+        tournamentGuid: "94D44303-F331-4505-92B2-813593B3FC50",
+      },
+      {
+        id: "hi-fall2024",
+        name: "Oahu League Fall 2024/25 Season",
+        type: "league",
+        year: 2025,
+        state: "HI",
+        subdomain: "ol-fallcomp24-25",
+        tournamentGuid: "9D2ADF88-D5D4-40EC-BD31-CE0FF1DCAEAB",
+      },
+      {
+        id: "hi-spring2025",
+        name: "Oahu League Spring 2024/25 Season",
+        type: "league",
+        year: 2025,
+        state: "HI",
+        subdomain: "ol-springcomp24-25",
+        tournamentGuid: "896296D9-741D-4FFB-8B32-4BB6C07D274E",
+      },
     ],
 
     discoverEvents: null,
