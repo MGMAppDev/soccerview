@@ -130,6 +130,23 @@ export default {
         leagueId: "1133-1563-d15ba886",
         state: null, // National league
       },
+      // Wisconsin Youth Soccer Association (WYSA) — org 1014
+      {
+        id: "wysa-fall-2025",
+        name: "WYSA Fall 2025",
+        type: "league",
+        year: 2026,
+        leagueId: "1014-1514-8ccd4dbb",
+        state: "WI",
+      },
+      {
+        id: "wysa-spring-2025",
+        name: "WYSA Spring 2025",
+        type: "league",
+        year: 2025,
+        leagueId: "1014-1283-091395a1",
+        state: "WI",
+      },
     ],
 
     discoverEvents: null,

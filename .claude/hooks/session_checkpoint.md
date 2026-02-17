@@ -1,51 +1,65 @@
 # Session Checkpoint — Auto-Updated
-Last Updated: 2026-02-16T23:30:00Z
-Session: 102 — COMPLETE ✅
+Last Updated: 2026-02-17T00:30:00Z
+Session: 103 — COMPLETE ✅
 
 ## Completed This Session
-- **Wave 4: PlayMetrics Adapter — COMPLETE**
-  - ✅ Diagnosed and fixed 3 root cause bugs:
-    1. matchKeyFormat used `{gameId}` but generateMatchKey() only replaces `{matchId}` → all matches got same key
-    2. `result.rowCount || batch.length` in coreScraper.js — 0 is falsy, fell through to batch.length
-    3. Date extraction used body text regex instead of DOM-aware `schedule__date` container traversal
-  - ✅ Additional fixes: parseDivision false gender matches, time validation, double-counting matchesStaged, TEAM DROP filter
-  - ✅ Scraped CO CAL Fall 2025: 4,764 matches (108 divisions)
-  - ✅ Scraped SDL Boys: 320 matches (U11B: 160, U12B: 160)
-  - ✅ Scraped SDL Girls: 29 matches (U12G only)
-  - ✅ Processed all through fastProcessStaging.cjs: 5,113 matches inserted
-  - ✅ ELO recalculated: 219,115 current-season matches, 67,615 teams updated
-  - ✅ All 5 materialized views refreshed
-  - ✅ Removed historical season staticEvents (ELO is current-season only)
-  - ✅ Added PlayMetrics to daily-data-sync.yml (8th sync job)
-  - ✅ coreScraper.js bugs fixed (rowCount falsy check + double-counting)
 
-- **Files Created:**
-  - `scripts/_debug/probe_playmetrics_dates.cjs` — DOM structure probe
-  - `scripts/_debug/probe_sdl_leagues.cjs` — SDL league scope probe
-  - `scripts/_debug/playmetrics_cal_spring2025.log` — Test run log
+### Wave 5a: Demosphere Adapter (NCSL VA/DC) — COMPLETE
+- Built `scripts/adapters/demosphere.js` v2.0 (Cheerio-based, JSON/XML endpoints)
+- Discovered 608 NCSL divisions via range probing (286 Fall + 322 Spring)
+- Scraped ALL 608 divisions: 32,289 matches found, 10,842 unique staged
+- Resolved 1,106 team names from standings XML (9,915/10,908 records updated)
+- Processed through fastProcessStaging: 10,882 matches inserted, 2,932 new teams
+- Reclassified 2 events from tournaments to leagues (state=VA)
+- Registered source_entity_map entries for Tier 0 resolution
+- Added 'demosphere' to KNOWN_PLATFORMS in intakeValidator.js
+- Added sync-demosphere job to daily-data-sync.yml (9th sync source)
 
-- **Files Modified:**
-  - `scripts/adapters/playmetrics.js` — v2.0: DOM-aware scraping, fixed matchKeyFormat/parseDivision/isValidMatch
-  - `scripts/universal/coreScraper.js` — Fixed rowCount falsy check + removed double-counting
-  - `.github/workflows/daily-data-sync.yml` — Added sync-playmetrics job (8th source)
-  - `scripts/universal/intakeValidator.js` — Added 'playmetrics' to KNOWN_PLATFORMS (previous session)
-  - `.claude/hooks/session_checkpoint.md` — This file
-  - `docs/3-STATE_COVERAGE_CHECKLIST.md` — v4.2
-  - `CLAUDE.md` — v23.2
+### Wave 5b: WI PlayMetrics Expansion — COMPLETE
+- Added WYSA leagues to PlayMetrics adapter (org 1014, Fall + Spring)
+- Scraped WI WYSA Fall 2025: 72 divisions, 2,164 matches
+- Scraped WI WYSA Spring 2025: 72 divisions, 2,230 matches
+- Processed through fastProcessStaging: 4,393 matches, 2,110 new teams
+- Reclassified 2 events from tournaments to leagues (state=WI)
+- Updated PlayMetrics job name in pipeline: CO/SDL → CO/SDL/WI
 
-## Key Metrics
+### IL + VA Research
+- IL: Already has 7 leagues, 12,123 matches via GotSport (not Demosphere)
+- VA: Already has 4 leagues + NOW 2 NCSL leagues via Demosphere
 
-| Metric | Session 101 | Session 102 |
-|--------|-------------|-------------|
-| matches_v2 (active) | 474,797 | **479,910** (+5,113) |
-| teams_v2 | 162,327 | **164,599** (+2,272) |
-| leagues | 407 | **410** (+3: CAL Fall 2025 + SDL Boys + SDL Girls) |
-| Adapters built | 7 | **8** (added PlayMetrics) |
-| Pipeline sync jobs | 7 | **8** (added sync-playmetrics) |
-| CO teams in rankings | ~320 | **1,396** |
+### ELO + Views — COMPLETE
+- ELO recalculated: 225,171 matches processed, 69,677 teams updated, avg ELO 1500.3
+- All 5 materialized views refreshed
 
-## Next Session (103) Priorities
-1. **Wave 5: Demosphere Adapter** (VA/DC + IL + WI)
-2. **Wave 6: Squadi Adapter** (AR)
-3. Fix double-prefix team name failures (74 matches from Wave 2d)
-4. TN + WV retries (March 2026)
+## Files Created
+- `scripts/adapters/demosphere.js` — v2.0 Demosphere/OttoSport adapter
+- `scripts/_debug/scrape_ncsl_all.cjs` — Full NCSL scraper (608 divisions)
+- `scripts/_debug/discover_ncsl_divisions.cjs` — Range-based division discovery
+- `scripts/_debug/resolve_ncsl_team_names.cjs` — Standings XML team name resolution
+- `scripts/_debug/reclassify_ncsl_as_leagues.cjs` — Tournament → league conversion
+- `scripts/_debug/reclassify_wysa_as_leagues.cjs` — WI tournament → league conversion
+
+## Files Modified
+- `scripts/adapters/playmetrics.js` — Added WYSA WI events (org 1014)
+- `scripts/universal/intakeValidator.js` — Added 'demosphere' to KNOWN_PLATFORMS
+- `.github/workflows/daily-data-sync.yml` — Added sync-demosphere (9th source), updated PlayMetrics name
+- `docs/3-STATE_COVERAGE_CHECKLIST.md` — v5.1
+- `CLAUDE.md` — v23.3
+- `.claude/hooks/session_checkpoint.md` — This file
+
+## Final Verified Metrics (Session 103)
+
+| Metric | Session 102 | Session 103 | Delta |
+|--------|-------------|-------------|-------|
+| matches_v2 (active) | 479,910 | **495,178** | **+15,268** |
+| teams_v2 | 164,599 | **169,641** | **+5,042** |
+| leagues | 410 | **414** | +4 |
+| tournaments | 1,777 | **1,780** | +3 |
+| source_entity_map | ~74,874 | **75,139** | +265 |
+| Adapters built | 8 | **9** (added Demosphere) | +1 |
+| Pipeline sync jobs | 8 | **9** (added sync-demosphere) | +1 |
+| VA league matches | ~125 | **11,000** | +10,875 |
+| WI league matches | ~123 | **4,516** | +4,393 |
+
+## Resume Prompt (Session 104)
+"Resume SoccerView Session 104. Read CLAUDE.md (v23.3), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.1). Current: 495,178 active matches, 169,641 teams, 414 leagues, 9 adapters, 9 pipeline sync jobs. Wave 5 COMPLETE (Demosphere adapter built, NCSL VA/DC +10,882 matches, WI WYSA +4,394 matches via PlayMetrics). Follow Wave plan. Priority: (1) Wave 6 Squadi adapter (AR), (2) Wave 7 custom platforms (RI, HI), (3) Fix double-prefix failures (74 matches), (4) TN/WV retries (March 2026). Wave discipline: complete each wave before starting next."

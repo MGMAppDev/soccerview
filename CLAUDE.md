@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 23.2** | Last Updated: February 16, 2026 | Session 102 Complete
+> **Version 23.3** | Last Updated: February 17, 2026 | Session 103 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1262,14 +1262,14 @@ This file is:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 164,599 | Team records (Session 102: +2,272 from PlayMetrics CO/SDL) |
-| `matches_v2` | 479,910 active | Match results (~5,417 soft-deleted) |
+| `teams_v2` | 169,641 | Team records (Session 103: +5,042 from Demosphere VA/DC + PlayMetrics WI) |
+| `matches_v2` | 495,178 active | Match results (~5,417 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 410 | League metadata (Session 102: +3 from PlayMetrics CO/SDL) |
-| `tournaments` | 1,777 | Tournament metadata |
+| `leagues` | 414 | League metadata (Session 103: +4 from Demosphere NCSL + PlayMetrics WYSA) |
+| `tournaments` | 1,780 | Tournament metadata |
 | `league_standings` | 2,012 | Scraped standings: Heartland (1,207) + NC SINC Sports (805) |
 | `staging_standings` | 2,195 | Raw standings staging (Session 92+95) |
-| `source_entity_map` | ~74,874+ | Universal source ID mappings (Session 101: +74 TGS ECNL backfill) |
+| `source_entity_map` | ~75,139+ | Universal source ID mappings (Session 103: +265 from Demosphere/PlayMetrics) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
@@ -1299,7 +1299,8 @@ This file is:
 | MLS Next | ✅ Production (Session 97) | staging_games (Puppeteer, Modular11) |
 | SportsAffinity | ✅ Production (Session 97) | staging_games (Cheerio, GA/MN/UT/OR/NE/PA-W/IA — 66 events) |
 | TotalGlobalSports | ✅ Production (Session 100: 76 events, 33,567 matches) | staging_games (ECNL, Puppeteer+stealth) |
-| PlayMetrics | ✅ Production (Session 102: CO CAL + SDL, 5,113 matches) | staging_games (Puppeteer, Vue SPA) |
+| PlayMetrics | ✅ Production (Session 102-103: CO CAL + SDL + WI WYSA, 9,507 matches) | staging_games (Puppeteer, Vue SPA) |
+| Demosphere | ✅ Production (Session 103: NCSL VA/DC, 10,882 matches) | staging_games (Cheerio, JSON/XML endpoints) |
 
 ### source_match_key (CRITICAL - Session 57)
 
@@ -1496,7 +1497,8 @@ eas build --platform android
 | `scripts/adapters/sincsports.js` | SINC Sports adapter (Puppeteer + standings, Session 95) |
 | `scripts/adapters/mlsnext.js` | **NEW (Session 97)** MLS Next adapter (Puppeteer, Modular11) |
 | `scripts/adapters/sportsaffinity.js` | **NEW (Session 97)** SportsAffinity adapter (Cheerio, GA Soccer) |
-| `scripts/adapters/playmetrics.js` | **NEW (Session 102)** PlayMetrics adapter (Puppeteer, CO CAL + SDL) |
+| `scripts/adapters/playmetrics.js` | **NEW (Session 102)** PlayMetrics adapter (Puppeteer, CO CAL + SDL + WI WYSA) |
+| `scripts/adapters/demosphere.js` | **NEW (Session 103)** Demosphere/OttoSport adapter (Cheerio, NCSL VA/DC) |
 | `scripts/adapters/_template.js` | Template for creating new adapters |
 
 **Usage:**
@@ -1713,6 +1715,55 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 103 - Wave 5 Demosphere Adapter + WI PlayMetrics (February 16-17, 2026) - COMPLETE ✅
+
+**Goal:** Build Demosphere adapter for VA/DC (NCSL), expand WI via PlayMetrics, verify IL coverage. Complete Wave 5.
+
+**Key Findings:**
+- IL State Premiership uses GotSport (not Demosphere) — already has 7 leagues, 12,123 matches
+- WI WYSA migrated from Demosphere to PlayMetrics (org 1014) — added to existing PlayMetrics adapter
+- Demosphere JSON API: `elements.demosphere-secure.com/{orgId}/schedules/{seasonName}/{divisionId}.js`
+- Demosphere standings XML provides team name → ID mappings (1,106 unique teams resolved)
+
+**Bug Fixes (4 issues encountered and fixed):**
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Team name regex matched 0 teams | XML has `code` attribute between `key` and `name` | Changed regex to `/<team\s+key="(\d+)"[^>]*?\s+name="([^"]+)"/g` |
+| Batch UPDATE SQL failed | UUIDs contain hex (e.g., `6e4d`) treated as numeric | Replaced CASE SQL with individual parameterized queries |
+| WI scrape truncated at 35/72 divisions | `\| head -100` pipe in bash command | Re-ran without pipe |
+| Write protection blocked reclassification | Direct writes to matches_v2 blocked by trigger | Added `SELECT authorize_pipeline_write()` before updates |
+
+**Scraping Results:**
+
+| Source | Event | Matches Found | Matches Staged | Teams |
+|--------|-------|--------------|----------------|-------|
+| Demosphere | NCSL Fall 2025 (286 divs) | 14,750 | 5,516 | 2,932 new |
+| Demosphere | NCSL Spring 2025 (322 divs) | 17,539 | 5,326 | (shared) |
+| PlayMetrics | WYSA Fall 2025 (72 divs) | 2,169 | 2,164 | 2,110 new |
+| PlayMetrics | WYSA Spring 2025 (72 divs) | 2,230 | 2,230 | (shared) |
+| **Total** | | **36,688** | **15,236** | **5,042 new** |
+
+**Key Metrics:**
+
+| Metric | Before Session 103 | After Session 103 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 479,910 | **495,178** (+15,268) |
+| teams_v2 | 164,599 | **169,641** (+5,042) |
+| leagues | 410 | **414** (+4) |
+| tournaments | 1,777 | **1,780** (+3) |
+| source_entity_map | ~74,874 | **75,139** (+265) |
+| Adapters built | 8 | **9** (added Demosphere) |
+| Pipeline sync jobs | 8 | **9** (added sync-demosphere) |
+| VA league matches | ~125 | **11,000** |
+| WI league matches | ~123 | **4,516** |
+
+**Files Modified:** `scripts/adapters/demosphere.js` (v2.0), `scripts/adapters/playmetrics.js` (+WI WYSA events), `scripts/universal/intakeValidator.js` (+demosphere), `.github/workflows/daily-data-sync.yml` (+sync-demosphere job, updated PlayMetrics name), `.claude/hooks/session_checkpoint.md`, `docs/3-STATE_COVERAGE_CHECKLIST.md` (v5.1), `CLAUDE.md` (v23.3)
+**Files Created:** `scripts/_debug/scrape_ncsl_all.cjs`, `scripts/_debug/discover_ncsl_divisions.cjs`, `scripts/_debug/resolve_ncsl_team_names.cjs`, `scripts/_debug/reclassify_ncsl_as_leagues.cjs`, `scripts/_debug/reclassify_wysa_as_leagues.cjs`
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
 
 ### Session 102 - Wave 4 PlayMetrics Adapter (February 16, 2026) - COMPLETE ✅
 
@@ -2220,7 +2271,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 103. Read CLAUDE.md (v23.2), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v4.2). Current: 479,910 active matches, 164,599 teams, 410 leagues, 8 adapters, 8 pipeline sync jobs. Wave 4 COMPLETE (PlayMetrics adapter built, CO CAL +4,764 matches, SDL +349 matches). Follow Session 103 Action Items in STATE_COVERAGE_CHECKLIST.md. Priority order: (1) Wave 5 Demosphere adapter (VA/DC + IL + WI), (2) Wave 6 Squadi adapter (AR), (3) Fix double-prefix team name failures (74 matches), (4) TN/WV/PA-W retries (March 2026). Wave discipline: complete each wave before starting next."
+> "Resume SoccerView Session 104. Read CLAUDE.md (v23.3), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.1). Current: 495,178 active matches, 169,641 teams, 414 leagues, 9 adapters, 9 pipeline sync jobs. Wave 5 COMPLETE (Demosphere adapter built, NCSL VA/DC +10,882 matches, WI WYSA +4,394 matches via PlayMetrics). Follow Wave plan. Priority order: (1) Wave 6 Squadi adapter (AR), (2) Wave 7 custom platforms (RI, HI), (3) Fix double-prefix team name failures (74 matches), (4) TN/WV retries (March 2026). Wave discipline: complete each wave before starting next."
 
 ---
 
