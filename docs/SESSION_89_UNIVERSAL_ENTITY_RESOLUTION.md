@@ -195,3 +195,4 @@ The original symptom that triggered this session:
 3. **Partial unique indexes > constraints** — Soft-deleted rows can legitimately share the same semantic key. Use `WHERE deleted_at IS NULL` partial index.
 4. **Bulk SQL > row-by-row** — 7,253 merges in seconds with bulk SQL vs hours with individual transactions.
 5. **Register source IDs at creation time** — Every entity created should immediately register its source ID to prevent future duplicates.
+6. **Clean team names BEFORE building lookup keys** — `removeDuplicatePrefix()` must be applied to raw staging names BEFORE `makeTeamKey()`, not after. Building keys from raw names while storing cleaned names in `teamMap` creates a silent mismatch that causes match insertion to fail. (Session 107: 11,061 matches recovered after fixing this in `fastProcessStaging.cjs` lines 104-105.)

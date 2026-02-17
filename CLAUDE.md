@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 23.6** | Last Updated: February 17, 2026 | Session 106 Complete
+> **Version 23.7** | Last Updated: February 17, 2026 | Session 107 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1093,6 +1093,7 @@ cleanTeamName.cjs  ← THE algorithm (N-word sliding window)
 - ❌ Duplicating the algorithm in multiple files
 - ❌ Creating teams without calling `removeDuplicatePrefix` first
 - ❌ Adding a new processor that doesn't import `cleanTeamName.cjs`
+- ❌ Building team lookup keys from raw staging names before applying `removeDuplicatePrefix()` (Session 107 fix: latent bug caused 11,061 matches to fail silently when raw names had duplicate prefixes)
 
 ### 39. LEAST for Ranks, GREATEST for Points — Rank Preservation (Session 94)
 
@@ -1262,8 +1263,8 @@ This file is:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 177,459 | Team records (Session 106: +2,691 from GA/USYS NL/TCSL NPL) |
-| `matches_v2` | 511,282 active | Match results (~5,420 soft-deleted) |
+| `teams_v2` | 177,565 | Team records (Session 107: +106 from staging recovery) |
+| `matches_v2` | 520,376 active | Match results (~5,420 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
 | `leagues` | 462 | League metadata (Session 106: +26 — GA 4, USYS NL 21, misc 1) |
 | `tournaments` | 1,798 | Tournament metadata (Session 106: +11 incl. USYS NL Winter) |
@@ -1274,7 +1275,7 @@ This file is:
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
 | `learned_patterns` | 0+ | Adaptive learning patterns (Session 64) |
-| `staging_games` | 156,726 | Staging area (271 unprocessed — missing metadata) |
+| `staging_games` | 253,198 | Staging area (0 unprocessed — Session 107 cleared all 11,061) |
 | `staging_rejected` | 1 | Rejected intake data (Session 79) |
 | `seasons` | 3 | Season definitions |
 
@@ -1718,6 +1719,42 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 107 - Universal Team Key Normalization Fix (February 17, 2026) - COMPLETE ✅
+
+**Goal:** Fix systemic bug in `fastProcessStaging.cjs` where team lookup keys were built from raw staging names instead of cleaned names, causing silent match insertion failures when raw names contained duplicate club prefixes.
+
+**Root Cause:** Lines 104-105 of `fastProcessStaging.cjs` used `makeTeamKey(row.home_team_name, ...)` (RAW name) while `teamMap` was populated with cleaned keys from DB `display_name`. When `removeDuplicatePrefix()` changed a raw name (e.g., "Suffolk FC Suffolk FC Raptors" → "Suffolk FC Raptors"), the raw key ≠ clean key → match insertion failed silently. Bug latent since Session 87.2 — only fired when raw name had duplicate prefix AND team was new.
+
+**Fix:** 2-line change wrapping `removeDuplicatePrefix()` around raw names at key-building time. Aligns with established correct pattern in `processStandings.cjs`.
+
+**Recovery Results:**
+
+| Source | Records | Inserted | Failed |
+|--------|---------|----------|--------|
+| demosphere | 10,842 | 10,842 | **0** |
+| gotsport | 207 | 207 | **0** |
+| sincsports | 12 | 12 | **0** |
+| **Total** | **11,061** | **11,061** | **0** |
+
+**Key Metrics:**
+
+| Metric | Session 106 | Session 107 | Delta |
+|--------|-------------|-------------|-------|
+| matches_v2 (active) | 511,282 | **520,376** | **+9,094** |
+| teams_v2 | 177,459 | **177,565** | **+106** |
+| unprocessed staging | 11,061 | **0** | **-11,061** |
+| ELO matches processed | 231,728 | **235,488** | **+3,760** |
+| ELO teams updated | 72,946 | **73,923** | **+977** |
+
+**Spot-Check Verified:** Suffolk FC (VA) and Baystars FC (VA) — previously UNRESOLVED — now have matches and ELO ratings.
+
+**Documentation Updates:** CLAUDE.md Principle 38 anti-pattern added, SESSION_89 "clean before key" rule added.
+
+**Files Modified:** `scripts/maintenance/fastProcessStaging.cjs` (2 lines), `CLAUDE.md` (v23.7), `docs/SESSION_89_UNIVERSAL_ENTITY_RESOLUTION.md`, `.claude/hooks/session_checkpoint.md`
+**Zero UI changes. Zero adapter changes. Pure data quality fix within universal V2 pipeline.**
+
+---
 
 ### Session 106 - Girls Academy + USYS NL + NPL TCSL TX (February 17, 2026) - COMPLETE ✅
 
@@ -2391,7 +2428,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 107. Read CLAUDE.md (v23.6), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md. Current: ~511,282 active matches, 177,459 teams, 462 leagues. Session 106 COMPLETE — GA (528 league matches reclassified), USYS NL (~1,151 league matches, 21 new conferences), TCSL NPL TX (+947 via TGS). **Next priority: PA-W GLC — MUST SOLVE per Principle 42. Try 5+ new approaches (Session 107).** Also: STXCL NPL needs AthleteOne adapter (defer to Session 110+). Zero UI changes needed."
+> "Resume SoccerView Session 108. Read CLAUDE.md (v23.7), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md. Current: 520,376 active matches, 177,565 teams, 462 leagues, 10 adapters. Session 107 COMPLETE — Fixed systemic team key normalization bug in fastProcessStaging.cjs, recovered 11,061 stuck staging records (+9,094 new matches). **Next priority: PA-W GLC — MUST SOLVE per Principle 42. Try 5+ new approaches.** Also: STXCL NPL needs AthleteOne adapter (defer to Session 110+). Zero UI changes needed."
 
 ---
 

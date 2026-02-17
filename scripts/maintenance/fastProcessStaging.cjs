@@ -101,8 +101,8 @@ async function main() {
       const gender = extractGender(division, row.home_team_name);
       const tier = extractDivisionTier(division, row.raw_data);
 
-      const homeKey = makeTeamKey(row.home_team_name, birthYear, gender);
-      const awayKey = makeTeamKey(row.away_team_name, birthYear, gender);
+      const homeKey = makeTeamKey(removeDuplicatePrefix(row.home_team_name), birthYear, gender);
+      const awayKey = makeTeamKey(removeDuplicatePrefix(row.away_team_name), birthYear, gender);
 
       rowTeamKeys.set(row.id, { homeKey, awayKey, birthYear, gender, tier });
 

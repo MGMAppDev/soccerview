@@ -5,7 +5,11 @@
       "WebFetch(domain:github.com)",
       "Bash(for i in 1 2 3 4 5)",
       "Bash(do echo \"Attempt $i...\")",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Edit(**/*.md)",
+      "Write(**/*.md)",
+      "Edit(**/*.cjs)",
+      "Write(**/*.cjs)"
     ],
     "additionalDirectories": [
       "c:\\Users\\MathieuMiles\\Projects\\soccerview"
