@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 23.7** | Last Updated: February 17, 2026 | Session 107 Complete
+> **Version 23.8** | Last Updated: February 17, 2026 | Session 108 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1255,6 +1255,76 @@ This file is:
 
 **Cost:** ~30 seconds per checkpoint write. **Value:** Prevents hours of repeated work.
 
+### 45. Smart Event Discovery — Leagues 30d, Tournaments 14d (Session 108)
+
+**All adapters use the unified fallback path (coreScraper.js line 780).**
+
+| Event Type | Scrape Nightly? | Cutoff |
+|------------|----------------|--------|
+| League with matches in last 30 days or future | YES | `match_date >= today - 30` |
+| League with no matches in 30+ days | NO | Old — skip |
+| Tournament with matches in last 14 days or future | YES | `match_date >= today - 14` |
+| Tournament older than 14 days | NO | Scores are final — skip |
+
+**Architecture:**
+- `discoverEventsFromDatabase()` in coreScraper.js uses smart cutoffs (not narrow date windows)
+- No adapter should have a custom `discoverEvents` function — they all use `null` to fall through to the unified fallback path
+- The fallback path (line 780) merges DB discovery + `staticEvents` array automatically
+- `staticEvents` is a SAFETY NET for critical events that must never be missed (e.g., NAL, USYS NL conferences)
+- Year filter preserves discovered events: `!e.year || e.year >= currentYear - 1`
+
+**Anti-patterns:**
+- `discoverEvents: (engine) => engine.discoverEventsFromDatabase(7, 7)` — bypasses unified path + narrow window
+- `staticEvents: []` on a primary source — no safety net for critical events
+- Relying on `year` property to filter dynamically discovered events (they have no `year`)
+
+### 46. fastProcessStaging for Nightly, DQE for Investigation (Session 108)
+
+**Two tools, different purposes. Never swap them.**
+
+| Use Case | Tool | Why |
+|----------|------|-----|
+| Nightly bulk processing | `fastProcessStaging.cjs` | Exact matching, bulk SQL, 7,200 records/30s |
+| Investigation / audit | `dataQualityEngine.js --dry-run` | Fuzzy matching, detailed logs, audit reports |
+| Edge case reprocessing | `dataQualityEngine.js` | Suffix ILIKE + regex for hard-to-match teams |
+
+**Both follow the same V2 pipeline path:**
+- `authorize_pipeline_write()` (GUARDRAILS Section 13)
+- `source_entity_map` Tier 1 lookup (Principle 34)
+- Exact name Tier 2 / Create Tier 3
+- `removeDuplicatePrefix()` from `cleanTeamName.cjs` (Principle 38)
+- Reverse match detection (Principle 31)
+- `deleted_at IS NULL` (Principle 33)
+- LEAGUE_KEYWORDS event classification (Principle 40)
+
+**Anti-patterns:**
+- Using DQE in nightly pipeline (40-minute timeout, cascade-fails everything)
+- Using fastProcessStaging for one-off investigation (no fuzzy matching, less diagnostic output)
+
+### 47. Pipeline Steps Must Not Cascade-Fail (Session 108)
+
+**A single step failure must NEVER prevent downstream jobs from running.**
+
+All downstream jobs that depend on `validation-pipeline` accept three results:
+```yaml
+(needs.validation-pipeline.result == 'success' ||
+ needs.validation-pipeline.result == 'skipped' ||
+ needs.validation-pipeline.result == 'failure')
+```
+
+**Why:** Data already in production (from prior successful runs) still needs:
+- ELO recalculation (new matches from yesterday)
+- View refresh (stale views = stale app)
+- GotSport rankings refresh (API data independent of staging)
+- Integrity verification (catches issues in existing data)
+
+**A partial pipeline is still valuable. A fully-skipped pipeline is a wasted night.**
+
+**Anti-patterns:**
+- Only allowing `success || skipped` on downstream jobs (one failure = everything skips)
+- Not using `continue-on-error: true` on non-critical steps
+- Hard-failing on lint/verify steps that don't affect data correctness
+
 ---
 
 ## Quick Reference
@@ -1719,6 +1789,51 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 ---
 
 ## Current Session Status
+
+### Session 108 - Pipeline Freshness & Reliability — Systemic Fix (February 17, 2026) - COMPLETE ✅
+
+**Goal:** Fix 3 systemic pipeline issues: (1) Year filter bug silently removing ALL discovered events, (2) Narrow discovery windows missing active events, (3) DQE timeout cascade-failing all downstream jobs. Also complete PA-W GLC investigation.
+
+**PA-W GLC SOLVED:** GLC/NAL/E64 are national programs (USYS NL, NAL, Club Premier) — match data lives on GotSport, not SportsAffinity. SportsAffinity restricted page is a registration portal. No new adapter needed.
+
+**NAL Reclassified:** Tournament → League (UUID: 100a1dac-6cf4-436f-9333-989f0877eabf). 84 new matches scraped, staged, and processed.
+
+**Three Systemic Fixes:**
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| Year filter removes ALL discovered events | `e.year >= 2025` but discovered events have no `year` → `undefined >= 2025` = `false` | `!e.year \|\| e.year >= currentYear - 1` |
+| GotSport (PRIMARY source) has weakest discovery | 7-day DB window, 0 static events | Smart 30d/14d cutoffs, 4 static safety-net events |
+| DQE timeout cascade-fails 7 jobs | Row-by-row fuzzy matching on 174K+ teams | Replace with fastProcessStaging (240x faster) |
+
+**Architectural Simplification:**
+- Discovered that coreScraper.js lines 780-791 ALREADY implement unified hybrid discovery (DB + static merge)
+- 4 adapters had custom `discoverEvents` that BYPASSED this unified path
+- Removed custom `discoverEvents` from all 4 (gotsport, htgsports, heartland, sincsports)
+- All 10 adapters now use ONE discovery code path — Principle 11 satisfied
+
+**Pipeline Cascade Protection:**
+- 6 downstream jobs now accept `success || skipped || failure` from validation-pipeline
+- A partial pipeline is still valuable — ELO, views, rankings refresh independently
+
+**Key Metrics:**
+
+| Metric | Before Session 108 | After Session 108 |
+|--------|-------------------|-------------------|
+| NAL matches | 0 (tournament) | **84** (league) |
+| NAL new teams | 0 | **128** |
+| Adapters with custom discoverEvents | 4 | **0** (unified path) |
+| GotSport staticEvents | 0 | **4** (NAL + 3 USYS NL) |
+| GotSport maxEventsPerRun | 100 | **300** |
+| Pipeline timeout risk | 40 min (DQE) | **15 min** (fastProcessStaging) |
+| Downstream cascade protection | 0 jobs | **6 jobs** |
+
+**New Principles:** 45 (Smart Discovery), 46 (fastProcessStaging for Nightly), 47 (No Cascade Failure)
+
+**Files Modified:** `coreScraper.js` (discovery rewrite + year filter fix), `gotsport.js` (staticEvents + maxEventsPerRun), `htgsports.js`, `heartland.js`, `sincsports.js` (all set discoverEvents=null), `sportsaffinity.js` (removed dead GLC entries), `daily-data-sync.yml` (DQE→fastProcessStaging + cascade protection), `CLAUDE.md` (v23.8 + 3 principles), session checkpoint
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
 
 ### Session 107 - Universal Team Key Normalization Fix (February 17, 2026) - COMPLETE ✅
 
@@ -2428,7 +2543,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 108. Read CLAUDE.md (v23.7), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md. Current: 520,376 active matches, 177,565 teams, 462 leagues, 10 adapters. Session 107 COMPLETE — Fixed systemic team key normalization bug in fastProcessStaging.cjs, recovered 11,061 stuck staging records (+9,094 new matches). **Next priority: PA-W GLC — MUST SOLVE per Principle 42. Try 5+ new approaches.** Also: STXCL NPL needs AthleteOne adapter (defer to Session 110+). Zero UI changes needed."
+> "Resume SoccerView Session 109. Read CLAUDE.md (v23.8), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v5.5). Current: ~508,200 active matches, ~174,900 teams, 437 leagues, 10 adapters, 10 pipeline sync jobs. Session 108 COMPLETE — Fixed 3 systemic pipeline issues (year filter bug, narrow discovery windows, DQE timeout cascade). All 10 adapters on unified discovery path. 3 new principles (45-47). **Next priorities: Girls Academy + USYS NL + NPL from STATE_COVERAGE_CHECKLIST.md.** Zero UI changes needed."
 
 ---
 

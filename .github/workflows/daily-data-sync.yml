@@ -746,30 +746,36 @@ jobs:
           echo "✅ Intake validation complete: $FIXED fixed, $REJECTED rejected"
         timeout-minutes: 10
 
-      # Step 2: Data Quality Engine - THE ONLY path from staging to production
-      - name: Run Data Quality Engine
+      # Step 2: Process Staging to Production (Session 108: fastProcessStaging replaces DQE)
+      # fastProcessStaging.cjs: exact matching, bulk SQL, 240x faster than DQE
+      # Same V2 pipeline: authorize_pipeline_write(), source_entity_map Tier 1,
+      #   exact name Tier 2, create Tier 3, removeDuplicatePrefix(), reverse match detection
+      # DQE preserved for: --audit-report, --dry-run investigation, edge case reprocessing
+      - name: Process Staging to Production
         id: validate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          echo "🚀 Running Universal Data Quality Engine (V2 Architecture)"
-          node scripts/universal/dataQualityEngine.js --process-staging 2>&1 | tee validate_output.txt
+          echo "🚀 Processing staging to production (fastProcessStaging — Session 108)"
+          node scripts/maintenance/fastProcessStaging.cjs 2>&1 | tee validate_output.txt
           EXIT_CODE=${PIPESTATUS[0]}
 
-          # Extract metrics from engine output
-          MATCHES=$(grep -oP 'Records promoted:\s*\K\d+' validate_output.txt | tail -1 || echo "0")
-          TEAMS=$(grep -oP 'Created:\s*\K\d+' validate_output.txt | head -1 || echo "0")
+          # Extract metrics from fastProcessStaging output
+          # Format: "Total: N | Inserted: N | Skipped: N | Failed: N"
+          MATCHES=$(grep -oP 'Total:\s*\K\d+' validate_output.txt | tail -1 || echo "0")
           INSERTED=$(grep -oP 'Inserted:\s*\K\d+' validate_output.txt | tail -1 || echo "0")
+          # Format: "Created N new teams"
+          TEAMS=$(grep -oP 'Created\s+\K\d+' validate_output.txt | tail -1 || echo "0")
           echo "matches=$MATCHES" >> $GITHUB_OUTPUT
           echo "teams=$TEAMS" >> $GITHUB_OUTPUT
           echo "inserted=$INSERTED" >> $GITHUB_OUTPUT
           echo "views=yes" >> $GITHUB_OUTPUT
-          echo "engine=dataQualityEngine" >> $GITHUB_OUTPUT
+          echo "engine=fastProcessStaging" >> $GITHUB_OUTPUT
 
           exit $EXIT_CODE
-        timeout-minutes: 40
+        timeout-minutes: 15
 
   # ============================================================================
   # PHASE 2.5: INFERENCE LINKAGE (Fix orphaned matches over time)
@@ -786,7 +792,8 @@ jobs:
         (github.event.inputs.sync_type == 'full' ||
          github.event.inputs.sync_type == null) &&
         (needs.validation-pipeline.result == 'success' ||
-         needs.validation-pipeline.result == 'skipped')
+         needs.validation-pipeline.result == 'skipped' ||
+         needs.validation-pipeline.result == 'failure')
       }}
     timeout-minutes: 20
     outputs:
@@ -832,7 +839,8 @@ jobs:
          github.event.inputs.sync_type == 'heartland_only' ||
          github.event.inputs.sync_type == null) &&
         (needs.validation-pipeline.result == 'success' ||
-         needs.validation-pipeline.result == 'skipped') &&
+         needs.validation-pipeline.result == 'skipped' ||
+         needs.validation-pipeline.result == 'failure') &&
         (needs.scrape-standings.result == 'success' ||
          needs.scrape-standings.result == 'skipped')
       }}
@@ -1008,7 +1016,8 @@ jobs:
         (github.event.inputs.sync_type == 'full' ||
          github.event.inputs.sync_type == null) &&
         (needs.validation-pipeline.result == 'success' ||
-         needs.validation-pipeline.result == 'skipped')
+         needs.validation-pipeline.result == 'skipped' ||
+         needs.validation-pipeline.result == 'failure')
       }}
     timeout-minutes: 10
     outputs:
@@ -1058,7 +1067,8 @@ jobs:
         (github.event.inputs.sync_type == 'full' ||
          github.event.inputs.sync_type == null) &&
         (needs.validation-pipeline.result == 'success' ||
-         needs.validation-pipeline.result == 'skipped')
+         needs.validation-pipeline.result == 'skipped' ||
+         needs.validation-pipeline.result == 'failure')
       }}
     timeout-minutes: 5
     outputs:
@@ -1123,7 +1133,8 @@ jobs:
         (github.event.inputs.sync_type == 'full' ||
          github.event.inputs.sync_type == null) &&
         (needs.validation-pipeline.result == 'success' ||
-         needs.validation-pipeline.result == 'skipped')
+         needs.validation-pipeline.result == 'skipped' ||
+         needs.validation-pipeline.result == 'failure')
       }}
     timeout-minutes: 75
     outputs:
@@ -1170,7 +1181,8 @@ jobs:
          github.event.inputs.sync_type == 'elo_only' ||
          github.event.inputs.sync_type == null) &&
         (needs.validation-pipeline.result == 'success' ||
-         needs.validation-pipeline.result == 'skipped')
+         needs.validation-pipeline.result == 'skipped' ||
+         needs.validation-pipeline.result == 'failure')
       }}
     timeout-minutes: 30
     outputs:
@@ -1362,7 +1374,7 @@ jobs:
           echo "| Records Rejected | ${{ needs.validation-pipeline.outputs.intake_rejected || '-' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "## 🔄 Phase 2: Data Quality Engine" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔄 Phase 2: Staging → Production" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY

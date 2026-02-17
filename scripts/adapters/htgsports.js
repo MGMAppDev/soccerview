@@ -195,31 +195,12 @@ export default {
      * 1. Database discovery finds events with recent match activity
      * 2. Static list provides historical events + newly added ones
      * 3. No Puppeteer/scraping overhead for discovery
+     *
+     * Session 108: Removed custom discoverEvents. Uses unified fallback path
+     * which calls discoverEventsFromDatabase() + merges with staticEvents.
+     * See coreScraper.js lines 780-791 and Principle 45.
      */
-    discoverEvents: async (engine) => {
-      // Use universal database-based discovery
-      const dbEvents = await engine.discoverEventsFromDatabase(14, 14); // 2-week window
-
-      // Merge with static list to catch events not yet scraped
-      const staticEvents = engine.adapter.discovery.staticEvents || [];
-      const eventIds = new Set(dbEvents.map(e => e.id.toString()));
-
-      let newFromStatic = 0;
-      for (const se of staticEvents) {
-        if (!eventIds.has(se.id.toString())) {
-          dbEvents.push(se);
-          newFromStatic++;
-        }
-      }
-
-      if (newFromStatic > 0) {
-        console.log(`   Added ${newFromStatic} events from static list (not yet in DB)`);
-      }
-
-      return dbEvents;
-    },
-
-    // Static list (used as fallback + for new events not yet in DB)
+    discoverEvents: null,
   },
 
   // =========================================

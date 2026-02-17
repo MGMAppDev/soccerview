@@ -528,16 +528,12 @@ export default {
 
       // =============================================
       // PA-WEST (pawest.sportsaffinity.com)
+      // NOTE: GLC/NAL/E64 removed — registration-only portal (UnPublishedPage.asp).
+      // Match data for these national programs lives on GotSport:
+      //   GLC = USYS NL Great Lakes Conference (events 50944/50937/50922)
+      //   NAL = National Academy League (event 45671)
+      //   E64 = USYS NL Club Premier 1 (events 50936-50942)
       // =============================================
-      {
-        id: "paw-fall2025-glc",
-        name: "PA West Fall 2025 GLC/NAL/E64",
-        type: "league",
-        year: 2026,
-        state: "PA",
-        subdomain: "pawest",
-        tournamentGuid: "A960EA85-CC2A-4797-B56B-A489591B0CD4",
-      },
       {
         id: "paw-fall2025-classic",
         name: "PA West Fall 2025 Classic League",
@@ -618,15 +614,6 @@ export default {
         state: "PA",
         subdomain: "pawest",
         tournamentGuid: "4B00C05F-CE01-44F4-A7F8-B984F12493BB",
-      },
-      {
-        id: "paw-spring2026-glc",
-        name: "PA West Spring 2026 GLC/NAL/E64",
-        type: "league",
-        year: 2026,
-        state: "PA",
-        subdomain: "pawest",
-        tournamentGuid: "ECCA2C2A-4BF9-43FE-8F75-5346D96736D8",
       },
       {
         id: "paw-spring2026-classic",

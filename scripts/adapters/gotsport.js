@@ -109,19 +109,26 @@ export default {
 
   discovery: {
     /**
-     * UNIVERSAL: Uses engine's database-based discovery.
-     * GotSport is the primary source - no static list needed.
+     * Session 108: Smart hybrid discovery via unified fallback path.
+     * discoverEventsFromDatabase() uses 30d leagues / 14d tournaments.
+     * Static events below are a SAFETY NET for critical national events.
+     * All adapters use the same unified path (coreScraper lines 780-791).
      */
-    staticEvents: [],
+    staticEvents: [
+      // National Academy League — year-round national league (reclassified Session 108)
+      { id: "45671", name: "National Academy League 2025-2026", year: 2026, type: "league" },
+      // USYS National League conferences
+      { id: "50944", name: "2025 Fall NL Great Lakes Conference", year: 2026, type: "league" },
+      { id: "50937", name: "2025 Fall NL Midwest Conference", year: 2026, type: "league" },
+      { id: "50922", name: "2025 Fall NL South Atlantic Conference", year: 2026, type: "league" },
+    ],
 
     /**
-     * Dynamic discovery: Uses universal database-based discovery.
-     * Finds events with recent match activity filtered by source_match_key.
+     * Session 108: Removed custom discoverEvents. Uses unified fallback path
+     * which calls discoverEventsFromDatabase() + merges with staticEvents.
+     * See coreScraper.js lines 780-791 and Principle 45.
      */
-    discoverEvents: async (engine) => {
-      // Use universal database-based discovery with 7-day window
-      return engine.discoverEventsFromDatabase(7, 7);
-    },
+    discoverEvents: null,
   },
 
   // =========================================
@@ -209,8 +216,9 @@ export default {
     minDate: "2023-01-01",
     maxFutureDate: null,
 
-    /** Max events per run (GitHub Actions timeout protection) */
-    maxEventsPerRun: 100,
+    /** Max events per run — Session 108: increased from 100 to 300
+     *  (295 GotSport leagues in DB, 100 cap was truncating discovery) */
+    maxEventsPerRun: 300,
 
     isValidMatch: (match) => {
       if (!match.homeTeamName || !match.awayTeamName) return false;

@@ -659,55 +659,80 @@ class CoreScraperEngine {
   }
 
   // =========================================
-  // UNIVERSAL EVENT DISCOVERY (Database-based)
-  // Works for ANY source without custom code
+  // UNIVERSAL SMART EVENT DISCOVERY (Session 108)
+  // Leagues: scrape if matches in last 30 days or future
+  // Tournaments: scrape if matches in last 14 days or future
+  // Works for ANY source without custom code (Principle 11)
+  // All adapters use unified fallback path (lines 780-791)
   // =========================================
 
-  async discoverEventsFromDatabase(lookbackDays = 7, forwardDays = 7) {
-    console.log(`🔍 Universal discovery: Finding ${this.adapter.id} events from database...`);
+  async discoverEventsFromDatabase(lookbackDays, forwardDays) {
+    // Parameters preserved for backward compat but overridden by smart cutoffs
+    console.log(`🔍 Smart discovery: Finding active ${this.adapter.id} events...`);
 
-    const lookbackDate = new Date();
-    lookbackDate.setDate(lookbackDate.getDate() - lookbackDays);
-
-    const forwardDate = new Date();
-    forwardDate.setDate(forwardDate.getDate() + forwardDays);
-
-    // Query matches_v2 for recent/upcoming activity
-    // Extract source_match_key prefix from matchKeyFormat (e.g., "htg-{eventId}-{matchId}" -> "htg")
     const matchKeyPrefix = this.adapter.matchKeyFormat?.split('-')[0] || this.adapter.id;
     const sourcePattern = `${matchKeyPrefix}-%`;
 
-    const { data: recentMatches, error } = await this.supabase
-      .from("matches_v2")
-      .select("league_id, tournament_id")
-      .like("source_match_key", sourcePattern)
-      .gte("match_date", lookbackDate.toISOString().split("T")[0])
-      .lte("match_date", forwardDate.toISOString().split("T")[0])
-      .limit(5000);
+    // League cutoff: 30 days back (active leagues have weekly matches)
+    const leagueCutoffDate = new Date();
+    leagueCutoffDate.setDate(leagueCutoffDate.getDate() - 30);
+    const leagueCutoff = leagueCutoffDate.toISOString().split("T")[0];
 
-    if (error) {
-      console.error("   Error querying matches:", error.message);
+    // Tournament cutoff: 14 days back (tournaments are brief weekend events)
+    const tournCutoffDate = new Date();
+    tournCutoffDate.setDate(tournCutoffDate.getDate() - 14);
+    const tournCutoff = tournCutoffDate.toISOString().split("T")[0];
+
+    // Query 1: Leagues with matches in last 30 days or future
+    const { data: leagueMatches, error: leagueErr } = await this.supabase
+      .from("matches_v2")
+      .select("league_id")
+      .like("source_match_key", sourcePattern)
+      .gte("match_date", leagueCutoff)
+      .is("deleted_at", null)
+      .not("league_id", "is", null)
+      .limit(20000);
+
+    if (leagueErr) {
+      console.error("   Error querying league matches:", leagueErr.message);
       return [];
     }
 
-    // Collect unique league and tournament IDs
-    const leagueIds = new Set();
-    const tournamentIds = new Set();
-    for (const match of recentMatches || []) {
-      if (match.league_id) leagueIds.add(match.league_id);
-      if (match.tournament_id) tournamentIds.add(match.tournament_id);
+    const activeLeagueIds = new Set();
+    for (const m of leagueMatches || []) {
+      if (m.league_id) activeLeagueIds.add(m.league_id);
     }
 
-    console.log(`   Found ${leagueIds.size} leagues, ${tournamentIds.size} tournaments with recent activity`);
+    // Query 2: Tournaments with matches in last 14 days or future
+    const { data: tournMatches, error: tournErr } = await this.supabase
+      .from("matches_v2")
+      .select("tournament_id")
+      .like("source_match_key", sourcePattern)
+      .gte("match_date", tournCutoff)
+      .is("deleted_at", null)
+      .not("tournament_id", "is", null)
+      .limit(20000);
+
+    if (tournErr) {
+      console.error("   Error querying tournament matches:", tournErr.message);
+      return [];
+    }
+
+    const activeTournIds = new Set();
+    for (const m of tournMatches || []) {
+      if (m.tournament_id) activeTournIds.add(m.tournament_id);
+    }
+
+    console.log(`   Active leagues: ${activeLeagueIds.size}, Active tournaments: ${activeTournIds.size}`);
 
     const events = [];
 
-    // Fetch league details
-    if (leagueIds.size > 0) {
+    // Query 3: Fetch league details
+    if (activeLeagueIds.size > 0) {
       const { data: leagues } = await this.supabase
         .from("leagues")
         .select("id, name, source_event_id")
-        .in("id", Array.from(leagueIds));
+        .in("id", Array.from(activeLeagueIds));
 
       for (const lg of leagues || []) {
         if (lg.source_event_id) {
@@ -721,12 +746,12 @@ class CoreScraperEngine {
       }
     }
 
-    // Fetch tournament details
-    if (tournamentIds.size > 0) {
+    // Query 4: Fetch tournament details
+    if (activeTournIds.size > 0) {
       const { data: tournaments } = await this.supabase
         .from("tournaments")
         .select("id, name, source_event_id")
-        .in("id", Array.from(tournamentIds));
+        .in("id", Array.from(activeTournIds));
 
       for (const t of tournaments || []) {
         if (t.source_event_id) {
@@ -740,7 +765,7 @@ class CoreScraperEngine {
       }
     }
 
-    console.log(`   Discovered ${events.length} active events`);
+    console.log(`   Discovered ${events.length} active events for nightly scrape`);
     return events;
   }
 
@@ -795,9 +820,12 @@ class CoreScraperEngine {
     }
 
     // Apply active-only filter if needed
+    // Session 108 fix: events discovered from DB lack 'year' property.
+    // undefined >= 2025 = false, which silently removed ALL discovered events.
+    // Fix: pass through events without year (they were just discovered as active).
     if (options.activeOnly && events.length > 0) {
       const currentYear = new Date().getFullYear();
-      events = events.filter(e => e.year >= currentYear - 1);
+      events = events.filter(e => !e.year || e.year >= currentYear - 1);
     }
 
     // Apply max events limit

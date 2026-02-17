@@ -220,25 +220,11 @@ export default {
     ],
 
     /**
-     * UNIVERSAL: Uses engine's database-based discovery + static fallback.
-     * Heartland has 2 virtual events per year (Premier, Calendar).
+     * Session 108: Removed custom discoverEvents. Uses unified fallback path
+     * which calls discoverEventsFromDatabase() + merges with staticEvents.
+     * See coreScraper.js lines 780-791 and Principle 45.
      */
-    discoverEvents: async (engine) => {
-      // Try database discovery first
-      const dbEvents = await engine.discoverEventsFromDatabase(30, 30); // 30-day window for leagues
-
-      // Merge with static list (Heartland needs level property)
-      const staticEvents = engine.adapter.discovery.staticEvents || [];
-      const eventIds = new Set(dbEvents.map(e => e.id.toString()));
-
-      for (const se of staticEvents) {
-        if (!eventIds.has(se.id.toString())) {
-          dbEvents.push(se);
-        }
-      }
-
-      return dbEvents;
-    },
+    discoverEvents: null,
   },
 
   // =========================================

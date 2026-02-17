@@ -114,19 +114,12 @@ export default {
       { id: "VESL", name: "Volunteer Elite Soccer League", type: "league", year: 2026, state: "TN" },
     ],
 
-    discoverEvents: async (engine) => {
-      const dbEvents = await engine.discoverEventsFromDatabase(30, 30);
-      const staticEvents = engine.adapter.discovery.staticEvents || [];
-      const eventIds = new Set(dbEvents.map(e => e.id.toString()));
-
-      for (const se of staticEvents) {
-        if (!eventIds.has(se.id.toString())) {
-          dbEvents.push(se);
-        }
-      }
-
-      return dbEvents;
-    },
+    /**
+     * Session 108: Removed custom discoverEvents. Uses unified fallback path
+     * which calls discoverEventsFromDatabase() + merges with staticEvents.
+     * See coreScraper.js lines 780-791 and Principle 45.
+     */
+    discoverEvents: null,
   },
 
   // =========================================

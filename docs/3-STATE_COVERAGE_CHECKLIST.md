@@ -30,6 +30,8 @@
 | 104 | Feb 17 | **IL/VA/WI gap fill + Squadi AR adapter.** Scraped all 17 discovered gaps from Session 103 research: 5 IL GotSport (488), 3 VA GotSport (238), 9 WI PlayMetrics (7,095 incl MAYSA 175 divisions). Built 10th adapter (Squadi REST API, 68s scrape). AR: 6 events, 1,639 matches. Event classification fix in fastProcessStaging (check staging_events.event_type). | **+9,352 matches, +4,630 teams, +18 leagues, +1 adapter, +1 pipeline job** | RI + HI adapters |
 | 105 | Feb 17 | **HI Oahu League via SportsAffinity** (NOT custom — same platform as GA/MN/UT/OR/NE/PA-W/IA). Added 4 events to SA adapter. Scraped 4 seasons (Fall+Spring 2024/25 + 2025/26). 3,589 matches, 497 new teams, 4 new HI leagues. **RI Super Liga:** Data PURGED between seasons — Fall 2025 permanently lost. Tried 5+ approaches per Principle 42 (Wayback found structure but not POST data). Built adapter skeleton for March 28 retry. Updated GUARDRAILS S19 with data retention warning. Full adapter audit: all 10 adapters have Fall 2025 ✅. | **+3,589 matches, +497 teams, +4 leagues** | Girls Academy + USYS NL + NPL |
 | 106 | Feb 17 | **National Programs Complete.** GA (4 events reclassified tournament→league, 528 total GA matches). **USYS NL:** Discovered 21 new conference event IDs (Team Premier + Club P1/P2 + Winter). Scraped 1,151 USYS NL matches + 485 Winter showcase = 1,636 total. All NL team/club events reclassified as leagues. **TCSL NPL TX:** TGS event 3989 added, 947 matches staged (1,199 TGS total). **STXCL NPL:** AthleteOne platform — new adapter deferred. | **+2,163 matches, +2,011 teams, +26 leagues, +11 tournaments** | PA-W GLC (Session 107) |
+| 107 | Feb 17 | **Team Key Normalization Fix.** Systemic bug: fastProcessStaging built team lookup keys from raw names but teamMap used cleaned names. 2-line fix wrapping removeDuplicatePrefix(). Recovered 11,061 stuck staging records. | **+9,094 matches, +106 teams** | Session 108 pipeline fix |
+| 108 | Feb 17 | **Pipeline Freshness & Reliability (Systemic Fix).** PA-W GLC SOLVED (national GotSport programs). NAL reclassified tournament→league (84 matches). Fixed year filter bug (undefined >= 2025 = false). Smart discovery: leagues 30d, tournaments 14d. Removed custom discoverEvents from 4 adapters → unified path. DQE→fastProcessStaging in nightly (240x faster). Cascade protection on 6 downstream jobs. 3 new principles (45-47). | **+84 NAL matches, +128 teams, 3 systemic fixes** | Standings scrapers |
 
 ---
 
@@ -127,19 +129,13 @@
 
 ---
 
-#### Session 107: PA-W GLC — MUST SOLVE (Principle 42)
-**CRITICAL:** NOT acceptable to defer. Try minimum 5 MORE approaches.
-
-- [ ] **Approach 11:** SportsAffinity API endpoints (inspect network tab on working states)
-- [ ] **Approach 12:** Historical Wayback Machine archives
-- [ ] **Approach 13:** Alternative data sources (clubs posting schedules)
-- [ ] **Approach 14:** Direct widget embed URLs
-- [ ] **Approach 15:** Mobile app endpoints
-- [ ] **Approach 16:** Contact league admin (last resort)
-
-**GUIDs saved in:** `.claude/hooks/session_checkpoint.md`
-
-**Expected Results:** +500-1,000 matches (top-tier PA-W)
+#### Session 108: PA-W GLC — RESOLVED ✅
+**SOLVED:** GLC/NAL/E64 are NATIONAL programs (USYS NL, NAL, Club Premier) — match data lives on GotSport, NOT SportsAffinity. The SA restricted page is a registration portal only.
+- NAL reclassified from tournament → league (UUID: 100a1dac-6cf4-436f-9333-989f0877eabf)
+- 84 NAL matches scraped and processed (128 new teams)
+- SportsAffinity adapter cleaned (removed 2 dead GLC entries)
+- GotSport static safety net added (NAL 45671 + 3 USYS NL conferences)
+- Also fixed 3 systemic pipeline issues (Principles 45-47)
 
 ---
 
@@ -494,7 +490,7 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 | # | Risk/Gap | Severity | Status | Impact | Action Plan |
 |---|----------|----------|--------|--------|-------------|
 | 1 | **RI adapter waiting on season** | 🟡 HIGH | WAITING | RI Super Liga purges data between seasons. Fall 2025 permanently lost. Adapter skeleton ready. | **March 28, 2026:** Retry when Spring 2026 season starts. ⚠️ SCRAPE IMMEDIATELY — data-purging platform. |
-| 2 | **PA-W GLC restricted access** | 🔴 **CRITICAL** | **MUST SOLVE** | Top-tier PA-W event inaccessible. **NOT ACCEPTABLE TO DEFER.** Principle 42 applies. | **Session 107:** Try 5+ more approaches: API endpoints, Wayback, mobile endpoints, widget embeds, club schedules |
+| 2 | ~~PA-W GLC restricted access~~ | ✅ **RESOLVED** | **Session 108** | GLC/NAL/E64 are national GotSport programs, not SportsAffinity. SA page was registration portal only. 84 NAL matches scraped. | **CLOSED** |
 | 3 | **Girls Academy incomplete** | 🟡 HIGH | ACTIVE | Only 136 matches, should have 600-800 from Fall 2025. **NOT "between seasons"** — data exists. | **Session 106:** Scrape ALL Fall 2025 data (events 42137, 42138, 44874, 45530) + verify Spring schedule capture works |
 | 4 | **USYS NL 13 conferences missing** | 🟡 HIGH | ACTIVE | Only 30 matches, missing 10+ conference event IDs. **NOT "between seasons"** — discover NOW. | **Session 106:** Discover all 13 conference IDs, scrape all available Fall 2025 data, verify Spring schedule capture |
 | 5 | **NPL 2 leagues missing** | 🟡 MEDIUM | ACTIVE | 16/18 on GotSport, 2 remaining undiscovered | **Session 106:** Discover final 2 regional NPL leagues |
@@ -575,26 +571,20 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 
 ---
 
-### Session 107: PA-W GLC — MUST SOLVE
-**Focus:** Restricted access problem — try 5+ MORE approaches (Principle 42)
-
-**NOT ACCEPTABLE TO DEFER.** This is a MUST SOLVE per Principle 42.
-
-**Approaches to try:**
-1. SportsAffinity API endpoints (inspect network on working states)
-2. Wayback Machine archives
-3. Alternative data sources (club schedules)
-4. Direct widget embed URLs
-5. Mobile app endpoints
-6. Contact league admin (last resort)
-
-**Deliverables:**
-- PA-W GLC/NAL/E64 data access solved
-- +500-1,000 top-tier PA-W matches
+### Session 107: Team Key Normalization Fix — COMPLETE ✅
+Fixed systemic team key normalization bug in fastProcessStaging.cjs. Recovered 11,061 staging records (+9,094 matches).
 
 ---
 
-### Session 108: Standings Scrapers Part 1
+### Session 108: Pipeline Freshness & Reliability — COMPLETE ✅
+**PA-W GLC SOLVED:** National programs on GotSport (not SA). 84 NAL matches processed.
+**3 systemic pipeline fixes:** Year filter bug, smart 30d/14d discovery, DQE→fastProcessStaging.
+**3 new principles:** 45 (Smart Discovery), 46 (fastProcessStaging Nightly), 47 (No Cascade Failure).
+All 10 adapters on unified discovery path. 6 downstream jobs cascade-protected.
+
+---
+
+### Session 109+: Standings Scrapers Part 1
 **Focus:** Add standings to GotSport + SportsAffinity adapters
 
 **Deliverables:**
