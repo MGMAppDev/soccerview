@@ -161,7 +161,7 @@ class CoreScraperEngine {
       console.log(`   Current staging_games count: ${countResult[0].count}`);
 
       // Test write with dummy record
-      const testKey = `test_${Date.now()}`;
+      const testKey = `test_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
       await pool.query(
         `INSERT INTO staging_games (source_platform, source_match_key, home_team_name, away_team_name, processed)
          VALUES ($1, $2, $3, $4, $5)`,

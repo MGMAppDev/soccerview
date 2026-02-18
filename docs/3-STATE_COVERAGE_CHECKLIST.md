@@ -1,6 +1,6 @@
 # SoccerView State Coverage Checklist
 
-> **Version 6.3** | Updated: February 18, 2026 | Session 113 Complete
+> **Version 7.0** | Updated: February 18, 2026 | Session 113 Complete → FINAL SESSION Planned
 >
 > **THE MASTER TRACKER** for national expansion. Every US state, every premier league, every platform, every action needed.
 > **Updated every session.** This is the single source of truth for coverage status.
@@ -46,6 +46,7 @@
 | 111 | Feb 18 | **TGS Standings + CO CAL Spring + Spring Blitz.** Added stealth Puppeteer to scrapeStandings.js. Built TGS standings section: 75/75 ECNL events scraped (4,362 standings). CO CAL Spring 2026: 4,564 matches via PlayMetrics. Spring blitz: most events already in pipeline (Principle 45 working). Fast bulk TGS processor: 4,362 rows in 340s. Event discovery: FL (6 new IDs), IN (49628), MO (44132 SLYSA), TX (44745 GCL, 45379 EDPL). AK deferred June 2026. | **+5,222 matches (520K→525K), +4,362 standings (13K→17.7K), +4,862 teams, +6,019 SEM, standings adapters 6→7** | Session 112 |
 | 112 | Feb 18 | **"Between Seasons" BANNED + Spring 2026 gap events.** Added 9 GotSport staticEvents (FL/IN/MO/TX + MS/NM/WY multi-state). 86 new matches (FL/MS/NM/WY). ISL reclassified tournament→league. NO LEAGUE states research (MS/SD/WY/ND/NM) completed. | **+86 matches, +1 ISL league, GotSport 12→21 staticEvents** | Session 113 |
 | 113 | Feb 18 | **50-State PRODUCTION audit + AthleteOne adapter (12th).** Audit: 100% matches/ELO/GS Ranks across all states; standings gap in 42/50 states. Fixed GotSport standings discovery 41→342 leagues (numeric ID format). Built AthleteOne adapter: 3,051 STXCL ECNL-RL TX matches, pure REST API. Added sync-athleteone to pipeline. Processed 7 new GotSport leagues: +2,017 standings. GotSport scraper running on 342 leagues (NorCal 685 groups still pending). | **+3,051 matches (525K→528K), +2,552 teams, +3 leagues, +2,017 standings (17.7K→19.7K), 12th adapter** | Finish GotSport 342 leagues + remaining standings adapters |
+| **FINAL** | Feb 18 | **ALL remaining open items — one sprint.** 7 blocks, 30 steps. STXCL WC scraped, WY+NM processed, FL/IN/MO/TX/GA events scraped, TN/WV/NM/RI/MA/AK attempted (Principle 42), all tech debt cleared, ELO+views run, docs vFINAL, git push. | **TBD — final metrics** | **DONE ✅** |
 
 ---
 
@@ -177,81 +178,107 @@
 
 ---
 
-### 🔵 Session 114: MARCH SEASONAL STATES (March 1-13, 2026)
+### 🔴 FINAL SESSION — ALL REMAINING OPEN ITEMS (February 18, 2026)
 
-> **Calendar-gated:** Cannot start before March 1, 2026.
-
-- [ ] **TN State League** (March 1) — Scrape via SINC Sports adapter (proven with NC). Matches + standings + schedules. All 4 divisions (Div 1, 2a, 2b, 3).
-- [ ] **WV State League** (March 1) — Find event ID (behind registration hash per Principle 42 — 5+ approaches), scrape via GotSport.
-- [ ] **IA EIYSL** — Retry HTGSports events 13486, 13113.
-- [ ] **IA Spring 2026** (March 13) — SportsAffinity ISL Spring.
-- [ ] **Any remaining Spring 2026 events** across all states now available.
-- [ ] Process all through pipeline. ELO recalculation (one run).
-
-**Expected:** TN → PRODUCTION (matches + SINC standings + schedules). WV upgraded. IA complete. +2,000-5,000 matches.
+> **No calendar gates. No deferrals without Principle 42 (5+ documented approaches). Quality over speed.**
+> **Spring 2026 is ACTIVE NOW. "Between seasons" is BANNED.**
+> **This session closes Sessions 112–116 in one sprint.**
 
 ---
 
-### 🟣 Session 115: RI SUPER LIGA + FINAL GAPS (March 28, 2026)
+#### BLOCK A — Immediate Data Processing
 
-> **Calendar-gated:** Cannot start before March 28, 2026. DATA-PURGING PLATFORM — must scrape same day.
-
-- [ ] **RI Super Liga** (March 28) — Activate adapter skeleton (`risuperliga.js`). Scrape ALL matches + standings + schedules IMMEDIATELY. Data-purging platform — complete same day.
-- [ ] **AK UAYSL** — If Spring 2026 is now active, scrape. If not, document permanent status with evidence.
-- [ ] **Re-scrape any states** that were partial in Session 113 audit.
-- [ ] **Final gap closure** — any remaining incomplete items from prior sessions.
-
-**Expected:** RI upgraded. All gaps closed.
+- [ ] **A1** — Commit `coreScraper.js` testKey race condition fix (made last session, not committed)
+- [ ] **A2** — `fastProcessStaging` (no `--source` filter) → process WY YPL (16) + NM Desert Conf (47) + any other unprocessed staging
+- [ ] **A3** — Add STXCL WC events to `gotsport.js` staticEvents: `{ id: "46279", ... }` + `{ id: "46278", ... }` → scrape both → fastProcessStaging
+- [ ] **A4** — `node scripts/_debug/fast_process_gs_standings.cjs` → process all new rows from 342-league GotSport re-scrape (NorCal 685 groups)
 
 ---
 
-### ⬛ Session 116: FINAL VERIFICATION + 100% SIGN-OFF
+#### BLOCK B — Scrape 8 Missing GotSport Events (discovered S111, never scraped)
 
-**Goal:** Verify 100% completion. Full ELO recalculation. App QC testing. Pipeline health check. Close the checklist.
-
-- [ ] **Full ELO recalculation** (one final run covering ALL matches)
-- [ ] **All 5 materialized views refreshed**
-- [ ] **App QC Testing** (per Post-Expansion QC Protocol, Principle 41):
-  - Home page match count correct
-  - Every state appears in Rankings state filter with teams visible
-  - Team names display correctly (no double-prefix, no encoding issues)
-  - League standings show for every state with leagues
-  - Team detail shows matches, correct state, ELO populated
-- [ ] **Pipeline dry-run:** Run full daily-data-sync.yml manually, verify all sync + standings + ELO jobs succeed
-- [ ] **Final metrics report:** States at PRODUCTION, total matches, teams, leagues, standings, schedules
-- [ ] **Update ALL documentation:** CLAUDE.md, STATE_COVERAGE_CHECKLIST.md (mark FINAL), DATA_EXPANSION_ROADMAP.md, DATA_SCRAPING_PLAYBOOK.md
-- [ ] **STATE_COVERAGE_CHECKLIST.md:** Mark version FINAL — all 55 states verified
-
-**Expected:** 100% completion. Checklist CLOSED.
+- [ ] **B1** — FL: Scrape 43009 (FSPL main) + 45008 (WFPL). Verify 45046 (CFPL) + 45052 (SEFPL) in DB. Add all 4 to staticEvents.
+- [ ] **B2** — IN: Scrape 49628 (ISL Spring 2026). Add to staticEvents.
+- [ ] **B3** — MO: Scrape 44132 (SLYSA Fall 2025). Add to staticEvents.
+- [ ] **B4** — TX: Scrape 44745 (GCL 2025-26) + 45379 (EDPL Fall South TX). Add both to staticEvents.
+- [ ] **B5** — Girls Academy re-scrape (gap: 528 actual vs 800+ expected): re-scrape 42137+42138+44874+45530. fastProcessStaging.
+- [ ] **B6** — Final fastProcessStaging pass to process all Block B staged matches. Verify all events have matches in matches_v2.
 
 ---
 
-## Completion Targets (Updated Session 111)
+#### BLOCK C — New Data Sources (Principle 42: 5+ approaches each, zero shortcuts)
 
-| Milestone | Current (S111) | Target (S113) | Target (S116) | Gap |
-|-----------|----------------|---------------|---------------|-----|
-| **States at PRODUCTION** | 4 | **35+** | **55** | 51 states |
-| **States at PARTIAL+** | 48 | 55 | 55 | 7 states |
-| **Active matches** | **525,682** | **575K+** | **650K+** | +125K |
-| **Leagues in DB** | **464** | **500+** | **550+** | +86 |
-| **League standings** | **17,732** | **20K+** | **25K+** | +7K+ |
-| **National programs** | 5 PROD, NPL 17/18 | **7 PROD** (all) | **7 PROD** | +2 (RI, AthleteOne) |
-| **Adapters built** | 10 + 1 skeleton | **12** | **13** (+ NM) | +3 |
-| **Standings adapters** | **7** (GS/TGS/SINC/Heartland/Demosphere/Squadi/PlayMetrics) | **7** | **7** | Done ✅ |
-| **Pipeline sync jobs** | 10 | **12** | **13** | +3 |
-| **Tech debt items** | 4 open | **0** | **0** | Clear all |
+- [ ] **C1** — **TN State League (SINC Sports):** Find event IDs NOW. Approaches: (1) WebSearch "Tennessee State League SINC Sports 2026", (2) WebSearch "TSL sincsports.com div 1 2a 2b 3", (3) WebFetch sincsports.com, (4) probe nearby NC IDs, (5) tnsoccer.org links. If found: add to sincsports.js, scrape matches + standings, fastProcessStaging + processStandings. If all fail: document each with URL + result → deferred to March 1.
+- [ ] **C2** — **WV State League (GotSport):** Find event ID NOW. Approaches: (1) WebSearch "WV State Soccer League GotSport 2026", (2) WebFetch wvsoccer.com, (3) probe IDs 48450-48460, (4) probe 47xxx+49xxx range, (5) WebSearch "wvsoccer.com schedule spring 2026", (6) GotSport search "West Virginia 2026". If found: scrape + fastProcessStaging. If all fail: document → deferred to March 1.
+- [ ] **C3** — **NM DCSL (dukecity.org):** Build adapter (Spring starts Feb 28). Approaches: (1) WebFetch dukecity.org, (2) inspect embedded JSON, (3) try `/wp-admin/admin-ajax.php` endpoints, (4) WebSearch "Duke City Soccer League schedule API endpoint", (5) check secondary GotSport listing. If buildable: create `scripts/adapters/dcsl.js`, scrape + process. If blocked: document → deferred to Feb 28.
+- [ ] **C4** — **RI Super Liga:** WebFetch thesuperliga.com NOW. If Spring 2026 data live: activate `risuperliga.js` adapter, scrape ALL matches + standings + schedules immediately (data-purging!). If not live: document current site state with evidence → deferred to March 28.
+- [ ] **C5** — **MA NEP:** Apply Principle 42: (1) WebSearch "Massachusetts NEP GotSport 2026 event ID", (2) WebSearch "GBYSL NEP GotSport schedule", (3) WebFetch mass-soccer.org, (4) probe GotSport IDs 45xxx for MA, (5) WebSearch "NEPSL Massachusetts GotSport 2025-26". Document each result. Accept as blocked only with all 5 documented.
+- [ ] **C6** — **AK UAYSL:** Document status — event 5082 has 12 groups configured, 0 matches as of Feb 18. Already in staticEvents. Update AK row: "nightly pipeline monitors; 755 AK matches from other events already in DB."
+
+---
+
+#### BLOCK D — ALL Technical Debt (no item skipped)
+
+- [ ] **D1** — **Double-prefix failures (74 matches):** Query `teams_v2` for edge cases (`LIKE '%Rush Rush%'`, `'%FC FC%'`). Fix `cleanTeamName.cjs` if edge case found. Run `fixDoublePrefix.cjs` retroactively. Verify 0 remaining.
+- [ ] **D2** — **View refresh optimization (50+ sec → <10 sec):** Time current refresh. Identify slowest view. Add indexes (`idx_league_standings_league_birth ON league_standings(league_id, birth_year, gender)`). Re-time. Document result.
+- [ ] **D3** — **SEM backfill (72K → 90K+ entries):** Find existing backfill script or write bulk SQL to create missing `source_entity_map` entries from `staging_games`+`matches_v2`. Execute. Verify count increase.
+- [ ] **D4** — **Pipeline monitoring:** Add failure alerting to `daily-data-sync.yml` — at minimum a final summary step with `if: failure()` posting to GitHub step summary. Verify mechanism works.
+- [ ] **D5** — **DATA_EXPANSION_ROADMAP.md:** Update source table (all 12 adapters), mark Waves 1-8 done, update match/team/standings counts, update national programs section.
+- [ ] **D6** — **DATA_SCRAPING_PLAYBOOK.md:** Add AthleteOne (12th adapter), update adapter count to 12, update standings pipeline section (7 standings adapters).
+
+---
+
+#### BLOCK E — Final Pipeline Run
+
+- [ ] **E1** — ELO recalculation: `node scripts/daily/recalculate_elo_v2.js` (background, must complete before views)
+- [ ] **E2** — All 5 materialized views: `psql $DATABASE_URL -c "SELECT refresh_app_views();"` — verify counts on all 5 views
+
+---
+
+#### BLOCK F — Final Verification (S116 items)
+
+- [ ] **F1** — SQL verification: all 5 data elements across all states (matches, ELO, GS Ranks, standings, scheduled future matches with league linkage)
+- [ ] **F2** — Pipeline health check: `gh run list --repo MGMAppDev/soccerview --limit 3` — confirm no broken jobs
+
+---
+
+#### BLOCK G — Final Documentation & Commit
+
+- [ ] **G1** — `CLAUDE.md` v25.0 FINAL — update all metrics, session history, adapter list (12), resume prompt
+- [ ] **G2** — `session_checkpoint.md` — final post-ELO metrics, mark "Session FINAL: COMPLETE ✅"
+- [ ] **G3** — `STATE_COVERAGE_CHECKLIST.md` vFINAL — Session FINAL row in progress log, all state rows verified, all Known Risks resolved/evidenced, version = FINAL
+- [ ] **G4** — `git commit + push` — `"Session FINAL: all open items complete, checklist FINAL, docs vFINAL"`
+
+---
+
+**Deferrals accepted ONLY with Principle 42 compliance:** URL attempted + response/result + specific retry date documented in checklist for each deferred item.
+
+---
+
+## Completion Targets (Updated FINAL SESSION)
+
+| Milestone | Current (S113) | Target (FINAL) | Gap |
+|-----------|----------------|----------------|-----|
+| **States at PRODUCTION** | 4 | **55** | 51 states |
+| **States at PARTIAL+** | 51 | 55 | 4 states |
+| **Active matches** | **528,819** | **550K+** | +22K |
+| **Leagues in DB** | **468** | **500+** | +32 |
+| **League standings** | **19,749** | **25K+** | +5K+ |
+| **National programs** | 6 PROD, NPL 18/18 | **7 PROD** (add RI if live) | +1 |
+| **Adapters built** | 12 + 1 skeleton | **12 (+ NM if buildable)** | +1 possible |
+| **Standings adapters** | **7** (GS/TGS/SINC/Heartland/Demosphere/Squadi/PlayMetrics) | **7** | Done ✅ |
+| **Pipeline sync jobs** | 12 | **12 (+ NM if built)** | Done |
+| **Tech debt items** | **20 open** | **0** | Clear ALL |
 
 ### Session-by-Session Milestones
 
-| Session | Date | Focus | Key Metric | Cumulative PRODUCTION |
-|---------|------|-------|------------|----------------------|
-| **110** | ✅ DONE | 3 standings scrapers (Demosphere/Squadi/PlayMetrics) | +1,643 standings, adapters 3→6 | 30+ states |
-| **111** | ✅ DONE | TGS standings + CO CAL Spring + event discovery | +5,222 matches, +4,362 standings, adapters 6→7 | 35+ states |
-| **112** | Immediate | NO LEAGUE + NM + tech debt | All debt cleared | 40+ states |
-| **113** | Immediate | AthleteOne + 50-state audit | 12th adapter, full audit | 45+ states |
-| **114** | March 1-13 | TN, WV, IA seasonal | +2K-5K matches | 48+ states |
-| **115** | March 28 | RI + final gaps | RI PRODUCTION | 52+ states |
-| **116** | After 115 | Final verification + sign-off | 100% verified | **55/55** |
+| Session | Date | Focus | Key Metric | Status |
+|---------|------|-------|------------|--------|
+| **110** | ✅ DONE | 3 standings scrapers | +1,643 standings, adapters 3→6 | COMPLETE |
+| **111** | ✅ DONE | TGS standings + CO Spring + discovery | +5,222 matches, +4,362 standings | COMPLETE |
+| **112** | ✅ DONE | NO LEAGUE + Spring events | +86 matches, 9 static events, states documented | COMPLETE |
+| **113** | ✅ DONE | AthleteOne + 50-state audit | +3,051 matches, 12th adapter, 342 GS leagues | COMPLETE |
+| **FINAL** | Feb 18 | ALL remaining items — one sprint | All 20 open items resolved | **IN PROGRESS** |
 
 ---
 
@@ -512,22 +539,26 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 
 | # | Risk/Gap | Severity | Session | Action |
 |---|----------|----------|---------|--------|
-| 1 | **RI data-purging platform** | 🔴 CRITICAL | **S115** (March 28) | Scrape SAME DAY Spring goes live. Adapter skeleton ready. |
-| 2 | ~~41 states lack AS-IS standings~~ | ~~🔴~~ ✅ RESOLVED | **S110-111** | 7 standings adapters active (GS/TGS/SINC/Heartland/Demosphere/Squadi/PlayMetrics). 17,732 total standings. |
-| 3 | **5 states need event scraping** (FL, IN, MO, TX — IDs found; MA blocked) | 🟡 HIGH | **S112** | IDs discovered S111: FL (43009, 45008, 45046, 45052), IN (49628), MO (44132), TX (44745, 45379). MA NEP blocked. |
-| 4 | **Spring 2026 partially scraped** (CO done; AL/MI/KY/MT/OK via pipeline) | 🟢 LOW | **S112** | CO CAL Spring done (4,564). Others auto-discovered by nightly pipeline (Principle 45). AK deferred June 2026. |
-| 5 | **NO LEAGUE states** (MS, SD, WY) | 🟡 HIGH | **S112** | Research USYS regional data, find evidence |
-| 6 | **NM has no adapter** (PDF/WordPress) | 🟡 HIGH | **S112** | Build adapter per Principle 42 |
-| 7 | **STXCL NPL** (18th/18 NPL, AthleteOne) | 🟡 MEDIUM | **S113** | Build AthleteOne adapter |
-| 8 | **TN between seasons** (SINC ready) | 🟡 MEDIUM | **S114** (March 1) | Scrape via SINC adapter |
-| 9 | **WV event ID behind hash** | 🟡 MEDIUM | **S114** (March 1) | Per Principle 42, find it |
-| 10 | **Double-prefix failures** (74 matches) | 🟢 LOW | **S112** | Fix cleanTeamName.cjs edge cases |
-| 11 | **View refresh 50+ sec** | 🟢 LOW | **S112** | Add indexes, optimize SQL |
-| 12 | **SEM backfill** (~72K → 90K+) | 🟢 LOW | **S112** | Bulk SQL from historical data |
-| 13 | **Pipeline monitoring/alerting** | 🟢 LOW | **S112** | Add failure alerts to GitHub Actions |
-| 14 | **Girls Academy gap** (528 vs 800) | 🟢 LOW | **S112** | Re-scrape all 4 events |
-| 15 | **318 Pre-ECNL null dates** | ⚪ ACCEPTED | N/A | Not recoverable (81.5% success rate) |
-| 16 | **Outdated docs** (Roadmap, Playbook) | 🟢 LOW | **S112** | Update source tables, adapter lists |
+| 1 | **RI data-purging platform** | 🔴 CRITICAL | **FINAL (C4)** | WebFetch thesuperliga.com NOW. If live → scrape immediately. If not → document + retry March 28. |
+| 2 | ~~41 states lack AS-IS standings~~ | ~~🔴~~ ✅ RESOLVED | **S110-111** | 7 standings adapters active (GS/TGS/SINC/Heartland/Demosphere/Squadi/PlayMetrics). 19,749 total standings. |
+| 3 | **5 states need event scraping** (FL, IN, MO, TX — IDs found; MA blocked) | 🟡 HIGH | **FINAL (B1-B4, C5)** | FL/IN/MO/TX: scrape all 8 event IDs now. MA NEP: 5 documented approaches, accept with evidence. |
+| 4 | **Spring 2026 partially scraped** (CO done; AL/MI/KY/MT/OK via pipeline) | 🟢 LOW | **FINAL (B-blocks)** | CO CAL Spring done (4,564). Others auto-discovered by nightly pipeline (Principle 45). AK documented (C6). |
+| 5 | ~~**NO LEAGUE states** (MS, SD, WY)~~ | ~~🟡~~ ✅ RESOLVED | **S112** | MS (40362: 1,647 matches), SD (1,843 via USYS MW), WY (32734: YPL + 1,809 from multi-state). Documented. |
+| 6 | **NM has no adapter** (DCSL WordPress/AJAX) | 🟡 HIGH | **FINAL (C3)** | Try dukecity.org AJAX endpoint NOW (Spring starts Feb 28). 5+ approaches per Principle 42. |
+| 7 | ~~**STXCL NPL** (18th/18 NPL, AthleteOne)~~ | ~~🟡~~ ✅ RESOLVED | **S113** | AthleteOne adapter built. 3,051 STXCL ECNL-RL matches. 18/18 NPL done. |
+| 8 | **TN between seasons** (SINC ready) | 🟡 MEDIUM | **FINAL (C1)** | Find SINC event IDs NOW (5 approaches). Scrape if found. Deferred to March 1 only if all 5 fail. |
+| 9 | **WV event ID behind hash** | 🟡 MEDIUM | **FINAL (C2)** | 6 approaches NOW: WebSearch×2, wvsoccer.com, probe 47xxx/48xxx/49xxx, GotSport search. |
+| 10 | **Double-prefix failures** (74 matches) | 🟢 LOW | **FINAL (D1)** | Fix cleanTeamName.cjs edge cases + retroactive fixDoublePrefix.cjs. Verify 0 remaining. |
+| 11 | **View refresh 50+ sec** | 🟢 LOW | **FINAL (D2)** | Add indexes to league_standings + other slow views. Target <10 sec total. |
+| 12 | **SEM backfill** (~72K → 90K+) | 🟢 LOW | **FINAL (D3)** | Find/write bulk SQL backfill script. Execute. Verify count increase. |
+| 13 | **Pipeline monitoring/alerting** | 🟢 LOW | **FINAL (D4)** | Add `if: failure()` step to daily-data-sync.yml. GitHub step summary. |
+| 14 | **Girls Academy gap** (528 vs 800) | 🟢 LOW | **FINAL (B5)** | Re-scrape all 4 GA events (42137+42138+44874+45530). Process new rows. |
+| 15 | **318 Pre-ECNL null dates** | ⚪ ACCEPTED | N/A | Not recoverable (81.5% success rate). |
+| 16 | **Outdated docs** (Roadmap, Playbook) | 🟢 LOW | **FINAL (D5-D6)** | DATA_EXPANSION_ROADMAP.md + DATA_SCRAPING_PLAYBOOK.md — both updated with AthleteOne + final counts. |
+| 17 | **STXCL WC events** (46279, 46278) not in staticEvents | 🟡 MEDIUM | **FINAL (A3)** | Add to gotsport.js staticEvents + scrape immediately. |
+| 18 | **WY+NM staged matches** (16+47) unprocessed | 🟢 LOW | **FINAL (A2)** | fastProcessStaging (no source filter). |
+| 19 | **coreScraper.js testKey fix** not committed | 🟢 LOW | **FINAL (A1)** | git commit immediately. |
+| 20 | **GotSport 342-league standings** new rows unprocessed | 🟢 LOW | **FINAL (A4)** | fast_process_gs_standings.cjs. |
 
 ### Resolved Risks (Archive)
 
