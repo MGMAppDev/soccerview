@@ -263,22 +263,31 @@ export default {
      * per-source inside scrapeSource().
      */
     discoverSources: async (engine, options) => {
+      // Session 113: Also include leagues with bare numeric source_event_id
+      // (older GotSport leagues created before the 'gotsport-' prefix was standardized)
       const { rows } = await engine.pool.query(`
         SELECT l.id, l.name, l.source_event_id, l.state
         FROM leagues l
         WHERE l.source_event_id LIKE 'gotsport-%'
+           OR l.source_event_id ~ '^[0-9]+$'
         ORDER BY l.name
       `);
 
-      return rows.map(l => ({
-        id: l.source_event_id,
-        name: l.name,
-        event_id: l.source_event_id.replace('gotsport-', ''),
-        league_id: l.id,
-        league_source_id: l.source_event_id,
-        state: l.state,
-        snapshot_date: new Date().toISOString().split('T')[0],
-      }));
+      return rows.map(l => {
+        const isLegacyNumeric = /^\d+$/.test(l.source_event_id);
+        const event_id = isLegacyNumeric
+          ? l.source_event_id
+          : l.source_event_id.replace('gotsport-', '');
+        return {
+          id: l.source_event_id,
+          name: l.name,
+          event_id,
+          league_id: l.id,
+          league_source_id: l.source_event_id,
+          state: l.state,
+          snapshot_date: new Date().toISOString().split('T')[0],
+        };
+      });
     },
 
     /**

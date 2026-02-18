@@ -1,6 +1,6 @@
 # SoccerView State Coverage Checklist
 
-> **Version 6.2** | Updated: February 18, 2026 | Session 111 Complete
+> **Version 6.3** | Updated: February 18, 2026 | Session 113 Complete
 >
 > **THE MASTER TRACKER** for national expansion. Every US state, every premier league, every platform, every action needed.
 > **Updated every session.** This is the single source of truth for coverage status.
@@ -44,6 +44,8 @@
 | 109 | Feb 17 | **GotSport Standings Scraper.** Built standings section for gotsport.js adapter. Scraped 40/40 GotSport leagues = 7,580 standings. Fixed points column bug (10-col vs 11-col layouts). SportsAffinity confirmed NOT NEEDED (no native standings page). Fast bulk processor: 10,753 rows in 15.1s. Added to daily pipeline. | **+9,715 standings (2,012→11,727), +3,979 teams, +4,003 SEM entries** | Standings Part 2 |
 | 110 | Feb 17 | **Standings Mega-Sprint.** Built standings scrapers for 3 more adapters: Demosphere (NCSL: 1,106 standings via XML), Squadi (AR: 537 standings via REST API), PlayMetrics (staged for CI). TGS deferred to S111 (needs stealth Puppeteer). HTGSports skipped (tournaments only). Pipeline updated: 3 adapters added, timeout 50→90m. | **+1,643 standings (11,727→13,370), standings adapters 3→6** | TGS standings + Spring blitz |
 | 111 | Feb 18 | **TGS Standings + CO CAL Spring + Spring Blitz.** Added stealth Puppeteer to scrapeStandings.js. Built TGS standings section: 75/75 ECNL events scraped (4,362 standings). CO CAL Spring 2026: 4,564 matches via PlayMetrics. Spring blitz: most events already in pipeline (Principle 45 working). Fast bulk TGS processor: 4,362 rows in 340s. Event discovery: FL (6 new IDs), IN (49628), MO (44132 SLYSA), TX (44745 GCL, 45379 EDPL). AK deferred June 2026. | **+5,222 matches (520K→525K), +4,362 standings (13K→17.7K), +4,862 teams, +6,019 SEM, standings adapters 6→7** | Session 112 |
+| 112 | Feb 18 | **"Between Seasons" BANNED + Spring 2026 gap events.** Added 9 GotSport staticEvents (FL/IN/MO/TX + MS/NM/WY multi-state). 86 new matches (FL/MS/NM/WY). ISL reclassified tournament→league. NO LEAGUE states research (MS/SD/WY/ND/NM) completed. | **+86 matches, +1 ISL league, GotSport 12→21 staticEvents** | Session 113 |
+| 113 | Feb 18 | **50-State PRODUCTION audit + AthleteOne adapter (12th).** Audit: 100% matches/ELO/GS Ranks across all states; standings gap in 42/50 states. Fixed GotSport standings discovery 41→342 leagues (numeric ID format). Built AthleteOne adapter: 3,051 STXCL ECNL-RL TX matches, pure REST API. Added sync-athleteone to pipeline. Processed 7 new GotSport leagues: +2,017 standings. GotSport scraper running on 342 leagues (NorCal 685 groups still pending). | **+3,051 matches (525K→528K), +2,552 teams, +3 leagues, +2,017 standings (17.7K→19.7K), 12th adapter** | Finish GotSport 342 leagues + remaining standings adapters |
 
 ---
 

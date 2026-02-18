@@ -36,7 +36,7 @@ const { Pool } = pg;
 // ===========================================
 
 const CONFIG = {
-  KNOWN_PLATFORMS: ['gotsport', 'htgsports', 'heartland', 'sincsports', 'mlsnext', 'sportsaffinity', 'totalglobalsports', 'playmetrics', 'demosphere', 'squadi'],
+  KNOWN_PLATFORMS: ['gotsport', 'htgsports', 'heartland', 'sincsports', 'mlsnext', 'sportsaffinity', 'totalglobalsports', 'playmetrics', 'demosphere', 'squadi', 'athleteone'],
   MAX_VALID_DATE: new Date('2027-12-31'),  // Anything beyond this is garbage
   MIN_VALID_DATE: new Date('2020-01-01'),  // Anything before this is suspicious
   MIN_VALID_BIRTH_YEAR: 2005,              // U20 in 2025 (oldest valid youth)

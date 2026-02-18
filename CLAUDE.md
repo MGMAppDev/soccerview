@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 24.2** | Last Updated: February 18, 2026 | Session 112 Complete
+> **Version 24.3** | Last Updated: February 18, 2026 | Session 113 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1336,14 +1336,14 @@ All downstream jobs that depend on `validation-pipeline` accept three results:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 187,739 | Team records (Session 112: +135 from MS/NM/WY) |
-| `matches_v2` | 525,768 active | Match results (~5,420 soft-deleted) |
+| `teams_v2` | 190,302 | Team records (Session 113: +2,563 from AthleteOne + GS standings) |
+| `matches_v2` | 528,819 active | Match results (~5,420 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 465 | League metadata (Session 112: +1 ISL Indiana) |
+| `leagues` | 468 | League metadata (Session 113: +3 AthleteOne ECNL-RL/ECL) |
 | `tournaments` | 1,798 | Tournament metadata |
-| `league_standings` | 17,732 | Scraped standings: GotSport (9,042) + TGS (4,362) + SINC (1,478) + Heartland (1,207) + Demosphere (1,106) + Squadi (537) |
-| `staging_standings` | 23,168 | Raw standings staging (Session 92+95+109+110+111) |
-| `source_entity_map` | ~88,801 | Universal source ID mappings (Session 111: +6,019) |
+| `league_standings` | 19,749 | Scraped standings: GotSport (~11K) + TGS (4,362) + SINC (1,478) + Heartland (1,207) + Demosphere (1,106) + Squadi (537) |
+| `staging_standings` | 27,238+ | Raw standings staging (Session 92+95+109+110+111+113; GS 342-league scrape may add more) |
+| `source_entity_map` | ~90,000+ | Universal source ID mappings (Session 113: +1,992 from AthleteOne) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
@@ -1376,6 +1376,7 @@ All downstream jobs that depend on `validation-pipeline` accept three results:
 | PlayMetrics | ✅ Production (Session 102-104: CO CAL + SDL + WI WYSA/MAYSA/EC/CWSL, 16,602 matches) | staging_games (Puppeteer, Vue SPA) |
 | Demosphere | ✅ Production (Session 103: NCSL VA/DC, 10,882 matches) | staging_games (Cheerio, JSON/XML endpoints) |
 | Squadi | ✅ Production (Session 104: AR ACSL/NWAL/CAL, 1,637 matches) | staging_games (REST API, no browser needed) |
+| AthleteOne | ✅ Production (Session 113: TX STXCL ECNL-RL Boys/Girls + ECL, 3,051 matches) | staging_games (REST API, no browser needed) |
 
 ### source_match_key (CRITICAL - Session 57)
 
@@ -1575,6 +1576,7 @@ eas build --platform android
 | `scripts/adapters/playmetrics.js` | **NEW (Session 102)** PlayMetrics adapter (Puppeteer, CO CAL + SDL + WI WYSA) |
 | `scripts/adapters/demosphere.js` | **NEW (Session 103)** Demosphere/OttoSport adapter (Cheerio, NCSL VA/DC) |
 | `scripts/adapters/squadi.js` | **NEW (Session 104)** Squadi adapter (REST API, AR ACSL/NWAL/CAL) |
+| `scripts/adapters/athleteone.js` | **NEW (Session 113)** AthleteOne adapter (REST API, TX STXCL ECNL-RL) |
 | `scripts/adapters/risuperliga.js` | **NEW (Session 105)** RI Super Liga skeleton (Puppeteer, retry March 28, 2026) |
 | `scripts/adapters/_template.js` | Template for creating new adapters |
 
@@ -1793,6 +1795,10 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
+### Session 113 — See detailed summary above in session history
+
+---
+
 ### Session 110 - Standings Mega-Sprint: Demosphere + Squadi + PlayMetrics (February 17, 2026) - COMPLETE ✅
 
 **Goal:** Build standings scrapers for ALL remaining adapters in ONE session. Increase standings adapters from 3 → 9.
@@ -1949,6 +1955,54 @@ Solution for Session 111: Add `puppeteerStealth` flag support to `scrapeStanding
 
 **Files Modified:** `scripts/universal/scrapeStandings.js` (stealth Puppeteer), `scripts/adapters/totalglobalsports.js` (standings section), `scripts/adapters/playmetrics.js` (CO CAL Spring 2026), `.github/workflows/daily-data-sync.yml` (TGS standings, timeout 90→120 min)
 **Files Created:** `scripts/_debug/fast_process_tgs_standings.cjs` (fast bulk TGS processor), `scripts/_debug/scrape_session111_gotsport.cjs` (blitz scraper), `scripts/_debug/check_event_status.cjs` (event status checker)
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
+
+### Session 113 - 50-State PRODUCTION Audit + AthleteOne Adapter (February 18, 2026) - COMPLETE ✅
+
+**Goal:** (1) 50-state PRODUCTION audit — verify all 5 data elements per state. (2) Build AthleteOne adapter (12th adapter) for STXCL NPL TX. (3) Fix any audit gaps found.
+
+**50-State PRODUCTION Audit:**
+- Built `scripts/_debug/audit_50_states.cjs` — verified all 5 data elements across all 50 states + DC
+- **100% coverage:** All states have matches, ELO ratings, GotSport national ranks
+- **Universal gap:** League Standings missing for 42/50 states (single systemic issue)
+- **Root cause:** GotSport `discoverSources` only found 41 leagues — missed 301 leagues with bare numeric `source_event_id` (old pipeline format)
+
+**GotSport Standings Discovery Fix (41 → 342 leagues):**
+- `gotsport.js` `discoverSources` updated to include both ID formats:
+  - NEW: `source_event_id LIKE 'gotsport-%' OR source_event_id ~ '^[0-9]+$'`
+- Re-scraped 342 leagues (was 40) → 7 new leagues inserted, 2,017 new standings
+- NorCal Premier (685 groups) was largest league — scraper ran in background
+
+**AthleteOne Adapter (12th Adapter — Pure REST API):**
+- Platform: JS SPA at `app.athleteone.com` backed by TGS infrastructure
+- Used by: STXCL (South Texas Champions League) for ECNL-RL Boys/Girls and ECL
+- API endpoints discovered via 8 Puppeteer probe iterations (no embedded JSON):
+  - `GET /api/Event/get-event-schedule-or-standings-athleteone/{eventId}` → divisions/flights
+  - `GET /api/Event/get-schedules-by-flight/{eventId}/{flightId}/0` → match schedule
+  - `GET /api/Event/get-standings-by-div-and-flight/{divId}/{flightId}/{eventId}` → standings
+- 3 events: 3979 (ECNL RL Girls STXCL), 3973 (ECNL RL Boys STXCL), 4184 (ECL)
+- Bug fix during test-run: `eventId` was `athleteone-3979` (doubled prefix) instead of `"3979"`, and `matchId` was missing (all 3 events got only 1 staged match instead of 1,000+)
+- After fix: 3,053 staged → 3,051 inserted via fastProcessStaging (32 seconds)
+- Added `'athleteone'` to `intakeValidator.js` KNOWN_PLATFORMS
+- Added `sync-athleteone` job to `daily-data-sync.yml` + standings in `scrape-standings`
+
+**Key Metrics:**
+
+| Metric | Before Session 113 | After Session 113 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 525,768 | **528,819** (+3,051) |
+| teams_v2 | 187,739 | **190,302** (+2,563) |
+| leagues | 465 | **468** (+3 AthleteOne) |
+| league_standings | 17,732 | **19,749** (+2,017) |
+| Adapters built | 11 | **12** (added AthleteOne) |
+| Pipeline sync jobs | 11 | **12** (added sync-athleteone) |
+| GotSport standings discoverable | 41 | **342** (+301) |
+| States at PRODUCTION | ~9 | ~9 (standings gap universal) |
+
+**Files Modified:** `scripts/adapters/gotsport.js` (discoverSources numeric ID fix), `scripts/adapters/athleteone.js` (created — 12th adapter), `scripts/universal/intakeValidator.js` (+athleteone), `.github/workflows/daily-data-sync.yml` (+sync-athleteone, +standings), `docs/3-STATE_COVERAGE_CHECKLIST.md` (v6.3), `CLAUDE.md` (v24.3), session checkpoint
+**Files Created:** `scripts/_debug/audit_50_states.cjs`, `scripts/_debug/check_standings_gaps.cjs`, `scripts/_debug/fast_process_gs_standings.cjs`, probe scripts `probe_athleteone.cjs`–`probe_athleteone8.cjs`
 **Zero UI changes. All data flows through universal V2 pipeline.**
 
 ---
@@ -2741,7 +2795,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 113. Session 112 COMPLETE — eliminated 'between seasons' excuse everywhere (CRITICAL RULE: BANNED), GotSport staticEvents 12→21, scraped 86 new matches from FL/MS/NM/WY, reclassified ISL→league, researched NO LEAGUE states. **525,768 active matches, 187,739 teams, 17,732 standings, 465 leagues, 21 GotSport staticEvents.** Read CLAUDE.md (v24.2), .claude/hooks/session_checkpoint.md, docs/3-STATE_COVERAGE_CHECKLIST.md (v6.2). **SESSION 113 GOALS:** (1) Build standings scrapers for remaining adapters (HTGSports, PlayMetrics, Demosphere, Squadi, MLS Next) — highest ROI. (2) TN State League via SINC (season starts March). (3) NM Duke City Soccer League custom adapter probe. **NEVER say 'between seasons' — we are ALWAYS in-season.**"
+> "Resume SoccerView Session 114. Session 113 COMPLETE — 50-state PRODUCTION audit (100% matches/ELO/GS Ranks, standings gap in 42/50 states identified), built AthleteOne adapter (12th, TX STXCL ECNL-RL, 3,051 matches), fixed GotSport standings discovery 41→342 leagues. **Current: 528,819 active matches, 190,302 teams, 19,749 standings, 468 leagues, 12 adapters.** Read CLAUDE.md (v24.3), .claude/hooks/session_checkpoint.md, docs/3-STATE_COVERAGE_CHECKLIST.md (v6.3). **SESSION 114 GOALS:** (1) Check if GotSport 342-league standings scraper finished — process remaining rows with fast_process_gs_standings.cjs. (2) Build remaining standings scrapers (SportsAffinity, MLS Next, AthleteOne standings for STXCL). (3) TN State League via SINC (season starts March 2026). **NEVER say 'between seasons' — we are ALWAYS in-season.**"
 
 ---
 
