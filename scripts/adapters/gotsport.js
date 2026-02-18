@@ -138,6 +138,10 @@ export default {
       { id: "957",   name: "Maine State Premier League Spring 2026", year: 2026, type: "league" },
       { id: "5082",  name: "Alaska United Anchorage Youth Soccer League Spring 2026", year: 2026, type: "league" },
       { id: "42137", name: "Girls Academy Tier 1 Spring 2026", year: 2026, type: "league" },
+      // Session 112: NO LEAGUE states — multi-state conferences on GotSport
+      { id: "40362", name: "USYS Mid South Conference 2024-25 (MS/AL/AR/LA/TN)", year: 2026, type: "league" },
+      { id: "34558", name: "USYS Desert Conference 2024-25 (NM/AZ/CO/NV/UT)", year: 2026, type: "league" },
+      { id: "32734", name: "Yellowstone Premier League 2024-25 (WY/CO/UT/NV/ID/MT)", year: 2026, type: "league" },
     ],
 
     /**
