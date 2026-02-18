@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 24.1** | Last Updated: February 18, 2026 | Session 111 Complete
+> **Version 24.2** | Last Updated: February 18, 2026 | Session 112 Complete
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1336,10 +1336,10 @@ All downstream jobs that depend on `validation-pipeline` accept three results:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | 187,604 | Team records (Session 111: +4,862 from TGS standings + CO CAL) |
-| `matches_v2` | 525,682 active | Match results (~5,420 soft-deleted) |
+| `teams_v2` | 187,739 | Team records (Session 112: +135 from MS/NM/WY) |
+| `matches_v2` | 525,768 active | Match results (~5,420 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 464 | League metadata (Session 111: +1 CO CAL Spring) |
+| `leagues` | 465 | League metadata (Session 112: +1 ISL Indiana) |
 | `tournaments` | 1,798 | Tournament metadata |
 | `league_standings` | 17,732 | Scraped standings: GotSport (9,042) + TGS (4,362) + SINC (1,478) + Heartland (1,207) + Demosphere (1,106) + Squadi (537) |
 | `staging_standings` | 23,168 | Raw standings staging (Session 92+95+109+110+111) |
@@ -1835,6 +1835,48 @@ Blocked: `scrapeStandings.js` uses standard Puppeteer, but TGS requires stealth 
 Solution for Session 111: Add `puppeteerStealth` flag support to `scrapeStandings.js`'s `initPuppeteer()`.
 
 **Files Modified:** `scripts/adapters/demosphere.js` (standings section), `scripts/adapters/squadi.js` (standings section), `scripts/adapters/playmetrics.js` (standings section), `.github/workflows/daily-data-sync.yml` (3 adapters + timeout 50m→90m), `CLAUDE.md` (v24.0), session checkpoint
+**Zero UI changes. All data flows through universal V2 pipeline.**
+
+---
+
+### Session 112 - "Between Seasons" Eliminated + NO LEAGUE State Coverage (February 18, 2026) - COMPLETE ✅
+
+**Goal:** (1) Scrape 8 discovered GotSport event IDs. (2) Eliminate "between seasons" excuse permanently. (3) Research and cover NO LEAGUE states (MS, SD, WY) + GS RANKS states (ND, NM).
+
+**Critical Rule Established (Session 112):**
+> "BETWEEN SEASONS" IS BANNED. We are ALWAYS in the 2025-26 season (Aug 2025-Jul 2026). 0 matches = wrong event ID or scraper bug. NEVER mark a state "done" with 0 matches.
+
+**GotSport staticEvents: 12 → 21 events (+9):**
+- FL×4 (FSPL/WFPL/CFPL/SEFPL), IN ISL, MO SLYSA, TX×2 (GCL/EDPL)
+- 6 Spring 2026 gap events (KY/MT/OK/ME/AK/GA Tier 1 — groups configured, games start March)
+- 3 multi-state NO LEAGUE events (MS Mid South, NM Desert Conf, WY YPL)
+
+**NO LEAGUE States Research + Coverage:**
+
+| State | Finding | Action Taken |
+|-------|---------|-------------|
+| MS | USYS Mid South Conference (GotSport 40362) | 7 new matches scraped |
+| SD | USYS Midwest Conference (already scraped) | 1,843 SD matches confirmed |
+| WY | Yellowstone Premier League (GotSport 32734) | 16 new matches scraped |
+| ND | NDSL is U9-U12 Rec Plus — excluded Principle 28 | 566 ND matches from multi-state |
+| NM | USYS Desert Conf (34558) + DCSL (WordPress AJAX) | 47 new matches scraped |
+
+**Other Completed:**
+- ISL 49628 reclassified tournament→league (93 matches re-pointed)
+- CFPL (45046): 16 new Spring 2026 FL matches
+- SEM gap analysis: 75,588 teams without SEM — mostly platforms without source IDs (not a problem)
+- "Between seasons" removed from: GUARDRAILS S19, CRITICAL_RULES.md, CLAUDE.md P43, STATE_COVERAGE_CHECKLIST
+
+**Key Metrics:**
+
+| Metric | Before Session 112 | After Session 112 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 525,682 | **525,768** (+86) |
+| teams_v2 | 187,604 | **187,739** (+135) |
+| leagues | 464 | **465** (+1 ISL) |
+| GotSport staticEvents | 12 | **21** (+9) |
+
+**Files Modified:** `gotsport.js` (staticEvents 12→21), `GUARDRAILS_v2.md` (S19 rewrite), `CRITICAL_RULES.md` (banned), `CLAUDE.md` (P43 update), `STATE_COVERAGE_CHECKLIST.md` (all state rows corrected), `DATA_EXPANSION_ROADMAP.md`, session checkpoint, 4 debug scripts created.
 **Zero UI changes. All data flows through universal V2 pipeline.**
 
 ---
@@ -2699,7 +2741,7 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 ### Resume Prompt
 
 When starting a new session:
-> "Resume SoccerView Session 112. Session 111 COMPLETE — TGS standings (4,362 from 75 ECNL events), CO CAL Spring 2026 (4,564 matches), Spring blitz done. 7 standings adapters active (GS/TGS/SINC/Heartland/Demosphere/Squadi/PlayMetrics). 525,682 active matches, 187,604 teams, 17,732 league standings, 464 leagues. Read CLAUDE.md (v24.1), .claude/hooks/session_checkpoint.md, and docs/3-STATE_COVERAGE_CHECKLIST.md (v6.1). Follow 7-session plan in STATE_COVERAGE_CHECKLIST.md v6.0. Session 112 goal: Continue with completion plan priorities. Zero UI changes needed."
+> "Resume SoccerView Session 113. Session 112 COMPLETE — eliminated 'between seasons' excuse everywhere (CRITICAL RULE: BANNED), GotSport staticEvents 12→21, scraped 86 new matches from FL/MS/NM/WY, reclassified ISL→league, researched NO LEAGUE states. **525,768 active matches, 187,739 teams, 17,732 standings, 465 leagues, 21 GotSport staticEvents.** Read CLAUDE.md (v24.2), .claude/hooks/session_checkpoint.md, docs/3-STATE_COVERAGE_CHECKLIST.md (v6.2). **SESSION 113 GOALS:** (1) Build standings scrapers for remaining adapters (HTGSports, PlayMetrics, Demosphere, Squadi, MLS Next) — highest ROI. (2) TN State League via SINC (season starts March). (3) NM Duke City Soccer League custom adapter probe. **NEVER say 'between seasons' — we are ALWAYS in-season.**"
 
 ---
 
