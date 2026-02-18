@@ -1213,28 +1213,31 @@ After onboarding ANY new state or league, verify in Expo Go:
 
 See [docs/1.1-GUARDRAILS_v2.md](docs/1.1-GUARDRAILS_v2.md) Section 18 for full policy.
 
-### 43. Season Awareness — ALWAYS Scrape the FULL Current Season (Session 99)
+### 43. Season Awareness — WE ARE ALWAYS IN-SEASON (Session 99/112)
 
-**The SoccerView season runs August 1 → July 31.** Every scraping task MUST ensure coverage of BOTH halves:
+> **🚨 "BETWEEN SEASONS" IS BANNED. WE ARE IN THE 2025-26 SEASON (Aug 2025-Jul 2026) RIGHT NOW.**
+> **"Retry next season" = BANNED. 0 matches = WRONG EVENT ID or BUG. Find the correct one.**
+
+**The SoccerView season runs August 1 → July 31.** Both halves are MANDATORY:
 
 | Month | Season Phase | Scraping Action |
 |-------|-------------|----------------|
 | Aug-Nov | Fall (PEAK) | Scrape Fall events IMMEDIATELY |
-| Dec-Jan | Winter break | Scrape winter leagues where active |
-| Feb-Mar | Spring ramp-up | Discover Spring event IDs |
-| Apr-Jun | Spring season | Scrape Spring events |
-| Jul | Off-season | Plan next season |
+| Dec-Jan | Winter / indoor | Scrape winter leagues |
+| Feb-Mar | Spring — **RIGHT NOW** | Spring events are ACTIVE. Go get them. |
+| Apr-Jun | Spring season | Full coverage |
+| Jul | Season end | Audit gaps |
 
 **Critical Rules:**
-1. NEVER look only at "current" or "upcoming" events — check Fall data too
-2. "Between seasons" = look for the OTHER half, NOT "no data exists"
+1. NEVER use "between seasons" as an excuse — THE SEASON IS ACTIVE
+2. 0 matches = **WRONG EVENT ID or SCRAPER BUG** — not "between seasons"
 3. `year` field in staticEvents = season END year (2026), NOT calendar year
 4. SportsAffinity uses DIFFERENT subdomains per season (e.g., `gs-fall25{orgcode}`)
-5. GotSport uses SEPARATE event IDs for Fall vs Spring
-6. 0 matches = investigate immediately — wrong season? wrong event ID?
-7. Every new state MUST include BOTH Fall + Spring events
+5. GotSport uses SEPARATE event IDs for Fall vs Spring — find BOTH
+6. States marked "done" with 0 matches = DATA GAP. Re-investigate.
+7. Every state MUST have BOTH Fall 2025 AND Spring 2026 data
 
-**Root Cause (Session 99):** Season was documented as a data property (ELO start date) but NOT as an operational requirement (must scrape both halves). An entire session was wasted configuring only Spring 2026 events while Fall 2025 was ignored.
+**Session 112 Action:** Re-scraped all 6 events previously dismissed as "between seasons". Results: KY/MT/OK/AK/ME/GA Tier 1 re-investigated with correct event IDs found where applicable.
 
 See [docs/1.1-GUARDRAILS_v2.md](docs/1.1-GUARDRAILS_v2.md) Section 19 for full policy.
 

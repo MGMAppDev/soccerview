@@ -310,7 +310,7 @@
 | # | State | Primary Premier League | Divisions | Platform | GotSport Event IDs | SV Status | Action |
 |---|-------|----------------------|-----------|----------|-------------------|-----------|--------|
 | 1 | **AL** | Alabama State League (ASL) | Div 1, 2 | GotSport | 45401, 51021 | **PARTIAL** | Scrape Spring 2026 |
-| 2 | **AK** | United Anchorage YSL (UAYSL) | A/B/C flights | GotSport | **5082** | GS RANKS | Event 5082 scraped — 0 matches (between seasons). Retry next season. |
+| 2 | **AK** | United Anchorage YSL (UAYSL) | A/B/C flights | GotSport | **5082** | **PARTIAL** | Event 5082: 12 groups set up, 0 games scheduled yet (Spring starts ~Mar 2026). In staticEvents — nightly captures when games post. 755 AK matches from other events. |
 | 3 | **AZ** | AZ Advanced Leagues (APL/ASL1/ASL2) | APL, ASL1, ASL2 | GotSport | 32958, 44446, 34558, 39642, 39518, 40487 | **PARTIAL** | 6 leagues, 418 matches. Already discovered. |
 | 4 | **AR** | ACSL + NWAL + CAL + State Champs | U11-U19 B+G | **Squadi** | 6 competitions (REST API) | **PRODUCTION** ✅ | **Session 104:** Squadi adapter built (REST API, no browser). 6 events, 1,637 matches, 693 new teams. sync-squadi in pipeline. |
 | 5 | **CA-N** | Cal North CSL (CCSL) + BPYSL + CASA | Gold, Silver, Bronze, Copper | GotSport | 44635, 38645, 41352, 45152 | **PARTIAL** | Merged with CA. 17 CA leagues, 7,416 matches total. |
@@ -325,18 +325,18 @@
 | 14 | **ID** | Idaho Premier League (IPL) | Gold, Silver | GotSport | **45021** | **PARTIAL** | 45021 scraped: 20 matches. +364 from prior events. Total: 384 ID matches. |
 | 15 | **IL** | IL State Premiership + NISL + SLYSA IL + MWC | Premiership I + NPL + Club/Conference + tiers | GotSport | 45492, 40174, 44640, 39659, 45100, 40255, 34346 + **NEW: 44630, 40124, 44632, 41112** | **PARTIAL** | **S103 finding:** IL uses GotSport, NOT Demosphere. 7 leagues, 12,123 matches. **S103 gap:** NISL (17K players, 1,300 teams) not yet scraped — 4 event IDs discovered (NPL Fall/Spring + Club/Conference Fall/Spring). **SESSION 104 Phase 1.** |
 | 16 | **IN** | IYSA D3L | Premier, 1st, 2nd White | GotSport | 45057, 40237 | **PARTIAL** | 2 leagues, 87 matches. Need more ISL event discovery. |
-| 17 | **IA** | Iowa Soccer League (ISL) + IDL + EIYSL | Age group-based | SportsAffinity + GotSport + HTGSports | SA: ISL Fall/Spring (580), GS: 47441 (32), HTG: 13486, 13113 (0, between seasons) | **PARTIAL** | 3 platforms. 612 matches total. SA GUIDs: Fall `7762C9F4`, Spring `627614EC`. EIYSL retry next season. |
+| 17 | **IA** | Iowa Soccer League (ISL) + IDL + EIYSL | Age group-based | SportsAffinity + GotSport + HTGSports | SA: ISL Fall/Spring (580), GS: 47441 (32), HTG: 13486, 13113 | **PARTIAL** | 3 platforms. 612 matches total. SA GUIDs: Fall `7762C9F4`, Spring `627614EC`. EIYSL HTG events have 0 matches — need to verify if Spring 2026 events are active. Re-investigate. |
 | 18 | **KS** | **Heartland Soccer** | **Division 1-14** | **Heartland CGI** | N/A | **PRODUCTION** | **DONE** |
-| 19 | **KY** | Kentucky Premier League (KPL) | Premier, First | GotSport | **48452** | **PARTIAL** | 48452 scraped: 0 matches (between seasons). KY Select (42 matches) already exists. Retry Spring 2026. |
+| 19 | **KY** | Kentucky Premier League (KPL) | Premier, First | GotSport | **48452** | **PARTIAL** | 48452: 44 groups set up, 0 games yet (Spring starts ~Mar 2026). In staticEvents — nightly captures when games post. 6,883 KY matches from other events. |
 | 20 | **LA** | LA Competitive Soccer League (LCSL) | Age-group divisions | GotSport | **40246, 35322, 35539** | **PARTIAL** | All 3 events scraped: 130 LA matches total across 3 LCSL events. |
-| 21 | **ME** | Maine State Premier League (MSPL) | Age-group based | GotSport | **957, 40404** | **PARTIAL** | 957: 0 (between seasons), 40404: 50 matches. +27 Pine Tree League. Total: 77 ME matches. |
+| 21 | **ME** | Maine State Premier League (MSPL) | Age-group based | GotSport | **957, 40404** | **PARTIAL** | 957: 13 groups set up, 0 games yet (Spring starts ~Mar 2026). In staticEvents — nightly captures. 40404: 50 matches. Total: 2,273 ME matches. |
 | 22 | **MD** | EDP League + CPSL NPL + ICSL + USYS NL SAC | Multi-tier | GotSport | 44329 (EDP: 496), 43268 (CPSL: 17), 43667 (ICSL: 365), 44340 (USYS 15-19U: 50), 50581 (USYS 13-14U: 20) | **PARTIAL** | 5 leagues, 948 matches. EDP 44329 also covers DE teams. |
 | 23 | **MA** | GBYSL Select | NPL + lower | GotSport | 45209, 41506 | **PARTIAL** | 2 leagues, 48 matches. Need NEP event discovery for more. |
 | 24 | **MI** | MSPSP + MYSL | GL Premier, Premier 1/2, Classic 1/2 | GotSport | 45649, 46034, 50611 | **PARTIAL** | Scrape Spring events |
 | 25 | **MN** | MYSA State Competitive | Premier, Classic 1/2/3, Maroon, Gold (6 tiers) | SportsAffinity + GotSport | 6 GS leagues + 3 SA events | **PARTIAL** | **940 current-season matches** (190 GS + 531 SA Fall+Spring). SA adapter: 3 events (Fall Competitive, Metro Alliance, Summer 2025). |
 | 26 | **MS** | No statewide league (State Cup only) | N/A | GotSport (cup: 48449) | 48449 (cup only) | **NO LEAGUE** | Capture via USYS Mid South Conference |
 | 27 | **MO** | **SLYSA + Heartland (KC)** | Bracket-based | GotSport + Heartland | TBD (SLYSA) | **PARTIAL** | Discover SLYSA event IDs |
-| 28 | **MT** | Montana State Spring League (MSSL) | Premier, Select, Classic | GotSport | **40682** | **PARTIAL** | 40682: 0 (between seasons). Prior events: 45 MT matches. Retry Spring 2026. |
+| 28 | **MT** | Montana State Spring League (MSSL) | Premier, Select, Classic | GotSport | **40682** | **PARTIAL** | 40682: 38 groups set up, 0 games yet (Spring starts ~Mar 2026). In staticEvents — nightly captures. 3,282 MT matches from other events. |
 | 29 | **NE** | NE Youth Soccer League | Divisions 1-4 | SportsAffinity + GotSport | 4 SA events (Fall+Spring) | **PARTIAL** | **2,143 current-season matches** (476 GS + 1,667 SA). SA events: Premier Conf, Dev Conf, CYSL, Cornhusker. |
 | 30 | **NV** | NV South Youth Soccer League (NVSYSL) | Age-group based | GotSport | **40180** | **PARTIAL** | 40180 scraped: 316 staged (some team resolution issues). Total: 294 NV matches across 6 events. |
 | 31 | **NH** | NH Soccer League (NHSL) | Age-group based | GotSport | **46884** | **PARTIAL** | 46884 scraped: 404 matches. Total: 428 NH matches. Largest Wave 2a result. |
@@ -346,7 +346,7 @@
 | 35 | **NC** | **NCYSA Classic League** | **Premier, 1st, 2nd, 3rd (15 divs)** | **SINC Sports** | N/A | **PRODUCTION** | **DONE** (8,692 matches, 805 standings) |
 | 36 | **ND** | No state-specific league | N/A | N/A | N/A | GS RANKS | No ND-specific premier league exists. Teams play in USYS Midwest Conference (captured via multi-state events). |
 | 37 | **OH** | OSPL/COPL/OCL + OPC + GCFYSL + WDDOA + FCL NPL | Premier I/II + divisions | GotSport | 45535, 40173, 46714, 40799, 45013, 40074, 43857, 43909, 43910, 33887, 45220, 36071 + more | **PARTIAL** | 19 leagues, 1,106 matches. Comprehensive OH coverage. |
-| 38 | **OK** | OK Premier League (OPL) + OPC | D1, D2 + Gold/Silver/Bronze | GotSport | **45220, 50796** | **PARTIAL** | 45220: 0 (between seasons), 50796: 38 matches. Total: 67 OK matches. |
+| 38 | **OK** | OK Premier League (OPL) + OPC | D1, D2 + Gold/Silver/Bronze | GotSport | **45220, 50796** | **PARTIAL** | 45220: 35 groups set up, 0 games yet (Spring starts ~Mar 2026). In staticEvents — nightly captures. 50796: 38 matches. 5,274 OK matches from other events. |
 | 39 | **OR** | OYSA Competitive League | Premier Gold/Silver, Div 1/2 | SportsAffinity + GotSport | 6 SA events (Fall+Spring) | **PARTIAL** | **10,046 current-season matches** (1,607 GS + 8,439 SA). SA events: Fall League, Dev League, Founders Cup, Valley Academy, Soccer 5, PYSA + Spring/Winter leagues. |
 | 40 | **PA-E** | APL/Acela + EPPL + PSSLU + MaxinMotion | Premier, Championship | GotSport | 43531, 40626, 46768, 41370, 44986, 34294, 40350, 48194, 41091, 44034, 39130 | **PARTIAL** | 14 leagues (PA combined), 907 matches. |
 | 41 | **PA-W** | PA West State Leagues | Divisions verified | SportsAffinity + GotSport | 10 SA events (Fall) | **PARTIAL** | **10,857 PA matches safe.** GLC/NAL/E64 RESOLVED (Session 108): national GotSport programs, not SportsAffinity. NAL reclassified as league (+84 matches). |
@@ -403,15 +403,15 @@
 ### Wave 2: GotSport Event Discovery (35 states — HIGHEST ROI)
 
 **Sub-wave 2a: Confirmed Event IDs — COMPLETE (Session 98b-2):**
-- [x] AK — UAYSL (5082) — 0 matches (between seasons)
+- [x] AK — UAYSL (5082) — 12 groups configured, Spring starts ~Mar 2026, in staticEvents (nightly monitors). 755 AK matches from other sources.
 - [x] ID — Idaho Premier (45021) — 20 matches scraped
-- [x] KY — Kentucky Premier (48452) — 0 matches (between seasons), KY Select has 42
+- [x] KY — Kentucky Premier (48452) — 44 groups configured, Spring starts ~Mar 2026, in staticEvents. 6,883 KY matches from other sources.
 - [x] LA — LCSL (40246, 35322, 35539) — 170 staged, 130 total LA matches
-- [x] ME — Maine State Premier (957, 40404) — 50 matches from 40404
-- [x] MT — Montana State Spring (40682) — 0 matches (between seasons), 45 from prior events
+- [x] ME — Maine State Premier (957, 40404) — 957: 13 groups Spring 2026 (in staticEvents), 40404: 50 matches. 2,273 ME total.
+- [x] MT — Montana State Spring (40682) — 38 groups configured, Spring starts ~Mar 2026, in staticEvents. 3,282 MT matches from other sources.
 - [x] NH — NH Soccer League (46884) — 404 matches staged, 428 total
 - [x] NV — NV South YSL (40180) — 316 staged, 294 total (some team resolution issues)
-- [x] OK — OPL (45220) + OPC (50796) — 76 staged from OPC, 45220 between seasons
+- [x] OK — OPL (45220) + OPC (50796) — 45220: 35 groups Spring 2026 (in staticEvents), 50796: 38 matches. 5,274 OK total.
 - [x] VT — Vermont Soccer League (39252) — 148 matches, 145 total
 
 **Sub-wave 2b: Large markets — ALREADY DISCOVERED (Session 98b-2 audit):**
@@ -434,15 +434,15 @@ Most Wave 2b states already had league data from prior GotSport discovery scrape
 
 **Sub-wave 2c: National programs — PARTIALLY COMPLETE (Session 98b-3):**
 Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scrapes.
-- [x] Girls Academy — 42137 (0, between seasons), 42138 (116 staged), 44874 (12), 45530 (8)
-- [x] USYS National League — Sunshine P1 (43114: 24), Sunshine P2 (43943: 6), GL+MW (between seasons)
+- [x] Girls Academy — 42137: 78 groups set up (Spring starts Mar 2026, in staticEvents for nightly), 42138 (379 matches), 44874 (50 matches), 45530 (16 matches)
+- [x] USYS National League — Sunshine P1 (43114: 24), Sunshine P2 (43943: 6), GL+MW conferences in staticEvents (scraped Session 106 — ~1,151 matches)
 - [x] NPL — 26 NPL leagues already in DB with 1,104 matches (WA, CA, OH, FL, NJ, MN, VA, Central States, SAPL, Red River, JPL MW)
-- [ ] USYS NL remaining conferences — scrape when season starts (most between seasons Feb 2026)
+- [x] USYS NL remaining conferences — Scraped Session 106 (21 new conferences, ~1,151 total NL matches)
 
 **Sub-wave 2d: Small/remaining markets + MD/DE/IA (Session 101):**
 - [x] MD — EDP League (44329: 496), CPSL NPL (43268: 17), ICSL (43667: 365), USYS NL SAC 15-19U (44340: 50), USYS NL SAC 13-14U (50581: 20) — **948 matches, 5 leagues**
 - [x] DE — Eastern Shore PL (45707: 10), Central League Soccer (43731: 56) — **66 matches, 2 leagues**
-- [x] IA — SportsAffinity ISL Fall (349) + Spring (231), GotSport IDL (47441: 32), HTGSports EIYSL (0, between seasons) — **612 matches, 3 platforms**
+- [x] IA — SportsAffinity ISL Fall (349) + Spring (231), GotSport IDL (47441: 32), HTGSports EIYSL (13486, 13113 — need re-investigation, Spring 2026 events) — **612 matches, 3 platforms**
 - [x] ND — **RESOLVED:** No state-specific premier league. Teams play USYS Midwest Conference.
 - [ ] WV — Season starts March 2026. Event ID behind registration hash. Deferred.
 - [ ] WY — Snake River League (if applicable)

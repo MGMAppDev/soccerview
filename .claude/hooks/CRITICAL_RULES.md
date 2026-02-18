@@ -103,15 +103,18 @@ This file is re-injected after every context compaction. It must stay current.
 - When ending a session → check if this file needs updating (in GUARDRAILS end-of-session checklist).
 - The pre-edit hook will remind you when editing CLAUDE.md or GUARDRAILS.
 
-## SEASON AWARENESS — MOST CRITICAL OPERATIONAL RULE
-- **Season = August 1 → July 31.** Current season: 2025-26.
+## 🚨 SEASON IS ACTIVE — "BETWEEN SEASONS" IS BANNED (Session 112)
+- **WE ARE IN THE 2025-26 SEASON (Aug 1 2025 → Jul 31 2026). IT IS NEVER "BETWEEN SEASONS".**
+- **"Between seasons" = LAZY EXCUSE. BANNED. ZERO TOLERANCE.**
+- 0 matches from a scrape = **WRONG EVENT ID or SCRAPER BUG.** Find the correct one.
+- "Retry next season" = BANNED. The season is NOW. Find the data NOW.
 - ALWAYS scrape BOTH halves: Fall (Aug–Dec 2025) AND Spring (Feb–Jun 2026).
-- "Between seasons" = look for the OTHER half. NOT "no data exists."
+- Spring 2026 is happening RIGHT NOW (Feb-Jun 2026). Events are ACTIVE. Go get them.
 - `year` field in staticEvents = season END year (2026), NOT event calendar year.
 - SportsAffinity: DIFFERENT subdomains per season (e.g., `gs-fall25{orgcode}` for Fall 2025).
 - GotSport: SEPARATE event IDs for Fall vs Spring seasons.
-- Before ANY scraping task: "Do we have Fall 2025 data for this state?" If not → find it.
-- NEVER accept 0 matches as "between seasons" without checking the other season half.
+- Before ANY scraping task: check BOTH Fall 2025 AND Spring 2026 coverage for the state.
+- States marked "done" with 0 matches = DATA GAP. Re-investigate. Find the event ID.
 
 ## SESSION CONTINUITY — Survive Rate Limits
 - After completing each major task, UPDATE `.claude/hooks/session_checkpoint.md`.

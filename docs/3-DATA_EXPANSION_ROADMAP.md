@@ -324,7 +324,7 @@ If the source uses short names and there's no alternative — document it and mo
 | Source | Status | Notes |
 |--------|--------|-------|
 | ECNL/ECRL via TGS | Adapter needs fix (Session 98) | 13 event IDs configured |
-| TN State League via SINC | Deferred to March 2026 | Between seasons |
+| TN State League via SINC | Spring 2026 — SINC adapter ready, scrape when season starts | TN season starts ~Mar 2026 |
 
 ---
 

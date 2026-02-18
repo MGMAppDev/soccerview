@@ -121,6 +121,23 @@ export default {
       { id: "50944", name: "2025 Fall NL Great Lakes Conference", year: 2026, type: "league" },
       { id: "50937", name: "2025 Fall NL Midwest Conference", year: 2026, type: "league" },
       { id: "50922", name: "2025 Fall NL South Atlantic Conference", year: 2026, type: "league" },
+      // Session 112: FL leagues
+      { id: "43009", name: "Florida State Premier League 2025-26", year: 2026, type: "league" },
+      { id: "45008", name: "West Florida Premier League 2025-26", year: 2026, type: "league" },
+      { id: "45046", name: "Central Florida Premier League 2025-26", year: 2026, type: "league" },
+      { id: "45052", name: "Southeast Florida Premier League 2025-26", year: 2026, type: "league" },
+      // Session 112: Other state leagues (discovered + reclassified)
+      { id: "49628", name: "Indiana Soccer League Spring 2026", year: 2026, type: "league" },
+      { id: "44132", name: "SLYSA Fall 2025", year: 2026, type: "league" },
+      { id: "44745", name: "Girls Classic League 2025-26", year: 2026, type: "league" },
+      { id: "45379", name: "Eastern District Players League Fall 2025", year: 2026, type: "league" },
+      // Session 112: Spring 2026 leagues - groups set up, games start March 2026 (nightly will capture)
+      { id: "48452", name: "Kentucky Premier League Spring 2026", year: 2026, type: "league" },
+      { id: "40682", name: "Montana State Spring League 2026", year: 2026, type: "league" },
+      { id: "45220", name: "Oklahoma Premier League Spring 2026", year: 2026, type: "league" },
+      { id: "957",   name: "Maine State Premier League Spring 2026", year: 2026, type: "league" },
+      { id: "5082",  name: "Alaska United Anchorage Youth Soccer League Spring 2026", year: 2026, type: "league" },
+      { id: "42137", name: "Girls Academy Tier 1 Spring 2026", year: 2026, type: "league" },
     ],
 
     /**
