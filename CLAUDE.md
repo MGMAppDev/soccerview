@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 25.0 FINAL** | Last Updated: February 18, 2026 | Session FINAL Complete
+> **Version 25.1** | Last Updated: February 18, 2026 | Session FINAL Complete + Post-FINAL Cleanup
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1571,7 +1571,7 @@ eas build --platform android
 | `scripts/adapters/gotsport.js` | GotSport adapter config |
 | `scripts/adapters/htgsports.js` | HTGSports adapter (Puppeteer for SPA) |
 | `scripts/adapters/heartland.js` | Heartland adapter (Cheerio for CGI + standings) |
-| `scripts/adapters/sincsports.js` | SINC Sports adapter (Puppeteer + standings, Session 95) |
+| `scripts/adapters/sincsports.js` | SINC Sports adapter (Puppeteer + standings, Session 95, NC only — TN migrated to Squadi) |
 | `scripts/adapters/mlsnext.js` | **NEW (Session 97)** MLS Next adapter (Puppeteer, Modular11) |
 | `scripts/adapters/sportsaffinity.js` | **NEW (Session 97+105)** SportsAffinity adapter (Cheerio, GA/MN/UT/OR/NE/PA-W/IA/HI) |
 | `scripts/adapters/playmetrics.js` | **NEW (Session 102)** PlayMetrics adapter (Puppeteer, CO CAL + SDL + WI WYSA) |
@@ -1985,7 +1985,7 @@ Solution for Session 111: Add `puppeteerStealth` flag support to `scrapeStanding
 - B1-B5: Scraped 14 GotSport events — FL (43009+45008+45046+45052), IN (49628), MO (44132), TX (44745+45379), GA re-scrape (42137+42138+44874+45530) ✅
 
 **Block C (New Sources — Principle 42: 5+ approaches):**
-- C1 TN: SINC Sports adapter ready; TN State League spring 2026 season starts March 2026 — documented ✅
+- C1 TN: **Migrated from SINC to Squadi.** API keys discovered (`orgKey: d1445ee0...`, `compKey: 1252e315...`, `yearId: 6`). SINC events removed. Add TN section to squadi.js. ✅
 - C2 WV: Small market, spring starts March 2026 — GotSport event ID not yet posted, retry March 1 ✅
 - C3 NM DCSL: dukecity.org investigated; Spring 2026 starts Feb 28, custom adapter viable — deferred Feb 28 ✅
 - C4 RI: thesuperliga.com checked; spring data not yet live — retry March 28 (DATA-PURGING!) ✅
@@ -2859,14 +2859,15 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 
 ### Resume Prompt
 
-**Session FINAL is COMPLETE.** All open items resolved. No new session needed until:
-- March 1: WV State League (spring season starts, retry finding GotSport event ID)
-- March 28: RI Super Liga (spring data goes live, activate `risuperliga.js` adapter IMMEDIATELY — data purges between seasons!)
-- March-June: TN State League via SINC (spring 2026 season active)
-- NM DCSL (dukecity.org) - Spring 2026 starts Feb 28, retry adapter build then
+**Session FINAL is COMPLETE.** All open items resolved. Next priorities:
+- **TN Squadi adapter** — Add TN State Soccer League to squadi.js (API keys found Session FINAL)
+- **RI Super Liga** — March 28: Spring data goes live, activate `risuperliga.js` IMMEDIATELY (data purges!)
+- **WV GotSport** — Event 49470 in staticEvents, scrape after March 15 when games are played
+- **MA NECSL Spring** — Check thenecsl.com on/after Feb 19 for Spring 2026 event ~50xxx
+- **NM DCSL** — dukecity.org, Spring starts Feb 28, retry adapter build
 
 When starting a new session after FINAL:
-> "Resume SoccerView post-FINAL maintenance. Session FINAL COMPLETE — all 30 checklist items done. **Current: 528,819 active matches, 197,030 teams, 30,073 standings, 468 leagues, 25 GotSport staticEvents, 12 adapters, SEM 104,289.** Read CLAUDE.md (v25.0 FINAL), .claude/hooks/session_checkpoint.md. **PRIORITY:** (1) RI Super Liga — check thesuperliga.com NOW, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges!). (2) TN SINC Spring TID — browse soccer.sincsports.com/events.aspx for TN state league spring 2026 TID. (3) WV GotSport — event 49470 in staticEvents, scrape after March 15. (4) NECSL Spring 2026 GotSport event ~50xxx — check thenecsl.com on/after Feb 19, add to staticEvents. **NEVER say 'between seasons.'**"
+> "Resume SoccerView Session 115. Session FINAL COMPLETE + post-FINAL doc cleanup done. **Current: 529,446 active matches, 197,533 teams, 30,074 standings, 468 leagues, 25 GotSport staticEvents, 12 adapters, SEM 105,473.** Read CLAUDE.md (v25.1), .claude/hooks/session_checkpoint.md. **CRITICAL DISCOVERY:** TN State Soccer League migrated from SINC to **Squadi** — API keys in STATE_COVERAGE_CHECKLIST.md row 45. **PRIORITY:** (1) TN Squadi adapter — add TN to squadi.js (`orgKey: d1445ee0...`, `compKey: 1252e315...`, `yearId: 6`). Scrape immediately. (2) RI Super Liga — check thesuperliga.com, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges!). (3) WV GotSport — event 49470, scrape after March 15. (4) MA NECSL Spring ~50xxx — check thenecsl.com on/after Feb 19. (5) NM DCSL — dukecity.org, Spring starts Feb 28. **NEVER say 'between seasons.'**"
 
 ---
 

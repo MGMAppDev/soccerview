@@ -34,7 +34,7 @@ Session: FINAL — IN PROGRESS ⏳
 | A4: GS standings (342 leagues) | ✅ DONE | 30,073 standings (was 19,749) |
 | B1-B5: FL/IN/MO/TX/GA scrapes | ✅ DONE | All in staticEvents, scrape launched |
 | B6: fastProcessStaging pass | ✅ DONE | 29 unprocessed in queue (nightly handles) |
-| C1: TN SINC Spring TID | ✅ DOCUMENTED | TZ1186/TZ2026 wrong; retry March 1 via sincsports.com/events |
+| C1: TN → Squadi | ✅ DISCOVERED | TN migrated from SINC to Squadi; API keys found; add TN section to squadi.js |
 | C2: WV GotSport event | ✅ FOUND | Event 49470 confirmed (27 divs), added to staticEvents |
 | C3: NM DCSL | ✅ DOCUMENTED | NM already covered via Desert Conf 34558; DCSL is amateur |
 | C4: RI Super Liga | ✅ DOCUMENTED | Spring starts March 28; skeleton adapter ready |
@@ -68,7 +68,7 @@ Session: FINAL — IN PROGRESS ⏳
 
 | State | Finding | Action | Retry Date |
 |-------|---------|--------|------------|
-| TN | SINC adapter ready; TZ1185 (Fall) + VESL (Spring) configured; Spring TSL TID unknown | Probe sincsports.com/events.aspx | March 1, 2026 |
+| TN | **Migrated to Squadi.** API keys: `orgKey: d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a`, `compKey: 1252e315-913f-4319-a58f-8cb620057e06`, `yearId: 6` | Add TN section to squadi.js (same as AR) | Next session |
 | WV | GotSport event 49470 confirmed (27 divisions, season March 14-15) | Added to staticEvents | March 15, 2026 (after games play) |
 | NM | Already covered via Desert Conf 34558; DCSL is amateur | No action needed | — |
 | RI | Spring starts March 28; data-purging platform | Skeleton ready in risuperliga.js | March 28, 2026 |
@@ -84,7 +84,7 @@ Session: FINAL — IN PROGRESS ⏳
 Read CLAUDE.md (v25.0 FINAL), session_checkpoint.md.
 **PRIORITY:**
 (1) RI Super Liga — check thesuperliga.com NOW, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges between seasons!)
-(2) TN SINC Spring TID — browse soccer.sincsports.com/events.aspx for TN state league spring 2026 TID
+(2) TN Squadi adapter — add TN State Soccer League to squadi.js (API keys: orgKey d1445ee0..., compKey 1252e315..., yearId 6)
 (3) WV GotSport — event 49470 in staticEvents, scrape after March 15
 (4) NECSL Spring 2026 GotSport event ~50xxx — check thenecsl.com on/after Feb 19, add to staticEvents
 **NEVER say 'between seasons.'**"

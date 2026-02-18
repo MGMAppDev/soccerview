@@ -137,7 +137,7 @@ In staticEvents config, `year: 2026` means the 2025-26 season. This is the seaso
 │  /scripts/adapters/gotsport.js          (Cheerio - GotSport leagues) │
 │  /scripts/adapters/htgsports.js         (Puppeteer - tournaments SPA)│
 │  /scripts/adapters/heartland.js         (Cheerio - CGI + standings)  │
-│  /scripts/adapters/sincsports.js        (Puppeteer - NC/TN leagues)  │
+│  /scripts/adapters/sincsports.js        (Puppeteer - NC leagues)     │
 │  /scripts/adapters/mlsnext.js           (Puppeteer - Modular11 SPA)  │
 │  /scripts/adapters/sportsaffinity.js    (Cheerio - 8 states, 72 ev) │
 │  /scripts/adapters/totalglobalsports.js (Puppeteer+stealth - ECNL)  │
@@ -893,7 +893,7 @@ When data flows from staging to production, entities (teams, leagues, tournament
 
 ### SINC Sports Adapter (Session 95)
 
-**Platform:** SINC Sports (`soccer.sincsports.com`) — used by NC, TN, and other state associations.
+**Platform:** SINC Sports (`soccer.sincsports.com`) — used by NC and other state associations. (TN migrated to Squadi — Session FINAL.)
 
 **Key Technical Details:**
 

@@ -159,7 +159,7 @@ Both configured in the same adapter file.
 | **GotSport** | Rankings + Leagues | All 50 | 250K+ | 9,042 (342 leagues) | ✅ | PRODUCTION — rankings + event discovery |
 | **HTGSports** | Tournaments | 26+ | 50K+ | — | ✅ | PRODUCTION — match data + schedules |
 | **Heartland CGI** | League | KS, MO-KC | 15K+ | 1,207 | ✅ | PRODUCTION — full 3-flow pipeline |
-| **SINC Sports** | League | NC, TN (upcoming) | 8,692 | 1,478 | ✅ | PRODUCTION — full 3-flow pipeline |
+| **SINC Sports** | League | NC (TN migrated to Squadi) | 8,692 | 1,478 | ✅ | PRODUCTION — full 3-flow pipeline |
 | **MLS Next** | National | All (U13-U19) | 9,795 | — | ✅ | PRODUCTION — 9,795 matches |
 | **SportsAffinity** | League | GA, MN, UT, OR, NE, PA-W, IA, HI (72 events) | 37K+ | — | ✅ | PRODUCTION — 8 states |
 | **TotalGlobalSports (ECNL)** | National | All | 33,567 | 4,362 | ✅ | PRODUCTION — 76 ECNL events |
@@ -340,7 +340,7 @@ If the source uses short names and there's no alternative — document it and mo
 | Source | Status | Notes |
 |--------|--------|-------|
 | ECNL/ECRL via TGS | ✅ PRODUCTION | 76 events, 33,567 matches, 4,362 standings |
-| TN State League via SINC | SINC adapter ready, TN season starts March 2026 | Retry March 2026 |
+| TN State League via **Squadi** | TN migrated from SINC to Squadi — API keys found (Session FINAL) | Add TN section to squadi.js |
 
 ### Wave 7: National Programs (COMPLETE ✅ — Session 106)
 

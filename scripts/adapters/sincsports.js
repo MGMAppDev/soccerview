@@ -3,7 +3,8 @@
  * ========================
  *
  * Session 95: First new adapter for national expansion.
- * Covers: NC (NCYSA Classic League) + TN (TN State League)
+ * Covers: NC (NCYSA Classic League)
+ * Note: TN State Soccer League migrated from SINC to Squadi (discovered Session FINAL). TN handled by squadi.js.
  *
  * Platform: ASP.NET WebForms (soccer.sincsports.com)
  * Technology: Puppeteer (required — pages use __doPostBack and JS rendering)
@@ -106,12 +107,9 @@ export default {
 
   discovery: {
     staticEvents: [
-      // North Carolina
+      // North Carolina (only — TN migrated to Squadi, handled by squadi.js)
       { id: "NCFL", name: "NCYSA Fall Classic League", type: "league", year: 2025, state: "NC" },
       { id: "NCCSL", name: "NC Classic Spring League", type: "league", year: 2026, state: "NC" },
-      // Tennessee
-      { id: "TZ1185", name: "TN State Soccer Assn League Fall", type: "league", year: 2025, state: "TN" },
-      { id: "VESL", name: "Volunteer Elite Soccer League", type: "league", year: 2026, state: "TN" },
     ],
 
     /**
