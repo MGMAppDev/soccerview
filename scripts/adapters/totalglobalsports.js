@@ -296,6 +296,225 @@ export default {
   },
 
   // =========================================
+  // STANDINGS (Session 111)
+  // =========================================
+
+  standings: {
+    enabled: true,
+
+    /**
+     * Discover all TGS league events that have standings.
+     * Queries DB for leagues with source_platform = 'totalglobalsports'.
+     */
+    discoverSources: async (engine) => {
+      const { rows } = await engine.pool.query(
+        `SELECT l.id, l.name, l.source_event_id
+         FROM leagues l
+         WHERE l.source_platform = 'totalglobalsports'
+         ORDER BY l.name`
+      );
+
+      const sources = [];
+      for (const league of rows) {
+        // source_event_id is either "tgs-{eventId}" or bare "{eventId}"
+        const eventId = league.source_event_id.replace(/^tgs-/, '');
+        // Find the static event config to get gender
+        const staticEvent = engine.adapter.discovery.staticEvents.find(
+          e => String(e.id) === eventId
+        );
+
+        sources.push({
+          id: league.source_event_id,
+          name: league.name,
+          league_source_id: league.source_event_id,
+          eventId,
+          gender: staticEvent?.gender || null,
+          season: '2025-2026',
+        });
+      }
+
+      console.log(`  Found ${sources.length} TGS league events for standings`);
+      return sources;
+    },
+
+    /**
+     * Scrape standings for a single TGS event.
+     *
+     * Strategy:
+     * 1. Navigate to /public/event/{eventId}/schedules-standings
+     * 2. Extract all standings links (/standings/{divisionId}) + age group labels
+     * 3. For each division, navigate to standings page
+     * 4. Parse table with headers: POS, TEAMS, GP, WINS, LOSSES, DRAWS, GF, GA, GD, PTS, PPG
+     * 5. Extract team source IDs from /individual-team/{orgId}/{teamId}/ links
+     */
+    scrapeSource: async (engine, source) => {
+      const allStandings = [];
+      const { eventId, league_source_id, gender, season } = source;
+
+      // Step 1: Launch stealth browser and navigate to schedules-standings
+      const b = await engine.initPuppeteer();
+      const page = await b.newPage();
+      if (engine.adapter.userAgents?.length) {
+        await page.setUserAgent(engine.adapter.userAgents[Math.floor(Math.random() * engine.adapter.userAgents.length)]);
+      }
+
+      const mainUrl = `${engine.adapter.baseUrl}/public/event/${eventId}/schedules-standings`;
+      if (engine.isVerbose) console.log(`    Main URL: ${mainUrl}`);
+
+      try {
+        await page.goto(mainUrl, { waitUntil: 'networkidle2', timeout: 90000 });
+        await engine.sleep(engine.adapter.parsing.puppeteer.ajaxWait);
+
+        // Check Cloudflare
+        const isBlocked = await page.evaluate(() =>
+          document.title.includes('Just a moment') || document.body.innerText.includes('Checking your browser')
+        );
+        if (isBlocked) {
+          console.log(`    Cloudflare blocked for event ${eventId} — waiting...`);
+          await engine.sleep(15000);
+          const stillBlocked = await page.evaluate(() => document.title.includes('Just a moment'));
+          if (stillBlocked) {
+            console.log(`    Still blocked — skipping event ${eventId}`);
+            await page.close();
+            return [];
+          }
+        }
+
+        // Step 2: Extract age group standings links
+        const ageGroups = await page.evaluate(() => {
+          const groups = [];
+          document.querySelectorAll('table').forEach(table => {
+            const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim());
+            // Age group is in the first header (e.g., "B2008/2007", "G2009")
+            const ageHeader = headers.find(h => /[BG]?20[01]\d/i.test(h) || /U-?\d{1,2}\b/i.test(h));
+            if (!ageHeader) return;
+
+            // Find standings link in this table
+            const standingsLink = table.querySelector('a[href*="/standings/"]');
+            if (standingsLink) {
+              const href = standingsLink.getAttribute('href');
+              const divMatch = href.match(/\/standings\/(\d+)/);
+              if (divMatch) {
+                groups.push({
+                  ageGroup: ageHeader,
+                  divisionId: divMatch[1],
+                  href: href,
+                });
+              }
+            }
+          });
+          return groups;
+        });
+
+        console.log(`    Found ${ageGroups.length} age groups with standings`);
+
+        // Step 3: Scrape each age group standings page
+        for (let i = 0; i < ageGroups.length; i++) {
+          const ag = ageGroups[i];
+          if (engine.isVerbose) console.log(`    [${i + 1}/${ageGroups.length}] ${ag.ageGroup} (division ${ag.divisionId})`);
+
+          try {
+            const standingsUrl = `${engine.adapter.baseUrl}${ag.href}`;
+            await page.goto(standingsUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+            await engine.sleep(engine.adapter.parsing.puppeteer.pageLoadWait);
+
+            // Step 4: Parse standings table
+            const rows = await page.evaluate(() => {
+              // Find the full standings table (has POS, TEAMS, GP, WINS, LOSSES, DRAWS, GF, GA, GD, PTS columns)
+              const tables = Array.from(document.querySelectorAll('table'));
+              for (const table of tables) {
+                const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim().toUpperCase());
+                if (headers.includes('POS') && headers.includes('TEAMS') && headers.includes('PTS')) {
+                  // This is the standings table
+                  const posIdx = headers.indexOf('POS');
+                  const teamsIdx = headers.indexOf('TEAMS');
+                  const gpIdx = headers.indexOf('GP');
+                  const winsIdx = headers.indexOf('WINS');
+                  const lossesIdx = headers.indexOf('LOSSES');
+                  const drawsIdx = headers.indexOf('DRAWS');
+                  const gfIdx = headers.indexOf('GF');
+                  const gaIdx = headers.indexOf('GA');
+                  const ptsIdx = headers.indexOf('PTS');
+
+                  return Array.from(table.querySelectorAll('tbody tr')).map(tr => {
+                    const cells = Array.from(tr.querySelectorAll('td'));
+                    if (cells.length < 5) return null;
+
+                    // Extract team name and source ID from link
+                    const teamLink = tr.querySelector('a[href*="individual-team"]');
+                    const teamName = teamLink ? teamLink.textContent.trim() : (cells[teamsIdx] ? cells[teamsIdx].textContent.trim() : null);
+                    let teamSourceId = null;
+                    if (teamLink) {
+                      const href = teamLink.getAttribute('href') || '';
+                      const idMatch = href.match(/\/individual-team\/(\d+)\/(\d+)\//);
+                      if (idMatch) teamSourceId = idMatch[1] + '-' + idMatch[2];
+                    }
+
+                    return {
+                      position: cells[posIdx] ? parseInt(cells[posIdx].textContent.trim(), 10) || null : null,
+                      teamName,
+                      teamSourceId,
+                      played: cells[gpIdx] ? parseInt(cells[gpIdx].textContent.trim(), 10) || 0 : 0,
+                      wins: cells[winsIdx] ? parseInt(cells[winsIdx].textContent.trim(), 10) || 0 : 0,
+                      losses: cells[lossesIdx] ? parseInt(cells[lossesIdx].textContent.trim(), 10) || 0 : 0,
+                      draws: cells[drawsIdx] ? parseInt(cells[drawsIdx].textContent.trim(), 10) || 0 : 0,
+                      goalsFor: cells[gfIdx] ? parseInt(cells[gfIdx].textContent.trim(), 10) || 0 : 0,
+                      goalsAgainst: cells[gaIdx] ? parseInt(cells[gaIdx].textContent.trim(), 10) || 0 : 0,
+                      points: cells[ptsIdx] ? parseInt(cells[ptsIdx].textContent.trim(), 10) || 0 : 0,
+                    };
+                  }).filter(Boolean);
+                }
+              }
+              return [];
+            });
+
+            if (engine.isVerbose) console.log(`      ${rows.length} teams in standings`);
+
+            // Parse age group label for gender and age
+            const parsedDiv = engine.adapter.transform.parseDivision(ag.ageGroup);
+            const divGender = parsedDiv.gender || gender || null;
+            const ageGroup = parsedDiv.ageGroup || null;
+            const division = ag.ageGroup;
+
+            for (const row of rows) {
+              if (!row.teamName) continue;
+              allStandings.push({
+                league_source_id,
+                division,
+                team_name: row.teamName,
+                team_source_id: row.teamSourceId,
+                played: row.played,
+                wins: row.wins,
+                losses: row.losses,
+                draws: row.draws,
+                goals_for: row.goalsFor,
+                goals_against: row.goalsAgainst,
+                points: row.points,
+                position: row.position,
+                season,
+                age_group: ageGroup,
+                gender: divGender === 'Boys' ? 'M' : divGender === 'Girls' ? 'F' : null,
+              });
+            }
+          } catch (err) {
+            console.error(`    Error scraping ${ag.ageGroup}: ${err.message}`);
+          }
+
+          // Rate limit between age groups
+          await engine.sleep(engine.adapter.rateLimiting.iterationDelay);
+        }
+
+        await page.close();
+      } catch (err) {
+        console.error(`    Error on event ${eventId}: ${err.message}`);
+        try { await page.close(); } catch {}
+      }
+
+      return allStandings;
+    },
+  },
+
+  // =========================================
   // CHECKPOINT CONFIG
   // =========================================
 

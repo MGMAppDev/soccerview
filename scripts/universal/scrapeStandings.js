@@ -88,15 +88,30 @@ async function loadAdapter(name) {
 // =========================================================================
 
 let browser = null;
+let useStealth = false;
 
-async function initPuppeteer() {
+async function initPuppeteer(adapter) {
   if (browser) return browser;
-  const puppeteer = (await import('puppeteer')).default;
-  browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-  console.log('  Puppeteer browser launched');
+
+  // Check if adapter requires stealth (e.g., Cloudflare-protected sites like TGS)
+  if (adapter?.puppeteerStealth) {
+    const puppeteerExtra = (await import('puppeteer-extra')).default;
+    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+    puppeteerExtra.use(StealthPlugin());
+    browser = await puppeteerExtra.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    useStealth = true;
+    console.log('  Puppeteer browser launched (stealth mode)');
+  } else {
+    const puppeteer = (await import('puppeteer')).default;
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    console.log('  Puppeteer browser launched');
+  }
   return browser;
 }
 
@@ -122,7 +137,7 @@ async function fetchWithCheerio(url, adapter) {
 }
 
 async function fetchWithPuppeteer(url, adapter, options = {}) {
-  const b = await initPuppeteer();
+  const b = await initPuppeteer(adapter);
   const page = await b.newPage();
 
   if (adapter.userAgents?.length) {
@@ -163,7 +178,7 @@ function createEngine(adapter) {
     adapter,
     fetchWithCheerio: (url) => fetchWithCheerio(url, adapter),
     fetchWithPuppeteer: (url, opts) => fetchWithPuppeteer(url, adapter, opts),
-    initPuppeteer: () => initPuppeteer(),
+    initPuppeteer: () => initPuppeteer(adapter),
     sleep,
     applyRateLimit: () => applyRateLimit(adapter),
     isVerbose,

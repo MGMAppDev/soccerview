@@ -681,9 +681,15 @@ jobs:
           echo "📋 PlayMetrics standings: $PM"
           TOTAL=$((TOTAL + PM))
 
+          # TotalGlobalSports standings (Puppeteer+stealth — ECNL 75 leagues, Session 111)
+          node scripts/universal/scrapeStandings.js --adapter totalglobalsports 2>&1 | tee standings_tgs.txt || true
+          TG=$(grep -oP 'Total standings:\s*\K\d+' standings_tgs.txt | tail -1 || echo "0")
+          echo "📋 TotalGlobalSports standings: $TG"
+          TOTAL=$((TOTAL + TG))
+
           echo "standings=$TOTAL" >> $GITHUB_OUTPUT
           echo "📋 Total standings scraped: $TOTAL"
-        timeout-minutes: 90
+        timeout-minutes: 120
         continue-on-error: true
 
   # ============================================================================

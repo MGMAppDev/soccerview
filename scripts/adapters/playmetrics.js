@@ -113,6 +113,14 @@ export default {
         leagueId: "1017-1482-91a2b806",
         state: "CO",
       },
+      {
+        id: "cal-spring-2026",
+        name: "Colorado Advanced League Spring 2026",
+        type: "league",
+        year: 2026,
+        leagueId: "1017-1829-bf8e0969",
+        state: "CO",
+      },
       // Sporting Development League (SDL)
       {
         id: "sdl-fall-2025-boys",
