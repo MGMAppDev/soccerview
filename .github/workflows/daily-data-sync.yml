@@ -138,7 +138,7 @@ jobs:
         github.event.inputs.sync_type == 'gotsport_only' ||
         github.event.inputs.sync_type == null
       }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     outputs:
       matches_staged: ${{ steps.sync.outputs.matches_staged || steps.fallback.outputs.matches_staged }}
       status: ${{ steps.sync.outcome || steps.fallback.outcome }}
@@ -657,7 +657,7 @@ jobs:
         github.event.inputs.sync_type == 'heartland_only' ||
         github.event.inputs.sync_type == null
       }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     outputs:
       standings_staged: ${{ steps.scrape.outputs.standings }}
       status: ${{ job.status }}

@@ -142,6 +142,13 @@ export default {
       { id: "40362", name: "USYS Mid South Conference 2024-25 (MS/AL/AR/LA/TN)", year: 2026, type: "league" },
       { id: "34558", name: "USYS Desert Conference 2024-25 (NM/AZ/CO/NV/UT)", year: 2026, type: "league" },
       { id: "32734", name: "Yellowstone Premier League 2024-25 (WY/CO/UT/NV/ID/MT)", year: 2026, type: "league" },
+      // Session FINAL: STXCL World Cup events (TX-S, GotSport)
+      { id: "46279", name: "STXCL World Cup Girls 2025-26", year: 2026, type: "tournament" },
+      { id: "46278", name: "STXCL World Cup Boys 2025-26", year: 2026, type: "tournament" },
+      // Session FINAL: MA NECSL (New England Club Soccer League) Fall 2025
+      { id: "45672", name: "NECSL Fall 2025 (MA/NH/RI/ME/CT)", year: 2026, type: "league" },
+      // Session FINAL: WV State League — season March 14-15 2026, scrape after March 15
+      { id: "49470", name: "WV State League Spring 2026", year: 2026, type: "league" },
     ],
 
     /**

@@ -1,6 +1,6 @@
 # SoccerView Data Scraping Playbook
 
-> **Version 8.0** | Updated: February 15, 2026 | Season Completeness Check (Session 99)
+> **Version 9.0 FINAL** | Updated: February 18, 2026 | Session FINAL — 12 Adapters, 528K+ Matches
 >
 > Comprehensive, repeatable process for expanding the SoccerView database.
 > Execute this playbook to add new data sources following V2 architecture.
@@ -132,17 +132,22 @@ In staticEvents config, `year: 2026` means the 2025-26 season. This is the seaso
 ### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     SOURCE ADAPTERS                              │
-│  /scripts/adapters/gotsport.js         (Cheerio - static HTML)       │
-│  /scripts/adapters/htgsports.js        (Puppeteer - JavaScript SPA)  │
-│  /scripts/adapters/heartland.js        (Puppeteer - CGI via AJAX)    │
-│  /scripts/adapters/sincsports.js       (Puppeteer - Bootstrap grid)  │
-│  /scripts/adapters/mlsnext.js          (Puppeteer - Modular11 SPA)   │
-│  /scripts/adapters/sportsaffinity.js   (Cheerio - multi-state)       │
+┌──────────────────────────────────────────────────────────────────────┐
+│              SOURCE ADAPTERS (12 built — Session FINAL)              │
+│  /scripts/adapters/gotsport.js          (Cheerio - GotSport leagues) │
+│  /scripts/adapters/htgsports.js         (Puppeteer - tournaments SPA)│
+│  /scripts/adapters/heartland.js         (Cheerio - CGI + standings)  │
+│  /scripts/adapters/sincsports.js        (Puppeteer - NC/TN leagues)  │
+│  /scripts/adapters/mlsnext.js           (Puppeteer - Modular11 SPA)  │
+│  /scripts/adapters/sportsaffinity.js    (Cheerio - 8 states, 72 ev) │
 │  /scripts/adapters/totalglobalsports.js (Puppeteer+stealth - ECNL)  │
-│  /scripts/adapters/_template.js        (Template for new sources)    │
-└─────────────────────────────────────────────────────────────────┘
+│  /scripts/adapters/playmetrics.js       (Puppeteer - CO/SDL/WI Vue)  │
+│  /scripts/adapters/demosphere.js        (Cheerio - JSON/XML API)     │
+│  /scripts/adapters/squadi.js            (REST API - no browser AR)   │
+│  /scripts/adapters/athleteone.js        (REST API - no browser TX)   │
+│  /scripts/adapters/risuperliga.js       (skeleton - retry Mar 28)    │
+│  /scripts/adapters/_template.js         (Template for new sources)   │
+└──────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1154,13 +1159,19 @@ refresh-gotsport-rankings → restoreGotSportRanks.cjs --cached
 recalculate-elo → Division seed → Process matches → Power ratings
 
 # ═══════════ SYSTEM 2: STANDINGS ABSORPTION (League Page) ═══════════
+# 7 standings adapters as of Session FINAL
 
 # Phase 1.5: Scrape standings (parallel with Phase 1)
-scrape-standings-heartland:   scrapeStandings.js --adapter heartland
-scrape-standings-sincsports:  scrapeStandings.js --adapter sincsports
+scrape-standings-heartland:      scrapeStandings.js --adapter heartland     (1,207 standings)
+scrape-standings-sincsports:     scrapeStandings.js --adapter sincsports     (1,478 standings)
+scrape-standings-gotsport:       scrapeStandings.js --adapter gotsport       (9,042 standings, 342 leagues)
+scrape-standings-tgs:            scrapeStandings.js --adapter totalglobalsports (4,362 standings, stealth)
+scrape-standings-demosphere:     scrapeStandings.js --adapter demosphere     (1,106 standings, XML)
+scrape-standings-squadi:         scrapeStandings.js --adapter squadi         (537 standings, REST API)
+scrape-standings-playmetrics:    scrapeStandings.js --adapter playmetrics    (staged for CI, Puppeteer)
 
 # Phase 2.6: Process standings — Lightweight resolver (NO fuzzy matching)
-process-standings: processStandings.cjs → league_standings
+process-standings: processStandings.cjs → league_standings (19,749+ total)
 
 # ═══════════ SHARED ═══════════
 
