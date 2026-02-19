@@ -1,8 +1,9 @@
 /**
- * Squadi Source Adapter v1.0
+ * Squadi Source Adapter v2.0
  * ==========================
  *
  * Session 104: Built for Arkansas Competitive Soccer League (ACSL) and related AR competitions.
+ * Session 115: Added Tennessee State League (TSL) — migrated from SINC Sports to Squadi.
  *
  * PLATFORM OVERVIEW:
  * - Squadi (formerly World Sport Action / WSA) is an Australian sports management platform
@@ -38,7 +39,10 @@
  *   - CAL (Central Arkansas League)
  *   - State Championships, ODP, Friendlies
  *
- * Future: Tennessee State League (orgKey: d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a)
+ * - Tennessee State Soccer Association: orgKey d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a
+ *   - TSL (Tennessee State League) — main state league (migrated from SINC Sports, Session FINAL)
+ *   - State Cups (Fall/Spring)
+ *   - JDL (Junior Development League) — monthly play dates, EXCLUDED (developmental)
  */
 
 export default {
@@ -174,6 +178,68 @@ export default {
         competitionKey: "8e99678c-c55a-40f3-9940-e7360e3af137",
         state: "AR",
       },
+
+      // =============================================
+      // TENNESSEE STATE SOCCER ASSOCIATION (TSSA)
+      // orgKey: d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a
+      // Migrated from SINC Sports to Squadi (Session FINAL discovery)
+      // =============================================
+
+      // Tennessee State League (TSL) — MAIN state league, CURRENT SEASON
+      {
+        id: "tsl-2025-2026",
+        name: "Tennessee State League 2025-2026",
+        type: "league",
+        year: 2026,
+        orgKey: "d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a",
+        competitionId: 150,
+        competitionKey: "9d5ba65d-caed-48ca-8eb4-3c97bc4bb057",
+        state: "TN",
+      },
+      // TSL Spring 2025 (2024-25 season)
+      {
+        id: "tsl-spring-2025",
+        name: "Tennessee State League Spring 2025",
+        type: "league",
+        year: 2025,
+        orgKey: "d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a",
+        competitionId: 65,
+        competitionKey: "1efa818c-2080-4a56-9d87-d25ec4fcfe31",
+        state: "TN",
+      },
+      // TSL Fall 2024 (2024-25 season)
+      {
+        id: "tsl-fall-2024",
+        name: "Tennessee State League Fall 2024",
+        type: "league",
+        year: 2025,
+        orgKey: "d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a",
+        competitionId: 33,
+        competitionKey: "1252e315-913f-4319-a58f-8cb620057e06",
+        state: "TN",
+      },
+      // TN State Cup — Fall 2025
+      {
+        id: "tn-state-cup-fall-2025",
+        name: "TN Fall State Cup 2025",
+        type: "tournament",
+        year: 2026,
+        orgKey: "d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a",
+        competitionId: 194,
+        competitionKey: "e039d447-1b46-420c-93ef-c24455042a43",
+        state: "TN",
+      },
+      // TN State Cup — Spring 2025
+      {
+        id: "tn-state-cup-spring-2025",
+        name: "TN Spring State Cup 2025",
+        type: "tournament",
+        year: 2025,
+        orgKey: "d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a",
+        competitionId: 88,
+        competitionKey: "e994e380-701d-4565-bcfc-940b54b90602",
+        state: "TN",
+      },
     ],
 
     discoverEvents: null,
@@ -220,7 +286,7 @@ export default {
       return { gender, ageGroup };
     },
 
-    inferState: (event) => event?.state || "AR",
+    inferState: (event) => event?.state || "unknown",
 
     /**
      * Parse Squadi ISO 8601 date.
@@ -277,7 +343,7 @@ export default {
   dataPolicy: {
     minDate: "2024-08-01",
     maxFutureDate: null,
-    maxEventsPerRun: 10,
+    maxEventsPerRun: 15,
 
     isValidMatch: (match) => {
       if (!match.homeTeamName || !match.awayTeamName) return false;

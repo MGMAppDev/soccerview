@@ -227,6 +227,11 @@ export default {
       // NPL (National Premier League) — via TGS
       // ========================
       { id: 3989, name: "TCSL NPL Texas 2025-26", type: "league", year: 2026, gender: "Boys", conference: "Texas", notes: "Texas Club Soccer League NPL Division" },
+
+      // ========================
+      // STATE LEAGUES (via TGS)
+      // ========================
+      { id: 3410, name: "Duke City Soccer League NM 2025-26", type: "league", year: 2026, state: "NM", notes: "NM DCSL — Session 115 discovery" },
     ],
 
     discoverEvents: null, // Static events — expand as we discover more IDs

@@ -106,11 +106,14 @@ async function main() {
 
       rowTeamKeys.set(row.id, { homeKey, awayKey, birthYear, gender, tier });
 
+      // SESSION 115: Extract event state from raw_data (set by coreScraper.js)
+      const eventState = row.raw_data?.event_state || null;
+
       if (!uniqueTeams.has(homeKey)) {
-        uniqueTeams.set(homeKey, { name: removeDuplicatePrefix(row.home_team_name), birth_year: birthYear, gender });
+        uniqueTeams.set(homeKey, { name: removeDuplicatePrefix(row.home_team_name), birth_year: birthYear, gender, eventState });
       }
       if (!uniqueTeams.has(awayKey)) {
-        uniqueTeams.set(awayKey, { name: removeDuplicatePrefix(row.away_team_name), birth_year: birthYear, gender });
+        uniqueTeams.set(awayKey, { name: removeDuplicatePrefix(row.away_team_name), birth_year: birthYear, gender, eventState });
       }
     }
     console.log(`  ${uniqueTeams.size} unique team combinations`);
@@ -236,7 +239,8 @@ async function main() {
         const vals = [];
         const phs = batch.map((t, idx) => {
           const o = idx * 5;
-          vals.push(t.name, t.name, t.birth_year, t.gender, inferStateFromName(t.name) || 'unknown');
+          // SESSION 115: Use event state first, then infer from name, then 'unknown'
+          vals.push(t.name, t.name, t.birth_year, t.gender, t.eventState || inferStateFromName(t.name) || 'unknown');
           return `($${o+1}, $${o+2}, $${o+3}::int, $${o+4}::gender_type, $${o+5}, 1500)`;
         });
 
@@ -335,21 +339,23 @@ async function main() {
 
       // Create missing — classify using staging_events.event_type first, then name keywords (league vs tournament)
       const LEAGUE_KEYWORDS = ['league', 'season', 'conference', 'division', 'premier', 'ecnl', 'ecrl', 'pre-ecnl'];
-      // Pre-fetch staging_events type declarations (set by adapter staticEvents via coreScraper)
+      // Pre-fetch staging_events type + state declarations (set by adapter staticEvents via coreScraper)
       const missingEvIds = [...uniqueEvents.keys()].filter(id => !eventMap.has(id));
-      const stagingEventTypes = new Map();
+      const stagingEventMeta = new Map(); // evId → { type, state }
       if (missingEvIds.length > 0) {
         const { rows: seRows } = await client.query(
-          `SELECT source_event_id, event_type FROM staging_events WHERE source_event_id = ANY($1)`, [missingEvIds]
+          `SELECT source_event_id, event_type, state FROM staging_events WHERE source_event_id = ANY($1)`, [missingEvIds]
         );
-        for (const se of seRows) stagingEventTypes.set(se.source_event_id, se.event_type);
+        for (const se of seRows) stagingEventMeta.set(se.source_event_id, { type: se.event_type, state: se.state || null });
       }
       if (!dryRun) {
         let createdLeagues = 0, createdTournaments = 0;
         for (const [evId, ev] of uniqueEvents) {
           if (eventMap.has(evId)) continue;
-          // Priority 1: staging_events.event_type from adapter declaration
-          const declaredType = stagingEventTypes.get(evId);
+          // Priority 1: staging_events metadata from adapter declaration
+          const meta = stagingEventMeta.get(evId);
+          const declaredType = meta?.type;
+          const declaredState = meta?.state || null;
           // Priority 2: LEAGUE_KEYWORDS in event name
           const lowerName = (ev.name || '').toLowerCase();
           const isLeague = declaredType === 'league' || (!declaredType && LEAGUE_KEYWORDS.some(kw => lowerName.includes(kw)));
@@ -360,19 +366,29 @@ async function main() {
 
           if (isLeague) {
             const { rows } = await client.query(`
-              INSERT INTO leagues (name, source_event_id, source_platform)
-              VALUES ($1, $2, $3)
+              INSERT INTO leagues (name, source_event_id, source_platform, state, season_id)
+              VALUES ($1, $2, $3, $4, (SELECT id FROM seasons WHERE $5::date BETWEEN start_date AND end_date LIMIT 1))
               RETURNING id
-            `, [ev.name, evId, ev.platform]);
+            `, [ev.name, evId, ev.platform, declaredState, dateRange[0]?.sd || '2025-08-01']);
             eventMap.set(evId, { tournament_id: null, league_id: rows[0].id });
+            // Register in source_entity_map for future Tier 0 resolution
+            if (ev.platform && evId) {
+              await client.query(`INSERT INTO source_entity_map (entity_type, source_platform, source_entity_id, sv_id)
+                VALUES ('league', $1, $2, $3) ON CONFLICT DO NOTHING`, [ev.platform, evId, rows[0].id]);
+            }
             createdLeagues++;
           } else {
             const { rows } = await client.query(`
-              INSERT INTO tournaments (name, source_event_id, source_platform, start_date, end_date)
-              VALUES ($1, $2, $3, $4, $5)
+              INSERT INTO tournaments (name, source_event_id, source_platform, start_date, end_date, state)
+              VALUES ($1, $2, $3, $4, $5, $6)
               RETURNING id
-            `, [ev.name, evId, ev.platform, dateRange[0]?.sd || '2025-01-01', dateRange[0]?.ed || '2025-12-31']);
+            `, [ev.name, evId, ev.platform, dateRange[0]?.sd || '2025-01-01', dateRange[0]?.ed || '2025-12-31', declaredState]);
             eventMap.set(evId, { tournament_id: rows[0].id, league_id: null });
+            // Register in source_entity_map for future Tier 0 resolution
+            if (ev.platform && evId) {
+              await client.query(`INSERT INTO source_entity_map (entity_type, source_platform, source_entity_id, sv_id)
+                VALUES ('tournament', $1, $2, $3) ON CONFLICT DO NOTHING`, [ev.platform, evId, rows[0].id]);
+            }
             createdTournaments++;
           }
         }

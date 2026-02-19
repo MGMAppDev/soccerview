@@ -516,6 +516,8 @@ class CoreScraperEngine {
         // SESSION 89: Emit source team IDs for deterministic entity resolution
         source_home_team_id: m.homeId || null,
         source_away_team_id: m.awayId || null,
+        // SESSION 115: Propagate event state for universal team state resolution
+        event_state: options.eventState || null,
         original: m,
       },
       processed: false,
@@ -861,7 +863,9 @@ class CoreScraperEngine {
         this.stats.matchesFound += matches.length;
 
         if (matches.length > 0) {
-          const inserted = await this.writeToStaging(matches, options);
+          // SESSION 115: Propagate event state to raw_data for universal team state resolution
+          const eventState = event.state || (this.adapter.transform?.inferState ? this.adapter.transform.inferState(event) : null);
+          const inserted = await this.writeToStaging(matches, { ...options, eventState });
           console.log(`   ✅ Staged ${inserted} matches`);
           await this.registerEventToStaging(event, matches.length);
           this.stats.eventsSuccessful++;

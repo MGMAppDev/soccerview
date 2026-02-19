@@ -820,13 +820,31 @@ async function findOrCreateEvent(eventData, sourcePlatform, client) {
   }
 
   // Create new event (no unique constraint on source_event_id, so regular insert)
+  // Fetch state from staging_events + date range for season_id derivation
+  let declaredState = null;
+  let matchDateMin = null;
+  let matchDateMax = null;
+  if (eventData.source_event_id) {
+    const { rows: seMeta } = await client.query(
+      `SELECT state FROM staging_events WHERE source_event_id = $1 LIMIT 1`, [eventData.source_event_id]
+    );
+    if (seMeta.length > 0) declaredState = seMeta[0].state || null;
+    const { rows: dateRange } = await client.query(
+      `SELECT MIN(match_date) as sd, MAX(match_date) as ed FROM staging_games WHERE event_id = $1`, [eventData.source_event_id]
+    );
+    if (dateRange.length > 0) {
+      matchDateMin = dateRange[0].sd;
+      matchDateMax = dateRange[0].ed;
+    }
+  }
+
   try {
     if (isLeague) {
       const { rows: created } = await client.query(`
-        INSERT INTO leagues (name, source_event_id, source_platform)
-        VALUES ($1, $2, $3)
+        INSERT INTO leagues (name, source_event_id, source_platform, state, season_id)
+        VALUES ($1, $2, $3, $4, (SELECT id FROM seasons WHERE $5::date BETWEEN start_date AND end_date LIMIT 1))
         RETURNING id
-      `, [canonical_name, eventData.source_event_id, sourcePlatform]);
+      `, [canonical_name, eventData.source_event_id, sourcePlatform, declaredState, matchDateMin || '2025-08-01']);
 
       if (created.length > 0) {
         stats.eventsCreated++;
@@ -859,11 +877,12 @@ async function findOrCreateEvent(eventData, sourcePlatform, client) {
         return { league_id: created[0].id, tournament_id: null };
       }
     } else {
+      const today = new Date().toISOString().slice(0, 10);
       const { rows: created } = await client.query(`
-        INSERT INTO tournaments (name, source_event_id, source_platform, start_date, end_date)
-        VALUES ($1, $2, $3, CURRENT_DATE, CURRENT_DATE)
+        INSERT INTO tournaments (name, source_event_id, source_platform, start_date, end_date, state)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
-      `, [canonical_name, eventData.source_event_id, sourcePlatform]);
+      `, [canonical_name, eventData.source_event_id, sourcePlatform, matchDateMin || today, matchDateMax || today, declaredState]);
 
       if (created.length > 0) {
         stats.eventsCreated++;
