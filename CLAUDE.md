@@ -1,6 +1,6 @@
 # CLAUDE.md - SoccerView Project Master Reference
 
-> **Version 25.1** | Last Updated: February 18, 2026 | Session FINAL Complete + Post-FINAL Cleanup
+> **Version 25.2** | Last Updated: February 19, 2026 | Session 115 Complete — Universal Event Metadata Fixes
 >
 > This is the lean master reference. Detailed documentation in [docs/](docs/).
 
@@ -1336,14 +1336,14 @@ All downstream jobs that depend on `validation-pipeline` accept three results:
 
 | Table | Rows | Purpose |
 |-------|------|---------|
-| `teams_v2` | **197,030** | Team records (Session FINAL: +6,728 from GS standings processing) |
-| `matches_v2` | **528,819** active | Match results (~5,420 soft-deleted) |
+| `teams_v2` | **200,087** | Team records (Session 115: +3,057 from TN Squadi + NM DCSL + standings) |
+| `matches_v2` | **535,074** active | Match results (~5,420 soft-deleted) |
 | `clubs` | 124,650 | Club organizations |
-| `leagues` | 468+ | League metadata (Session FINAL: +STXCL WC, FL/IN/MO/TX/MA NECSL/WV) |
-| `tournaments` | 1,798+ | Tournament metadata |
-| `league_standings` | **30,073** | GotSport (~20K) + TGS (4,362) + SINC (1,478) + Heartland (1,207) + Demosphere (1,106) + Squadi (537) |
-| `staging_standings` | 47,000+ staged, **0 unprocessed** | Fully cleared — all 342-league GS rows processed |
-| `source_entity_map` | **104,289** | Universal source ID mappings (+14K from GS standings processing) |
+| `leagues` | 472+ | League metadata (Session 115: +4 TN Squadi + NM DCSL) |
+| `tournaments` | 1,800+ | Tournament metadata |
+| `league_standings` | **33,943** | GotSport (~20K) + TGS (4,362) + SINC (1,478) + Heartland (1,207) + Demosphere (1,106) + Squadi (4,943 incl TN) |
+| `staging_standings` | 51,000+ staged, **0 unprocessed** | Fully cleared — TN + all prior rows processed |
+| `source_entity_map` | **105,914** | Universal source ID mappings (Session 115: +1,625 from TN/NM) |
 | `canonical_events` | 1,795 | Canonical event registry (Session 62) |
 | `canonical_teams` | 138,252 | Canonical team registry (Session 76: +118,977) |
 | `canonical_clubs` | 7,301 | Canonical club registry (Session 62) |
@@ -1796,16 +1796,62 @@ Then run ELO recalculation: `node scripts/daily/recalculate_elo_v2.js`
 
 ## Current Session Status
 
-### Session FINAL — See detailed summary above in session history
+### Session 115 — Universal Event Metadata Fixes + TN Squadi + NM DCSL (February 19, 2026) - COMPLETE ✅
 
-**ALL ITEMS COMPLETE.** 12 adapters, 528,819+ matches, 190,302+ teams, 19,749+ standings, 468+ leagues.
-- Block A: GotSport 342-league standings processed (+5,000+ standings), STXCL WC events added
-- Block B: FL/IN/MO/TX/GA events scraped (all 14 events)
-- Block C: TN/WV/NM/RI/MA/AK documented with Principle 42 (5+ approaches each)
-- Block D: Tech debt cleared (docs v9.0 FINAL, indexes added, SEM verified, monitoring confirmed)
-- Block E: ELO + 5 views refreshed
-- Block F: All 5 data elements verified across all states
-- Block G: CLAUDE.md v25.0 FINAL + git push
+**Goal:** (1) Add TN State Soccer League to Squadi adapter (migrated from SINC). (2) Add NM DCSL via TGS. (3) Fix 7 universal pipeline metadata gaps discovered via audit (event state, season_id, SEM registration, DQE tournament dates). (4) New Principle 48: Event creation MUST include state + season_id + SEM.
+
+**Phase 1: TN Squadi Adapter + NM DCSL**
+- Added TN State Soccer League to `squadi.js` — 5 events (TSL Fall/Spring, VESL Fall/Spring, State Cup)
+- API keys: `orgKey: d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a`, `compKey: 1252e315-913f-4319-a58f-8cb620057e06`, `yearId: 6`
+- TN: 5,509 matches scraped + 4,406 standings staged
+- NM DCSL: Added TGS event 3410 → 120 matches scraped
+- coreScraper.js: event_state propagation from adapter to staging_events
+
+**Phase 2: Universal Pipeline Metadata Fixes (7 Gaps)**
+- **fastProcessStaging.cjs** — Event creation now includes `state` (from staging_events), `season_id` (subquery from match dates), SEM registration (`ON CONFLICT DO NOTHING`)
+- **dataQualityEngine.js** — Same fixes + tournament date bug fixed (`CURRENT_DATE, CURRENT_DATE` → actual match date ranges)
+- **Retroactive backfill** via `backfill_event_metadata.cjs`:
+  - League state: 150 NULL → 29 (121 fixed via team majority-vote)
+  - League season_id: 50 NULL → 2 (48 fixed via match date ranges)
+  - Tournament state: 1,773 NULL → 83 (1,690 fixed via team majority-vote)
+  - SEM: +42 leagues + 37 tournaments registered
+
+**Phase 3: Data Quality Fix**
+- Fixed `league_standings.source_platform` corruption: 12,342 rows had bare GotSport event IDs instead of 'gotsport' — bulk UPDATE fix
+- Processed 4,312 staging_standings → 0 unprocessed
+- ELO recalculated: 237,657 matches, 75,811 teams
+- All 5 materialized views refreshed
+
+**Verification Results (all targets passed):**
+
+| Check | Target | Actual | Status |
+|-------|--------|--------|--------|
+| League state coverage | >90% | **93.9%** (443/472) | ✅ |
+| League season_id | >95% | **99.6%** (470/472) | ✅ |
+| Tournament state | >90% | **95.4%** (1,717/1,800) | ✅ |
+| Standings | >30K | **33,943** | ✅ |
+| Unprocessed staging | 0 | **0** | ✅ |
+| Forward-prevention (7/7 code checks) | All ✅ | **7/7** | ✅ |
+
+**New Principle 48:** Event creation MUST include state (from staging_events), season_id (from match dates for leagues), SEM registration (ON CONFLICT DO NOTHING). Applies to fastProcessStaging.cjs AND dataQualityEngine.js.
+
+**Key Metrics:**
+
+| Metric | Before Session 115 | After Session 115 |
+|--------|-------------------|-------------------|
+| matches_v2 (active) | 528,819 | **535,074** (+6,255) |
+| teams_v2 | 197,030 | **200,087** (+3,057) |
+| leagues | 468 | **472** (+4) |
+| tournaments | 1,798 | **1,800** (+2) |
+| league_standings | 30,073 | **33,943** (+3,870) |
+| source_entity_map | 104,289 | **105,914** (+1,625) |
+| Leagues with state | 68.2% (322/472) | **93.9%** (443/472) |
+| Leagues with season_id | 0% (0/472) | **99.6%** (470/472) |
+| Tournaments with state | 1.5% (27/1,800) | **95.4%** (1,717/1,800) |
+
+**Files Modified:** `scripts/maintenance/fastProcessStaging.cjs` (event state + season_id + SEM), `scripts/universal/dataQualityEngine.js` (same + tournament date fix), `scripts/universal/coreScraper.js` (event_state propagation), `scripts/adapters/squadi.js` (+TN events), `scripts/adapters/totalglobalsports.js` (+NM DCSL event 3410), `CLAUDE.md` (v25.2), `CRITICAL_RULES.md` (Principle 48), `session_checkpoint.md`, `SESSION_HISTORY.md`
+**Files Created:** `scripts/_debug/backfill_event_metadata.cjs`, `scripts/_debug/backfill_sem_from_staging.cjs`, `scripts/_debug/check_sem_backfill.cjs`, `scripts/_debug/verify_session115_fixes.cjs`, `scripts/_debug/fast_process_squadi_standings.cjs`
+**Zero UI changes. All data flows through universal V2 pipeline.**
 
 **NIGHTLY PIPELINE:** Fully automated. 12 sync jobs. 7 standings adapters. All 50 states + DC covered.
 
@@ -2859,15 +2905,14 @@ Layer 3: App Views (app_rankings, app_matches_feed, etc.)
 
 ### Resume Prompt
 
-**Session FINAL is COMPLETE.** All open items resolved. Next priorities:
-- **TN Squadi adapter** — Add TN State Soccer League to squadi.js (API keys found Session FINAL)
+**Session 115 is COMPLETE.** TN Squadi adapter built + scraped, NM DCSL added, 7 universal pipeline metadata gaps fixed, Principle 48 established. Next priorities:
 - **RI Super Liga** — March 28: Spring data goes live, activate `risuperliga.js` IMMEDIATELY (data purges!)
 - **WV GotSport** — Event 49470 in staticEvents, scrape after March 15 when games are played
-- **MA NECSL Spring** — Check thenecsl.com on/after Feb 19 for Spring 2026 event ~50xxx
-- **NM DCSL** — dukecity.org, Spring starts Feb 28, retry adapter build
+- **MA NECSL Spring** — Check thenecsl.com NOW (Feb 19+) for Spring 2026 event ~50xxx
+- **NM DCSL** — dukecity.org, Spring starts Feb 28, retry custom adapter build
 
-When starting a new session after FINAL:
-> "Resume SoccerView Session 115. Session FINAL COMPLETE + post-FINAL doc cleanup done. **Current: 529,446 active matches, 197,533 teams, 30,074 standings, 468 leagues, 25 GotSport staticEvents, 12 adapters, SEM 105,473.** Read CLAUDE.md (v25.1), .claude/hooks/session_checkpoint.md. **CRITICAL DISCOVERY:** TN State Soccer League migrated from SINC to **Squadi** — API keys in STATE_COVERAGE_CHECKLIST.md row 45. **PRIORITY:** (1) TN Squadi adapter — add TN to squadi.js (`orgKey: d1445ee0...`, `compKey: 1252e315...`, `yearId: 6`). Scrape immediately. (2) RI Super Liga — check thesuperliga.com, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges!). (3) WV GotSport — event 49470, scrape after March 15. (4) MA NECSL Spring ~50xxx — check thenecsl.com on/after Feb 19. (5) NM DCSL — dukecity.org, Spring starts Feb 28. **NEVER say 'between seasons.'**"
+When starting a new session after Session 115:
+> "Resume SoccerView post-Session 115. **Current: 535,074 active matches, 200,087 teams, 33,943 standings, 472 leagues, 1,800 tournaments, 25 GotSport staticEvents, 12 adapters, SEM 105,914.** Read CLAUDE.md (v25.2), .claude/hooks/session_checkpoint.md. Session 115 COMPLETE: TN Squadi (5,509 matches + 4,406 standings), NM DCSL (120 matches), 7 universal event metadata fixes (Principle 48), league state 94%, season_id 99.6%, tournament state 95.4%. **PRIORITY:** (1) RI Super Liga — check thesuperliga.com, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges!). (2) WV GotSport — event 49470, scrape after March 15. (3) MA NECSL Spring ~50xxx — check thenecsl.com NOW. (4) NM DCSL — dukecity.org, Spring starts Feb 28. **NEVER say 'between seasons.'**"
 
 ---
 

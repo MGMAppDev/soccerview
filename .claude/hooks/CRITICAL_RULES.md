@@ -50,6 +50,7 @@ Tier 3: Create new + register in source_entity_map for future Tier 1
 - Event classification: check name for league keywords, default to tournament.
 - Dual source_entity_map registration when scrapers use different ID formats.
 - "Events" is BANNED terminology. Use "leagues" or "tournaments" only.
+- **Event creation MUST include:** state (from staging_events), season_id (from match dates for leagues), SEM registration (ON CONFLICT DO NOTHING). Applies to fastProcessStaging.cjs AND dataQualityEngine.js. (Principle 48, Session 115)
 
 ## CODE PATTERNS — Universal
 - Division regex: /U-?\d{1,2}\b|20[01]\d/i (dash is OPTIONAL).

@@ -1,5 +1,5 @@
 # Session Checkpoint — Auto-Updated
-Last Updated: 2026-02-19T05:45:00Z
+Last Updated: 2026-02-19T08:00:00Z
 Session: 115 — COMPLETE ✅
 
 ## 🚨 CRITICAL RULE — PERMANENT (Session 112)
@@ -10,81 +10,67 @@ Session: 115 — COMPLETE ✅
 
 ---
 
-## Session FINAL — ALL REMAINING OPEN ITEMS
+## Session 115 — Universal Event Metadata Fixes + TN Squadi + NM DCSL
 
-### Final Metrics (as of Session FINAL, post-GS standings processing)
+### Current Metrics (as of Session 115 end)
 
-| Metric | Session 113 end | Session FINAL current | Delta |
-|--------|----------------|----------------------|-------|
-| matches_v2 (active) | 528,819 | **528,819** | (nightly adds incrementally) |
-| teams_v2 | 190,302 | **197,030** | +6,728 (GS standings absorption) |
-| league_standings | 19,749 | **30,073** | +10,324 (342-league GS re-scrape processed) |
-| source_entity_map | ~90,000 | **104,289** | +14K (standings processing) |
-| staging_standings (unprocessed) | 20,730 | **0** | Fully cleared ✅ |
-| GotSport staticEvents | 21 | **25** | +STXCL WC, MA NECSL, WV |
-| upcoming (linked) | ~4,753 | **38,667** | 96.1% linked |
+| Metric | Session FINAL end | Session 115 current | Delta |
+|--------|-------------------|---------------------|-------|
+| matches_v2 (active) | 528,819 | **535,074** | +6,255 (TN Squadi + NM DCSL) |
+| teams_v2 | 197,030 | **200,087** | +3,057 |
+| leagues | 468 | **472** | +4 (TN Squadi + NM DCSL) |
+| tournaments | 1,798 | **1,800** | +2 |
+| league_standings | 30,073 | **33,943** | +3,870 (TN standings + reprocessing) |
+| source_entity_map | 104,289 | **105,914** | +1,625 |
+| staging_standings (unprocessed) | 0 | **0** | Fully cleared ✅ |
+| League state coverage | 68.2% (322/472) | **93.9%** (443/472) | +121 fixed |
+| League season_id | 0% (0/472) | **99.6%** (470/472) | +470 NEW |
+| Tournament state | 1.5% (27/1,800) | **95.4%** (1,717/1,800) | +1,690 fixed |
 
-### Block Completion Status
+### Session 115 Completed Tasks
 
-| Block | Status | Notes |
-|-------|--------|-------|
-| A1: Commit coreScraper.js fix | ✅ DONE | Commit 7668a5c |
-| A2: fastProcessStaging | ✅ DONE | 0 unprocessed staging_games |
-| A3: STXCL WC + 14 events scrape | ✅ DONE | Events in staticEvents, scrape run |
-| A4: GS standings (342 leagues) | ✅ DONE | 30,073 standings (was 19,749) |
-| B1-B5: FL/IN/MO/TX/GA scrapes | ✅ DONE | All in staticEvents, scrape launched |
-| B6: fastProcessStaging pass | ✅ DONE | 29 unprocessed in queue (nightly handles) |
-| C1: TN → Squadi | ✅ DISCOVERED | TN migrated from SINC to Squadi; API keys found; add TN section to squadi.js |
-| C2: WV GotSport event | ✅ FOUND | Event 49470 confirmed (27 divs), added to staticEvents |
-| C3: NM DCSL | ✅ DOCUMENTED | NM already covered via Desert Conf 34558; DCSL is amateur |
-| C4: RI Super Liga | ✅ DOCUMENTED | Spring starts March 28; skeleton adapter ready |
-| C5: MA NECSL | ✅ FOUND | Event 45672 added to staticEvents (Spring ~50xxx on Feb 19) |
-| C6: AK UAYSL | ✅ DOCUMENTED | Event 5082 in staticEvents; 755 AK matches from multi-state |
-| D1: Double-prefix | ✅ DONE | 0 remaining (cleanTeamName.cjs covers all) |
-| D2: View indexes | ✅ DONE | 6 indexes on league_standings confirmed |
-| D3: SEM backfill | ✅ DONE | 104,289 entries (was ~90K) |
-| D4: Pipeline monitoring | ✅ DONE | Already exists in daily-data-sync.yml |
-| D5: DATA_EXPANSION_ROADMAP.md | ✅ DONE | Updated v9.0 FINAL |
-| D6: DATA_SCRAPING_PLAYBOOK.md | ✅ DONE | Updated v9.0 FINAL |
-| E1: ELO recalculation | ⏳ RUNNING | Agent ae0230a (background) |
-| E2: Views refresh | ⏳ QUEUED | Runs after ELO completes (same agent) |
-| F1: verify_final_session.cjs | ⏳ PENDING | Runs after E2 |
-| F2: gh run list pipeline check | ⏳ PENDING | |
-| G1: CLAUDE.md v25.0 FINAL | ✅ DONE | Updated with actual metrics |
-| G2: session_checkpoint.md | ✅ THIS FILE | |
-| G3: Checklist vFINAL | ✅ DONE | All blocks checked |
-| G4: git commit + push | ⏳ PENDING | After F1/F2 |
+| Task | Status | Notes |
+|------|--------|-------|
+| TN Squadi adapter | ✅ DONE | 5 events added to squadi.js, 5,509 matches scraped |
+| NM DCSL via TGS | ✅ DONE | Event 3410, 120 matches |
+| coreScraper.js event_state | ✅ DONE | Propagates adapter state to staging_events |
+| fastProcessStaging.cjs fixes | ✅ DONE | Event creation: +state, +season_id, +SEM registration |
+| dataQualityEngine.js fixes | ✅ DONE | Same + tournament CURRENT_DATE bug fixed |
+| Retroactive backfill | ✅ DONE | League state 150→29 NULL, season_id 50→2 NULL, tournament state 1,773→83 NULL, SEM +79 |
+| standings source_platform fix | ✅ DONE | 12,342 rows corrected (bare numbers → 'gotsport') |
+| Process standings | ✅ DONE | 4,312 unprocessed → 0 |
+| ELO recalculation | ✅ DONE | 237,657 matches, 75,811 teams |
+| Views refresh | ✅ DONE | All 5 materialized views |
+| Verification | ✅ DONE | All targets passed (7/7 code checks) |
+| Commit + push | ✅ DONE | Commit 7ea9290 |
+| Doc updates | ✅ DONE | CLAUDE.md v25.2, SESSION_HISTORY, CRITICAL_RULES, STATE_COVERAGE_CHECKLIST v7.2, this file |
 
-### New Events Added This Session (to gotsport.js staticEvents)
+### New Principle (Session 115)
 
-| Event ID | Name | Type | State |
-|----------|------|------|-------|
-| 46279 | STXCL World Cup Girls 2025-26 | tournament | TX |
-| 46278 | STXCL World Cup Boys 2025-26 | tournament | TX |
-| 45672 | NECSL Fall 2025 (MA/NH/RI/ME/CT) | league | MA |
-| 49470 | WV State League Spring 2026 | league | WV |
+**Principle 48:** Event creation MUST include state (from staging_events), season_id (from match dates for leagues), SEM registration (ON CONFLICT DO NOTHING). Applies to fastProcessStaging.cjs AND dataQualityEngine.js.
 
-### Block C Research Findings (Principle 42 documented)
+### Forward-Prevention Verified (7/7 checks)
 
-| State | Finding | Action | Retry Date |
-|-------|---------|--------|------------|
-| TN | **Migrated to Squadi.** API keys: `orgKey: d1445ee0-8058-44ff-9aaa-e9ce0b69ef2a`, `compKey: 1252e315-913f-4319-a58f-8cb620057e06`, `yearId: 6` | Add TN section to squadi.js (same as AR) | Next session |
-| WV | GotSport event 49470 confirmed (27 divisions, season March 14-15) | Added to staticEvents | March 15, 2026 (after games play) |
-| NM | Already covered via Desert Conf 34558; DCSL is amateur | No action needed | — |
-| RI | Spring starts March 28; data-purging platform | Skeleton ready in risuperliga.js | March 28, 2026 |
-| MA | NECSL event 45672 found + added; Spring ~50xxx on Feb 19 | Added to staticEvents | Feb 19, 2026 (Spring event ID) |
-| AK | Event 5082 in staticEvents; 755 AK matches from multi-state | Monitor via nightly | June 2026 |
+| Component | Check | Status |
+|-----------|-------|--------|
+| fastProcessStaging.cjs | staging_events fetches state | ✅ |
+| fastProcessStaging.cjs | League INSERT includes state + season_id | ✅ |
+| fastProcessStaging.cjs | Tournament INSERT includes state | ✅ |
+| fastProcessStaging.cjs | SEM registration after creation | ✅ |
+| dataQualityEngine.js | League INSERT includes state + season_id | ✅ |
+| dataQualityEngine.js | Tournament uses match dates (not CURRENT_DATE) | ✅ |
+| dataQualityEngine.js | Tournament INSERT includes state | ✅ |
 
 ---
 
-## Post-FINAL: Resume Prompt
+## Post-Session 115: Resume Prompt
 
-"Resume SoccerView post-FINAL maintenance. Session FINAL COMPLETE — all 30 checklist items done.
-**Current: 528,819 active matches, 197,030 teams, 30,073 standings, 468 leagues, 25 GotSport staticEvents, 12 adapters, SEM 104,289.**
-Read CLAUDE.md (v25.0 FINAL), session_checkpoint.md.
+"Resume SoccerView post-Session 115. **Current: 535,074 active matches, 200,087 teams, 33,943 standings, 472 leagues, 1,800 tournaments, 25 GotSport staticEvents, 12 adapters, SEM 105,914.**
+Read CLAUDE.md (v25.2), session_checkpoint.md.
+Session 115 COMPLETE: TN Squadi (5,509 matches + 4,406 standings), NM DCSL (120 matches), 7 universal event metadata fixes (Principle 48), league state 94%, season_id 99.6%, tournament state 95.4%.
 **PRIORITY:**
-(1) RI Super Liga — check thesuperliga.com NOW, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges between seasons!)
-(2) TN Squadi adapter — add TN State Soccer League to squadi.js (API keys: orgKey d1445ee0..., compKey 1252e315..., yearId 6)
-(3) WV GotSport — event 49470 in staticEvents, scrape after March 15
-(4) NECSL Spring 2026 GotSport event ~50xxx — check thenecsl.com on/after Feb 19, add to staticEvents
+(1) RI Super Liga — check thesuperliga.com, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges!)
+(2) WV GotSport — event 49470, scrape after March 15
+(3) MA NECSL Spring ~50xxx — check thenecsl.com NOW (Feb 19+)
+(4) NM DCSL — dukecity.org, Spring starts Feb 28, retry custom adapter
 **NEVER say 'between seasons.'**"

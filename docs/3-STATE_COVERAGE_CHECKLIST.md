@@ -1,6 +1,6 @@
 # SoccerView State Coverage Checklist
 
-> **Version 7.1 FINAL** | Updated: February 18, 2026 | Session FINAL Complete
+> **Version 7.2** | Updated: February 19, 2026 | Session 115 Complete — TN PRODUCTION
 >
 > **THE MASTER TRACKER** for national expansion. Every US state, every premier league, every platform, every action needed.
 > **Updated every session.** This is the single source of truth for coverage status.
@@ -46,7 +46,8 @@
 | 111 | Feb 18 | **TGS Standings + CO CAL Spring + Spring Blitz.** Added stealth Puppeteer to scrapeStandings.js. Built TGS standings section: 75/75 ECNL events scraped (4,362 standings). CO CAL Spring 2026: 4,564 matches via PlayMetrics. Spring blitz: most events already in pipeline (Principle 45 working). Fast bulk TGS processor: 4,362 rows in 340s. Event discovery: FL (6 new IDs), IN (49628), MO (44132 SLYSA), TX (44745 GCL, 45379 EDPL). AK deferred June 2026. | **+5,222 matches (520K→525K), +4,362 standings (13K→17.7K), +4,862 teams, +6,019 SEM, standings adapters 6→7** | Session 112 |
 | 112 | Feb 18 | **"Between Seasons" BANNED + Spring 2026 gap events.** Added 9 GotSport staticEvents (FL/IN/MO/TX + MS/NM/WY multi-state). 86 new matches (FL/MS/NM/WY). ISL reclassified tournament→league. NO LEAGUE states research (MS/SD/WY/ND/NM) completed. | **+86 matches, +1 ISL league, GotSport 12→21 staticEvents** | Session 113 |
 | 113 | Feb 18 | **50-State PRODUCTION audit + AthleteOne adapter (12th).** Audit: 100% matches/ELO/GS Ranks across all states; standings gap in 42/50 states. Fixed GotSport standings discovery 41→342 leagues (numeric ID format). Built AthleteOne adapter: 3,051 STXCL ECNL-RL TX matches, pure REST API. Added sync-athleteone to pipeline. Processed 7 new GotSport leagues: +2,017 standings. GotSport scraper running on 342 leagues (NorCal 685 groups still pending). | **+3,051 matches (525K→528K), +2,552 teams, +3 leagues, +2,017 standings (17.7K→19.7K), 12th adapter** | Finish GotSport 342 leagues + remaining standings adapters |
-| **FINAL** | Feb 18 | **ALL remaining open items — one sprint.** 7 blocks, 30 steps. STXCL WC scraped, WY+NM processed, FL/IN/MO/TX/GA events scraped, TN/WV/NM/RI/MA/AK researched (Principle 42), all tech debt cleared, ELO+views run, docs vFINAL, git push. **TN migrated to Squadi (API keys found).** WV event 49470 confirmed. MA NECSL 45672 added. | **+10,324 standings (19.7K→30K), +6,728 teams, +4 staticEvents, 180 double-prefix fixed, ELO 236K matches. Final: 529,446 matches, 197,533 teams, 30,074 standings, 105,473 SEM.** | **DONE ✅** |
+| **FINAL** | Feb 18 | **ALL remaining open items — one sprint.** 7 blocks, 30 steps. STXCL WC scraped, WY+NM processed, FL/IN/MO/TX/GA events scraped, TN/WV/NM/RI/MA/AK researched (Principle 42), all tech debt cleared, ELO+views run, docs vFINAL, git push. **TN migrated to Squadi (API keys found).** WV event 49470 confirmed. MA NECSL 45672 added. | **+10,324 standings (19.7K→30K), +6,728 teams, +4 staticEvents, 180 double-prefix fixed, ELO 236K matches. Final: 529,446 matches, 197,533 teams, 30,074 standings, 105,473 SEM.** | Session 115 |
+| **115** | Feb 19 | **TN Squadi adapter + NM DCSL + Universal Event Metadata Fixes.** Added TN to squadi.js (5,509 matches + 4,406 standings). NM DCSL via TGS event 3410 (120 matches). Fixed 7 pipeline metadata gaps: fastProcessStaging + DQE now include state, season_id, SEM on event creation. Retroactive backfill: league state 68%→94%, season_id 0%→99.6%, tournament state 1.5%→95.4%. Fixed 12,342 standings source_platform corruption. ELO recalculated (237K matches). Principle 48 established. | **+6,255 matches (529K→535K), +3,057 teams (197K→200K), +3,870 standings (30K→33.9K), +1,625 SEM, +4 leagues. League state 94%, season_id 99.6%, tournament state 95.4%.** | RI/WV/MA/NM |
 
 ---
 
@@ -383,7 +384,7 @@
 | 42 | **RI** | Super Liga | Anchor, Classic Gold/Blue, Rhody + U7-U19 | **Custom PHP** (thesuperliga.com) | N/A | GS RANKS → **DEFERRED (March 28)** | **Session 105:** Site PURGES data between seasons — Fall 2025 permanently lost. Tried 5+ approaches per Principle 42. Adapter skeleton built (`risuperliga.js`). **RETRY: March 28, 2026** (Spring season start). ⚠️ DATA-PURGING PLATFORM — must scrape during active season. |
 | 43 | **SC** | SCCL (SC Challenge League) | Challenge, Classic | GotSport | 45507, 40890 | **PARTIAL** | 2 leagues, 409 matches. Already discovered. |
 | 44 | **SD** | No statewide intrastate league | N/A | HTGSports (State Cup) + GotSport (USYS MW Conf) | JPL Mountain West 44839 (includes SD) | **PARTIAL** | No statewide premier league. SD teams play USYS Midwest Conference (already scraped). State Cup uses HTGSports. 1,843 SD matches from multi-state events. |
-| 45 | **TN** | **TN State League (TSL)** | **Div 1, 2a, 2b, 3** + VESL | **Squadi** (migrated from SINC) | Squadi API: `orgKey: d1445ee0...`, `compKey: 1252e315...`, `yearId: 6` | **PARTIAL** | **Session FINAL:** Discovered TN migrated from SINC Sports to Squadi. API keys found. SINC events (TZ1185/VESL) removed from sincsports.js. **Action: Add TN section to squadi.js adapter** (same pattern as AR ACSL). Scrape immediately when built. |
+| 45 | **TN** | **TN State League (TSL)** | **Div 1, 2a, 2b, 3** + VESL | **Squadi** (migrated from SINC) | Squadi API: `orgKey: d1445ee0...`, `compKey: 1252e315...`, `yearId: 6` | **PRODUCTION** | **Session 115:** TN added to squadi.js — 5 events (TSL Fall/Spring, VESL Fall/Spring, State Cup). **5,509 matches scraped + 4,406 standings staged + processed.** ELO calculated. All 5 data elements flowing. |
 | 46 | **TX-N** | NTSSA competitive + EDPL + CCSAI | Multiple tiers | GotSport | 79367, 77871 | **PARTIAL** | Discover more TX-N event IDs |
 | 47 | **TX-S** | State Classic League + GCL | SCL Div I (East/West) | GotSport | 78565, 75263 | **PARTIAL** | Discover more TX-S event IDs |
 | 48 | **UT** | UYSA Premier League | Premier + tiers (320+ teams) | SportsAffinity + GotSport | 6 SA events (Fall+Spring) | **PARTIAL** | **5,759 current-season matches** (1,408 GS + 4,351 SA). SA events: Premier PL/SCL/IRL/XL (3,523!), SUIRL, UVCL, YDL, Platform, Challenger. |
@@ -522,9 +523,9 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 
 ### Wave 8: ECNL Full Scrape + TN
 - [x] **ECNL COMPLETE (Session 100):** ALL 76 ECNL/ECRL/Pre-ECNL events scraped (IDs 3880-3960). 33,567 matches. 79 tournaments reclassified as leagues. TGS adapter expanded 13→76 staticEvents.
-- [ ] TN — TN State League via **Squadi** (migrated from SINC — API keys discovered Session FINAL)
+- [x] TN — TN State League via **Squadi** ✅ **(Session 115: 5,509 matches + 4,406 standings)**
 
-**Status:** ECNL DONE. TN: Squadi API keys found (`orgKey: d1445ee0...`, `compKey: 1252e315...`, `yearId: 6`). Add TN section to squadi.js.
+**Status:** ECNL DONE. TN DONE (Session 115). All Wave 8 complete.
 
 ### Wave 9: Ongoing Maintenance
 - [ ] Daily pipeline via GitHub Actions
@@ -547,7 +548,7 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 | 5 | ~~**NO LEAGUE states** (MS, SD, WY)~~ | ~~🟡~~ ✅ RESOLVED | **S112** | MS (40362: 1,647 matches), SD (1,843 via USYS MW), WY (32734: YPL + 1,809 from multi-state). Documented. |
 | 6 | **NM has no adapter** (DCSL WordPress/AJAX) | 🟡 HIGH | **FINAL (C3)** | Try dukecity.org AJAX endpoint NOW (Spring starts Feb 28). 5+ approaches per Principle 42. |
 | 7 | ~~**STXCL NPL** (18th/18 NPL, AthleteOne)~~ | ~~🟡~~ ✅ RESOLVED | **S113** | AthleteOne adapter built. 3,051 STXCL ECNL-RL matches. 18/18 NPL done. |
-| 8 | ~~**TN between seasons** (SINC ready)~~ | ~~🟡~~ ✅ RESOLVED | **FINAL (C1)** | TN migrated from SINC to **Squadi**. API keys found. Add TN section to squadi.js adapter. |
+| 8 | ~~**TN between seasons** (SINC ready)~~ | ~~🟡~~ ✅ RESOLVED | **S115** | TN added to squadi.js — 5,509 matches + 4,406 standings. All 5 data elements flowing. PRODUCTION. |
 | 9 | **WV event ID behind hash** | 🟡 MEDIUM | **FINAL (C2)** | 6 approaches NOW: WebSearch×2, wvsoccer.com, probe 47xxx/48xxx/49xxx, GotSport search. |
 | 10 | **Double-prefix failures** (74 matches) | 🟢 LOW | **FINAL (D1)** | Fix cleanTeamName.cjs edge cases + retroactive fixDoublePrefix.cjs. Verify 0 remaining. |
 | 11 | **View refresh 50+ sec** | 🟢 LOW | **FINAL (D2)** | Add indexes to league_standings + other slow views. Target <10 sec total. |
@@ -616,7 +617,7 @@ Already had 26 NPL leagues (1,104 matches) + USYS NL events in DB from prior scr
 
 | Task | Platform | State | Reason | Retry Date |
 |------|----------|-------|--------|------------|
-| TN State League | **Squadi** (migrated from SINC) | TN | API keys found — add to squadi.js | Next session |
+| ~~TN State League~~ | ~~Squadi~~ | ~~TN~~ | ~~API keys found~~ | ✅ **DONE (Session 115)** — 5,509 matches + 4,406 standings |
 | WV State League | GotSport | WV | Season starts March 2026, event ID behind registration | March 1, 2026 |
 | IA Spring 2026 | SportsAffinity | IA | Schedule releases March 13 | March 13, 2026 |
 
