@@ -1,6 +1,6 @@
 # Session Checkpoint — Auto-Updated
-Last Updated: 2026-02-19T08:00:00Z
-Session: 115 — COMPLETE ✅
+Last Updated: 2026-02-19T15:01:00Z
+Session: 116 — QC Fix: "0 Teams" Bug ✅
 
 ## 🚨 CRITICAL RULE — PERMANENT (Session 112)
 **"BETWEEN SEASONS" IS BANNED. WE ARE IN THE 2025-26 SEASON (Aug 2025-Jul 2026).**
@@ -10,64 +10,55 @@ Session: 115 — COMPLETE ✅
 
 ---
 
-## Session 115 — Universal Event Metadata Fixes + TN Squadi + NM DCSL
+## Session 116 — QC Fix: "0 Teams" Bug (All Screens)
 
-### Current Metrics (as of Session 115 end)
+### Problem
+Home, Rankings, and Teams screens all showed "0 Teams". All three query the `app_rankings` materialized view with `has_matches = true` filter.
 
-| Metric | Session FINAL end | Session 115 current | Delta |
-|--------|-------------------|---------------------|-------|
-| matches_v2 (active) | 528,819 | **535,074** | +6,255 (TN Squadi + NM DCSL) |
-| teams_v2 | 197,030 | **200,087** | +3,057 |
-| leagues | 468 | **472** | +4 (TN Squadi + NM DCSL) |
-| tournaments | 1,798 | **1,800** | +2 |
-| league_standings | 30,073 | **33,943** | +3,870 (TN standings + reprocessing) |
-| source_entity_map | 104,289 | **105,914** | +1,625 |
-| staging_standings (unprocessed) | 0 | **0** | Fully cleared ✅ |
-| League state coverage | 68.2% (322/472) | **93.9%** (443/472) | +121 fixed |
-| League season_id | 0% (0/472) | **99.6%** (470/472) | +470 NEW |
-| Tournament state | 1.5% (27/1,800) | **95.4%** (1,717/1,800) | +1,690 fixed |
+### Root Cause
+`teams_v2.matches_played` was 0 for ALL 201,616 teams, and `elo_rating` was 1500 (default) for everyone. The ELO recalculation had not been run or was reset, so `has_matches = false` for every team in the view.
 
-### Session 115 Completed Tasks
+### Fix Applied (data layer only, zero UI changes)
+1. Ran `recalculate_elo_v2.js` — 238,486 matches, 76,276 teams, 12,371 division-seeded
+2. Refreshed all 5 materialized views via `refresh_views_manual.js`
+
+### Current Metrics (as of Session 116)
+
+| Metric | Session 115 end | Session 116 current | Delta |
+|--------|-----------------|---------------------|-------|
+| matches_v2 (active) | 535,074 | **536,629** | +1,555 (nightly pipeline) |
+| teams_v2 | 200,087 | **201,616** | +1,529 (nightly pipeline) |
+| teams with matches | 0 (bug) | **76,276** | Fixed via ELO recalc |
+| ELO range | 1500 (all default) | **1148-1788** | Fixed |
+| app_rankings has_matches=true | 0 | **76,276** | Fixed |
+| app_rankings national_rank set | 73,287 | **73,287** | Unchanged |
+| app_matches_feed | 536,629 | **536,629** | Already working |
+
+### Session 116 Completed Tasks
 
 | Task | Status | Notes |
 |------|--------|-------|
-| TN Squadi adapter | ✅ DONE | 5 events added to squadi.js, 5,509 matches scraped |
-| NM DCSL via TGS | ✅ DONE | Event 3410, 120 matches |
-| coreScraper.js event_state | ✅ DONE | Propagates adapter state to staging_events |
-| fastProcessStaging.cjs fixes | ✅ DONE | Event creation: +state, +season_id, +SEM registration |
-| dataQualityEngine.js fixes | ✅ DONE | Same + tournament CURRENT_DATE bug fixed |
-| Retroactive backfill | ✅ DONE | League state 150→29 NULL, season_id 50→2 NULL, tournament state 1,773→83 NULL, SEM +79 |
-| standings source_platform fix | ✅ DONE | 12,342 rows corrected (bare numbers → 'gotsport') |
-| Process standings | ✅ DONE | 4,312 unprocessed → 0 |
-| ELO recalculation | ✅ DONE | 237,657 matches, 75,811 teams |
-| Views refresh | ✅ DONE | All 5 materialized views |
-| Verification | ✅ DONE | All targets passed (7/7 code checks) |
-| Commit + push | ✅ DONE | Commit 7ea9290 |
-| Doc updates | ✅ DONE | CLAUDE.md v25.2, SESSION_HISTORY, CRITICAL_RULES, STATE_COVERAGE_CHECKLIST v7.2, this file |
+| Diagnose app_rankings | ✅ DONE | View exists, populated, 201K rows, but has_matches=false for all |
+| Root cause identified | ✅ DONE | teams_v2.matches_played=0, elo_rating=1500 for all — ELO never ran |
+| ELO recalculation | ✅ DONE | 238,486 matches, 76,276 teams, ELO 1148-1788 |
+| Views refresh | ✅ DONE | All 5 materialized views refreshed |
+| Verification | ✅ DONE | 76,276 teams visible, all screen queries return data |
 
-### New Principle (Session 115)
+### Diagnostic Scripts Created
 
-**Principle 48:** Event creation MUST include state (from staging_events), season_id (from match dates for leagues), SEM registration (ON CONFLICT DO NOTHING). Applies to fastProcessStaging.cjs AND dataQualityEngine.js.
-
-### Forward-Prevention Verified (7/7 checks)
-
-| Component | Check | Status |
-|-----------|-------|--------|
-| fastProcessStaging.cjs | staging_events fetches state | ✅ |
-| fastProcessStaging.cjs | League INSERT includes state + season_id | ✅ |
-| fastProcessStaging.cjs | Tournament INSERT includes state | ✅ |
-| fastProcessStaging.cjs | SEM registration after creation | ✅ |
-| dataQualityEngine.js | League INSERT includes state + season_id | ✅ |
-| dataQualityEngine.js | Tournament uses match dates (not CURRENT_DATE) | ✅ |
-| dataQualityEngine.js | Tournament INSERT includes state | ✅ |
+| Script | Purpose |
+|--------|---------|
+| `scripts/_debug/diagnose_app_rankings.cjs` | Check view existence, population, permissions, row counts |
+| `scripts/_debug/diagnose_permissions.cjs` | Check real materialized view permissions via pg_class |
+| `scripts/_debug/verify_qc_fix.cjs` | Verify all 3 screen queries return expected data |
 
 ---
 
-## Post-Session 115: Resume Prompt
+## Post-Session 116: Resume Prompt
 
-"Resume SoccerView post-Session 115. **Current: 535,074 active matches, 200,087 teams, 33,943 standings, 472 leagues, 1,800 tournaments, 25 GotSport staticEvents, 12 adapters, SEM 105,914.**
+"Resume SoccerView post-Session 116. **Current: 536,629 active matches, 201,616 teams (76,276 with matches), 33,943 standings, 472 leagues, 1,800 tournaments, 25 GotSport staticEvents, 12 adapters, SEM 105,914.**
 Read CLAUDE.md (v25.2), session_checkpoint.md.
-Session 115 COMPLETE: TN Squadi (5,509 matches + 4,406 standings), NM DCSL (120 matches), 7 universal event metadata fixes (Principle 48), league state 94%, season_id 99.6%, tournament state 95.4%.
+Session 116: QC fix — '0 Teams' bug on Home/Rankings/Teams screens. Root cause: ELO recalculation not run, all teams had matches_played=0. Fixed by running recalculate_elo_v2.js + refreshing views. Zero UI changes.
 **PRIORITY:**
 (1) RI Super Liga — check thesuperliga.com, if Spring data live activate `risuperliga.js` IMMEDIATELY (data purges!)
 (2) WV GotSport — event 49470, scrape after March 15
